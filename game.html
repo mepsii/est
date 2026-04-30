@@ -57,22 +57,35 @@
 
         #inventory-screen {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
-            display: none; align-items: center; justify-content: center; gap: 20px;
+            display: none; align-items: flex-start; justify-content: center; gap: 20px;
             z-index: 30; background: rgba(0, 0, 0, 0.5); user-select: none;
+            padding-top: 10vh; box-sizing: border-box;
         }
-        .inv-panel { width: 320px; display: flex; flex-direction: column; }
+        .inv-panel { width: 320px; display: flex; flex-direction: column; max-height: 80vh; }
         .inv-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
         .inv-slot {
             aspect-ratio: 1; background: rgba(0, 0, 0, 0.6);
             border: 1px solid #444; border-radius: 4px; display: flex;
             align-items: center; justify-content: center; font-size: 30px;
-            cursor: pointer; transition: background 0.1s;
+            cursor: pointer; transition: background 0.1s; position: relative;
         }
         .inv-slot:hover { background: rgba(100, 100, 100, 0.5); }
         #inv-hints {
             position: absolute; bottom: 30px; color: #ccc; font-size: 18px;
             text-shadow: 1px 1px 2px #000; text-align: center; width: 100%;
         }
+
+        /* Crafting UI */
+        #crafting-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 5px;}
+        .craft-btn { 
+            background: #333; color: white; border: 1px solid #666; padding: 10px; 
+            cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 4px;
+            border-radius: 4px; font-family: sans-serif; transition: background 0.1s;
+        }
+        .craft-btn:hover:not(:disabled) { background: #555; }
+        .craft-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .craft-title { font-size: 16px; font-weight: bold; }
+        .craft-reqs { font-size: 13px; color: #aaa; display: flex; gap: 8px; flex-wrap: wrap;}
 
         #debug-menu {
             position: absolute; top: 20px; right: 20px; width: 220px;
@@ -94,7 +107,7 @@
         <div class="hud-item">Stam: <span id="stamina">100</span></div>
         <div class="hud-item">Food: <span id="food">100</span></div>
         <div class="hud-item">Score: <span id="score">0</span></div>
-        <div class="hud-item">Weapon: <span id="weapon-name">Pistol</span></div>
+        <div class="hud-item">Equipped: <span id="weapon-name">Pistol</span></div>
         <div class="hud-item">ADS: <span id="ads-status">OFF</span></div>
     </div>
 
@@ -102,7 +115,7 @@
     
     <div id="overlay">
         <h1>EmojiSurvivalTest</h1>
-        <p>1,2,3: Switch Weapon | Space: Jump | Shift: Sprint | L-Click: Shoot | R-Click: Zoom | I: Inv | E: Interact</p>
+        <p>1-5: Weapons/Tools | Space: Jump | Shift: Sprint | L-Click: Shoot/Chop | R-Click: Zoom | I: Inv & Crafting | E: Interact</p>
         <p style="font-size: 0.8em; margin-top: 20px;">Explore, Hunt, Survive. Find containers & animals for bandages & food. <br>(Press `~` for Debug Menu)</p>
     </div>
 
@@ -118,11 +131,19 @@
             <h2>Inventory</h2>
             <div id="player-inv-grid" class="inv-grid"></div>
         </div>
+        
+        <!-- Crafting Panel -->
+        <div id="crafting-ui" class="panel inv-panel">
+            <h2>Crafting</h2>
+            <div id="crafting-list"></div>
+        </div>
+
         <div id="container-ui" class="panel inv-panel" style="display: none;">
             <h2>Container</h2>
             <div id="container-inv-grid" class="inv-grid"></div>
         </div>
-        <div id="inv-hints">Left-Click to Move Items | Right-Click to Use Items</div>
+        
+        <div id="inv-hints">Left-Click to Move | Right-Click to Use/Place Item</div>
     </div>
 
     <div id="debug-menu" class="panel">
@@ -172,6 +193,7 @@
             <button onclick="spawnDebug('🐄')">🐄</button>
             <button onclick="spawnDebug('🐖')">🐖</button>
             <button onclick="spawnDebug('🐓')">🐓</button>
+            <button onclick="spawnDebug('🐑')">🐑</button>
             <button onclick="spawnDebug('📦')">📦</button>
         </div>
         <hr style="border-color:#555; margin:10px 0;">
@@ -194,15 +216,43 @@
         
         const invScreen = document.getElementById('inventory-screen'), containerUI = document.getElementById('container-ui');
         const playerInvGrid = document.getElementById('player-inv-grid'), containerInvGrid = document.getElementById('container-inv-grid');
+        const craftingList = document.getElementById('crafting-list');
         const interactTooltip = document.getElementById('interact-tooltip'), debugMenu = document.getElementById('debug-menu');
         
         const stairMenu = document.getElementById('stair-menu'), stairMenuTitle = document.getElementById('stair-menu-title');
+
+        // Texture Generators for Tent Fuzz / Grain
+        function createNoisePattern(baseColor, noiseAlphaDark, noiseAlphaLight) {
+            let tc = document.createElement('canvas');
+            tc.width = 128; tc.height = 128; 
+            let tctx = tc.getContext('2d');
+            tctx.fillStyle = baseColor;
+            tctx.fillRect(0,0,128,128);
+            for(let i=0; i<3000; i++){
+                tctx.fillStyle = Math.random() > 0.5 ? `rgba(0,0,0,${noiseAlphaDark})` : `rgba(255,255,255,${noiseAlphaLight})`;
+                tctx.fillRect(Math.floor(Math.random()*128), Math.floor(Math.random()*128), 2, 2);
+            }
+            return ctx.createPattern(tc, 'repeat');
+        }
+        const patternArmyGreen = createNoisePattern('#4A5D23', 0.2, 0.05);
+        const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
+        const patternArmyGreenFloor = createNoisePattern('#323F18', 0.3, 0.05);
 
         let isInventoryOpen = false, isDebugOpen = false, isStairMenuOpen = false, interactTarget = null, activeContainer = null;
         let inventory = new Array(20).fill(null); 
         let godMode = false, noclip = false, speedMult = 1.0;
         let flightMode = false, jumpPower = 0.2;
         let infiniteStamina = false, sprintMult = 1.5;
+
+        const destroyedEntities = new Set();
+
+        const RECIPES = [
+            {
+                name: "Tent",
+                result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 },
+                req: { '🪵': 2, '🧶': 2 }
+            }
+        ];
 
         document.getElementById('btn-hp').onclick = () => { player.hp = parseInt(document.getElementById('dbg-hp').value); hpEl.innerText = player.hp; };
         document.getElementById('btn-stam').onclick = () => { player.stamina = parseInt(document.getElementById('dbg-stam').value); staminaEl.innerText = Math.floor(player.stamina); };
@@ -220,24 +270,135 @@
 
         function updateInventories() {
             const pSlots = playerInvGrid.children;
-            for(let i = 0; i < 20; i++) { pSlots[i].innerText = inventory[i] ? inventory[i].emoji : ''; }
-            if (activeContainer) { const cSlots = containerInvGrid.children; for(let i = 0; i < 10; i++) { cSlots[i].innerText = activeContainer.items[i] ? activeContainer.items[i].emoji : ''; } }
+            for(let i = 0; i < 20; i++) { 
+                let item = inventory[i];
+                pSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+            }
+            if (activeContainer) { 
+                const cSlots = containerInvGrid.children; 
+                for(let i = 0; i < 10; i++) { 
+                    let item = activeContainer.items[i];
+                    cSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+                } 
+            }
+            updateCraftingUI();
+        }
+
+        function updateCraftingUI() {
+            craftingList.innerHTML = '';
+            let resourceCounts = {};
+            for (let item of inventory) {
+                if (item && (item.type === 'resource' || item.type === 'building')) {
+                    resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
+                }
+            }
+
+            RECIPES.forEach((recipe, index) => {
+                let canMake = true;
+                let reqTextHtml = [];
+                for (let reqEmoji in recipe.req) {
+                    let reqAmt = recipe.req[reqEmoji];
+                    let hasAmt = resourceCounts[reqEmoji] || 0;
+                    let color = hasAmt >= reqAmt ? '#8f8' : '#f88';
+                    reqTextHtml.push(`<span style="color:${color};">${hasAmt}/${reqAmt} ${reqEmoji}</span>`);
+                    if (hasAmt < reqAmt) canMake = false;
+                }
+                
+                let btn = document.createElement('button');
+                btn.className = 'craft-btn';
+                let hasSpace = inventory.some(i => i === null) || inventory.some(i => i && i.emoji === recipe.result.emoji);
+                if (!hasSpace) canMake = false;
+
+                btn.disabled = !canMake;
+                btn.innerHTML = `
+                    <div class="craft-title">${recipe.result.emoji} ${recipe.name}</div>
+                    <div class="craft-reqs">${reqTextHtml.join(' &nbsp;|&nbsp; ')}</div>
+                `;
+                if (canMake) btn.onclick = () => craftRecipe(index);
+                craftingList.appendChild(btn);
+            });
+        }
+
+        function craftRecipe(index) {
+            let recipe = RECIPES[index];
+            for (let reqEmoji in recipe.req) {
+                let needed = recipe.req[reqEmoji];
+                for (let i = 0; i < inventory.length; i++) {
+                    let item = inventory[i];
+                    if (item && item.emoji === reqEmoji) {
+                        if (item.count > needed) {
+                            item.count -= needed; needed = 0; break;
+                        } else {
+                            needed -= item.count; inventory[i] = null;
+                        }
+                    }
+                }
+            }
+            giveItem({ ...recipe.result });
+        }
+
+        function giveItem(itemData) {
+            if (itemData.type === 'resource' || itemData.type === 'building') {
+                let existing = inventory.find(i => i && i.emoji === itemData.emoji);
+                if (existing) {
+                    existing.count = (existing.count || 1) + (itemData.count || 1);
+                    updateInventories(); return;
+                }
+            }
+            let emptyIndex = inventory.findIndex(x => x === null);
+            if (emptyIndex !== -1) {
+                itemData.count = itemData.count || 1;
+                inventory[emptyIndex] = { ...itemData }; 
+                updateInventories();
+            }
         }
 
         invScreen.addEventListener('mousedown', (e) => {
-            if (!e.target.classList.contains('inv-slot')) return;
-            let index = parseInt(e.target.dataset.index), type = e.target.dataset.type, isRightClick = e.button === 2;
+            if (!e.target.closest('.inv-slot')) return;
+            let slotEl = e.target.closest('.inv-slot');
+            let index = parseInt(slotEl.dataset.index), type = slotEl.dataset.type, isRightClick = e.button === 2;
             if (type === 'player') {
                 let item = inventory[index]; if (!item) return;
+                
                 if (isRightClick) { 
-                    if (item.type === 'heal' && (player.hp < 100 || godMode)) { player.hp = godMode ? player.hp : Math.min(100, player.hp + item.amount); hpEl.innerText = player.hp; inventory[index] = null; healFlash.style.background = 'lime'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); } 
-                    else if (item.type === 'food' && (player.food < 100 || godMode)) { player.food = godMode ? player.food : Math.min(100, player.food + item.amount); foodEl.innerText = player.food; inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); }
+                    if (item.type === 'heal' && (player.hp < 100 || godMode)) { 
+                        player.hp = godMode ? player.hp : Math.min(100, player.hp + item.amount); hpEl.innerText = player.hp; 
+                        inventory[index] = null; healFlash.style.background = 'lime'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
+                    } 
+                    else if (item.type === 'food' && (player.food < 100 || godMode)) { 
+                        player.food = godMode ? player.food : Math.min(100, player.food + item.amount); foodEl.innerText = player.food; 
+                        inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
+                    }
+                    else if (item.type === 'building') {
+                        let sx = player.x + Math.cos(player.angle) * 5.0;
+                        let sy = player.y + Math.sin(player.angle) * 5.0;
+                        let sz = getElevation(sx, sy);
+                        
+                        let isTent = item.emoji === '⛺';
+                        buildings.push({ 
+                            x: sx, y: sy, z: sz, emoji: item.emoji, 
+                            rooms: item.rooms, floors: item.floors, 
+                            roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 
+                        });
+
+                        item.count--;
+                        if (item.count <= 0) inventory[index] = null;
+                        updateInventories();
+                    }
                 } else if (activeContainer) { 
                     let emptyIndex = activeContainer.items.findIndex(x => x === null);
                     if (emptyIndex !== -1) { activeContainer.items[emptyIndex] = item; inventory[index] = null; updateInventories(); }
                 }
             } else if (type === 'container' && !isRightClick) {
                 let item = activeContainer.items[index]; if (!item) return;
+                if (item.type === 'resource' || item.type === 'building') {
+                    let existing = inventory.find(i => i && i.emoji === item.emoji);
+                    if (existing) {
+                        existing.count = (existing.count || 1) + (item.count || 1);
+                        activeContainer.items[index] = null;
+                        updateInventories(); return;
+                    }
+                }
                 let emptyIndex = inventory.findIndex(x => x === null);
                 if (emptyIndex !== -1) { inventory[emptyIndex] = item; activeContainer.items[index] = null; updateInventories(); }
             }
@@ -247,15 +408,29 @@
         function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
         window.addEventListener('resize', resize); resize();
 
-        const WEAPONS = { 1: { name: "Pistol", fireRate: 15, spread: 0.005, speed: 2.5, count: 1, dmg: 3 }, 2: { name: "SMG", fireRate: 4, spread: 0.04, speed: 3.0, count: 1, dmg: 1 }, 3: { name: "Shotgun", fireRate: 40, spread: 0.08, speed: 2.2, count: 12, dmg: 2 } };
+        const WEAPONS = { 
+            1: { name: "Pistol", fireRate: 15, spread: 0.005, speed: 2.5, count: 1, dmg: 3 }, 
+            2: { name: "SMG", fireRate: 4, spread: 0.04, speed: 3.0, count: 1, dmg: 1 }, 
+            3: { name: "Shotgun", fireRate: 40, spread: 0.08, speed: 2.2, count: 12, dmg: 2 },
+            4: { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe' },
+            5: { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe' }
+        };
+
         const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };
-        const ANIMAL_TYPES = [ { emoji: '🐄', hp: 6, drop: { type: 'food', emoji: '🍔', amount: 30 }, size: 1.5, speed: 0.015 }, { emoji: '🐖', hp: 4, drop: { type: 'food', emoji: '🥓', amount: 20 }, size: 1.2, speed: 0.025 }, { emoji: '🐓', hp: 2, drop: { type: 'food', emoji: '🍗', amount: 15 }, size: 0.8, speed: 0.035 } ];
+        
+        const ANIMAL_TYPES = [ 
+            { emoji: '🐄', hp: 6, drop: { type: 'food', emoji: '🍔', amount: 30 }, size: 1.5, speed: 0.015 }, 
+            { emoji: '🐖', hp: 4, drop: { type: 'food', emoji: '🥓', amount: 20 }, size: 1.2, speed: 0.025 }, 
+            { emoji: '🐓', hp: 2, drop: { type: 'food', emoji: '🍗', amount: 15 }, size: 0.8, speed: 0.035 },
+            { emoji: '🐑', hp: 4, drop: { type: 'resource', emoji: '🧶', count: 1 }, size: 1.1, speed: 0.018 }
+        ];
+        
         const TREE_EMOJIS = new Set(['🌲', '🌳', '🪾']), FLOWER_EMOJIS = new Set(['🌻', '🌹', '🌷', '🌼', '💀']);
 
         let currentWeapon = 1, score = 0, isPaused = true, tickCounter = 0;
         let isMouseDown = false, isZooming = false, currentZoom = 0.8, fireCooldown = 0, keys = {};
         const projectiles = [], enemies = [], containers = [], animals = [], buildings = [];
-        const player = { x: 0, y: 0, z: 0, vz: 0, angle: 0, pitch: 0, speed: 0.22, baseHeight: 1.2, hp: 100, food: 100, stamina: 100 };
+        const player = { x: 0, y: 0, z: 0, vz: 0, angle: 0, pitch: 0, speed: 0.11, baseHeight: 1.2, hp: 100, food: 100, stamina: 100 };
 
         // --- INTERIOR STATE ---
         let gameState = 'overworld'; 
@@ -312,7 +487,10 @@
             for (let x = cx * MAP_CHUNK_SIZE; x < (cx + 1) * MAP_CHUNK_SIZE; x++) {
                 for (let y = cy * MAP_CHUNK_SIZE; y < (cy + 1) * MAP_CHUNK_SIZE; y++) {
                     let info = getEntityBaseInfo(x, y);
-                    if (info) chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: getElevation(x + 0.5, y + 0.5) - info.plantOffset });
+                    let entKey = `${x},${y}`;
+                    if (info && !destroyedEntities.has(entKey)) { 
+                        chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: getElevation(x + 0.5, y + 0.5) - info.plantOffset, hp: 4, entKey: entKey }); 
+                    }
                 }
             }
             let chunkHash = getHash(cx, cy, 5), cx_offset = cx * MAP_CHUNK_SIZE + MAP_CHUNK_SIZE / 2, cy_offset = cy * MAP_CHUNK_SIZE + MAP_CHUNK_SIZE / 2;
@@ -326,7 +504,6 @@
             mapChunks.set(key, chunk); return chunk;
         }
 
-        // --- NEW POLYGON INTERIOR SYSTEM ---
         window.spawnBuilding = function() {
             let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1;
             let floors = parseInt(document.getElementById('dbg-b-floors').value) || 1;
@@ -337,29 +514,32 @@
         function enterBuilding(b) {
             savedOverworld = { x: player.x, y: player.y, z: player.z, angle: player.angle, pitch: player.pitch };
             activeBuilding = b; activeFloor = 0; gameState = 'interior'; projectiles.length = 0;
-            // Spawn perfectly inside the middle of the first room, facing back.
-            player.x = b.roomW / 2; player.y = 2.5; player.z = player.baseHeight; 
-            player.angle = Math.PI / 2; player.pitch = 0;
-            player.vz = 0; // reset momentum
+            
+            if (b.emoji === '⛺') {
+                player.x = 2.0; player.y = b.roomH / 2; player.z = player.baseHeight; 
+                player.angle = 0; // face inward along the ridge
+            } else {
+                player.x = b.roomW / 2; player.y = 2.5; player.z = player.baseHeight; 
+                player.angle = Math.PI / 2; // face backward
+            }
+            player.pitch = 0; player.vz = 0;
         }
 
         function exitBuilding() {
             player.x = savedOverworld.x; player.y = savedOverworld.y; player.z = savedOverworld.z; 
             player.angle = savedOverworld.angle; player.pitch = savedOverworld.pitch;
-            player.vz = 0; // reset momentum
+            player.vz = 0; 
             gameState = 'overworld'; activeBuilding = null; projectiles.length = 0;
         }
 
         function changeFloor(dir) {
             activeFloor += dir;
-            // Always spawn near the stairs when changing floors
             player.x = activeBuilding.rooms * activeBuilding.roomW - 1.5; 
             player.y = activeBuilding.roomH - 3.5; 
             player.angle = -Math.PI/2; 
         }
 
         function closeStairMenu() { isStairMenuOpen = false; canvas.requestPointerLock(); }
-
         document.getElementById('btn-stair-up').onclick = () => { changeFloor(1); closeStairMenu(); };
         document.getElementById('btn-stair-down').onclick = () => { changeFloor(-1); closeStairMenu(); };
         document.getElementById('btn-stair-cancel').onclick = () => { closeStairMenu(); };
@@ -367,22 +547,34 @@
         function isSolid(x, y) {
             if (gameState === 'interior') {
                 let totalW = activeBuilding.rooms * activeBuilding.roomW, h = activeBuilding.roomH;
+                if (activeBuilding.emoji === '⛺') {
+                    if (x < 0.2 || x > totalW - 0.2 || y < 0.2 || y > h - 0.2) return true;
+                    // Dynamic slanted roof collision logic (narrower as you get further from center Y)
+                    let distFromCenter = Math.abs(y - h/2);
+                    if (distFromCenter > (h/2) - 0.6) return true;
+                    return false;
+                }
                 if (x < 0.2 || x > totalW - 0.2 || y < 0.2 || y > h - 0.2) return true;
                 for(let r = 1; r < activeBuilding.rooms; r++) {
                     let rx = r * activeBuilding.roomW;
-                    if (Math.abs(x - rx) < 0.3 && (y < h/2 - 1.5 || y > h/2 + 1.5)) return true; // Divider walls
+                    if (Math.abs(x - rx) < 0.3 && (y < h/2 - 1.5 || y > h/2 + 1.5)) return true;
                 }
                 return false;
             }
+            let key = `${Math.floor(x)},${Math.floor(y)}`;
+            if (destroyedEntities.has(key)) return false;
             let info = getEntityBaseInfo(Math.floor(x), Math.floor(y)); return info ? info.solid : false;
         }
 
         function getInteriorEntities() {
             let ents = [], b = activeBuilding, totalW = b.rooms * b.roomW;
-            // Safely place door perfectly inside the first room, against the wall
-            if (activeFloor === 0) ents.push({ emoji: '🚪', x: b.roomW / 2, y: 0.5, z: 0.1, size: 2.5, action: 'exit', label: 'Exit to Overworld' });
-            
-            // Only one single stair set per floor in the far right room
+            if (activeFloor === 0) {
+                if (b.emoji === '⛺') {
+                    ents.push({ emoji: '🚪', x: 0.5, y: b.roomH / 2, z: 0.1, size: 2.0, action: 'exit', label: 'Exit Tent' });
+                } else {
+                    ents.push({ emoji: '🚪', x: b.roomW / 2, y: 0.5, z: 0.1, size: 2.5, action: 'exit', label: 'Exit to Overworld' });
+                }
+            }
             if (b.floors > 1) {
                 let stairLabel = 'Use Stairs';
                 if (activeFloor === 0) stairLabel = 'Go Upstairs';
@@ -394,19 +586,41 @@
 
         function getInteriorWalls() {
             let walls = [], b = activeBuilding, totalW = b.rooms * b.roomW, h = b.roomH;
+            
+            if (b.emoji === '⛺') {
+                let steps = 6; 
+                for(let i=0; i<steps; i++) {
+                    let x1 = (i/steps)*totalW, x2 = ((i+1)/steps)*totalW;
+                    walls.push({
+                        pts: [ {x:x1, y:h/2, z:b.wallH}, {x:x2, y:h/2, z:b.wallH}, {x:x2, y:0, z:0}, {x:x1, y:0, z:0} ],
+                        color: patternArmyGreen
+                    });
+                    walls.push({
+                        pts: [ {x:x2, y:h/2, z:b.wallH}, {x:x1, y:h/2, z:b.wallH}, {x:x1, y:h, z:0}, {x:x2, y:h, z:0} ],
+                        color: patternArmyGreen
+                    });
+                }
+                walls.push({
+                    pts: [ {x:0, y:h/2, z:b.wallH}, {x:0, y:0, z:0}, {x:0, y:h, z:0} ],
+                    color: patternArmyGreenDark
+                });
+                walls.push({
+                    pts: [ {x:totalW, y:h/2, z:b.wallH}, {x:totalW, y:h, z:0}, {x:totalW, y:0, z:0} ],
+                    color: patternArmyGreenDark
+                });
+                return walls;
+            }
+
+            // Standard Rectangular Walls
             function addSegWall(p1x, p1y, p2x, p2y, color) {
                 let dx = p2x - p1x, dy = p2y - p1y, len = Math.hypot(dx, dy), steps = Math.ceil(len / 2);
                 for(let i=0; i<steps; i++) walls.push({ p1: {x: p1x + dx*(i/steps), y: p1y + dy*(i/steps)}, p2: {x: p1x + dx*((i+1)/steps), y: p1y + dy*((i+1)/steps)}, color: color });
             }
-            // Realistic wallpaper / brick red colors
-            addSegWall(0, h, totalW, h, '#9c4a4a');      // Back
-            addSegWall(0, 0, totalW, 0, '#8b3a3a');      // Front
-            addSegWall(0, 0, 0, h, '#7a2a2a');           // Left
-            addSegWall(totalW, 0, totalW, h, '#7a2a2a'); // Right
+            addSegWall(0, h, totalW, h, '#9c4a4a'); addSegWall(0, 0, totalW, 0, '#8b3a3a');
+            addSegWall(0, 0, 0, h, '#7a2a2a'); addSegWall(totalW, 0, totalW, h, '#7a2a2a');
             for(let r = 1; r < b.rooms; r++) {
                 let rx = r * b.roomW;
-                addSegWall(rx, 0, rx, h/2 - 1.5, '#6a1a1a'); 
-                addSegWall(rx, h/2 + 1.5, rx, h, '#6a1a1a');
+                addSegWall(rx, 0, rx, h/2 - 1.5, '#6a1a1a'); addSegWall(rx, h/2 + 1.5, rx, h, '#6a1a1a');
             }
             return walls;
         }
@@ -436,21 +650,16 @@
         window.addEventListener('keydown', e => {
             if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
             if (e.key === '1') switchWeapon(1); if (e.key === '2') switchWeapon(2); if (e.key === '3') switchWeapon(3);
+            if (e.key === '4') switchWeapon(4); if (e.key === '5') switchWeapon(5);
             if (e.key.toLowerCase() === 'e') {
                 if (!isInventoryOpen && !isDebugOpen && !isStairMenuOpen && interactTarget) { 
                     if (interactTarget.rooms) enterBuilding(interactTarget);
                     else if (interactTarget.action === 'exit') exitBuilding();
                     else if (interactTarget.action === 'stairs') {
                         if (activeBuilding.floors > 1) {
-                            if (activeFloor === 0) {
-                                changeFloor(1);
-                            } else if (activeFloor === activeBuilding.floors - 1) {
-                                changeFloor(-1);
-                            } else {
-                                isStairMenuOpen = true;
-                                stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`;
-                                document.exitPointerLock();
-                            }
+                            if (activeFloor === 0) changeFloor(1);
+                            else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1);
+                            else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); }
                         }
                     }
                     else { isInventoryOpen = true; activeContainer = interactTarget; updateInventories(); document.exitPointerLock(); }
@@ -464,12 +673,6 @@
         function switchWeapon(id) { currentWeapon = id; weaponEl.innerText = WEAPONS[id].name; fireCooldown = 5; }
         function takeDamage(amt) { if (godMode) return; player.hp -= amt; hpEl.innerText = player.hp; damageFlash.style.opacity = '0.5'; setTimeout(() => damageFlash.style.opacity = '0', 100); if (player.hp <= 0) location.reload(); }
 
-        window.spawnDebug = function(type) {
-            let sx = player.x + Math.cos(player.angle) * 2, sy = player.y + Math.sin(player.angle) * 2, sz = getElevation(sx, sy);
-            if (type === '📦') containers.push({ x: sx, y: sy, z: sz, emoji: type, size: 0.9, items: new Array(10).fill(null) });
-            else { let def = ANIMAL_TYPES.find(a => a.emoji === type); if (def) animals.push({ x: sx, y: sy, z: sz, emoji: def.emoji, size: def.size, hp: def.hp, speed: def.speed, dead: false, drop: def.drop, moveAngle: 0, moveTimer: 0 }); }
-        }
-
         function update() {
             if (isPaused) return;
             if (!godMode) { tickCounter++; if (tickCounter % 120 === 0) { if (player.food > 0) { player.food -= 1; foodEl.innerText = player.food; } else takeDamage(1); } } 
@@ -477,7 +680,6 @@
 
             currentZoom += ((isZooming ? 1.8 : 0.8) - currentZoom) * 0.15;
             
-            // --- MOVEMENT & SPRINTING ---
             let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
             let isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
             
@@ -497,28 +699,19 @@
             let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
             if (noclip || !isSolid(nx, ny)) { player.x = nx; player.y = ny; }
 
-            // --- Z-AXIS PHYSICS / JUMPING / FLIGHT ---
             let floorZ = (gameState === 'overworld') ? getElevation(player.x, player.y) : 0;
             let groundZ = floorZ + player.baseHeight;
 
             if (flightMode) {
-                player.vz = 0; // disable gravity
+                player.vz = 0; 
                 if (keys['Space']) player.z += player.speed * speedMult * 1.5;
                 if (keys['ShiftLeft'] || keys['ControlLeft']) player.z -= player.speed * speedMult * 1.5;
             } else {
-                player.vz -= 0.02; // apply gravity
-                player.z += player.vz;
-
+                player.vz -= 0.02; player.z += player.vz;
                 if (player.z <= groundZ) {
-                    player.vz = 0;
-                    // Smoothly adapt to terrain elevation when walking (climbing hills/stairs)
-                    player.z += (groundZ - player.z) * 0.3; 
+                    player.vz = 0; player.z += (groundZ - player.z) * 0.3; 
                     if (Math.abs(player.z - groundZ) < 0.01) player.z = groundZ;
-                    
-                    if (keys['Space']) {
-                        player.vz = jumpPower; // Jump impulse
-                        keys['Space'] = false; // Consume Space input to avoid immediate multi-bouncing
-                    }
+                    if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
                 }
             }
             
@@ -557,7 +750,7 @@
             } else { for (let e of getInteriorEntities()) checkTarget(e, 3.0); }
 
             if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
-                if (interactTarget.rooms) interactTooltip.innerText = "[E] Enter Building";
+                if (interactTarget.rooms) interactTooltip.innerText = "[E] Enter " + interactTarget.emoji;
                 else if (interactTarget.label) interactTooltip.innerText = "[E] " + interactTarget.label;
                 else interactTooltip.innerText = "[E] Loot";
                 interactTooltip.style.display = 'block';
@@ -566,8 +759,67 @@
             if (fireCooldown > 0) fireCooldown--;
             if (isMouseDown && fireCooldown <= 0) {
                 const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom), w = WEAPONS[currentWeapon];
-                for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: player.z - 0.2, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
-                fireCooldown = w.fireRate;
+                
+                if (w.isMelee) {
+                    let hitTarget = null; let cDist = w.range;
+                    for (let e of enemies) {
+                        let d = Math.hypot(player.x - e.x, player.y - e.y);
+                        if (d < cDist) {
+                            let angleTo = Math.atan2(e.y - player.y, e.x - player.x), angleDiff = Math.abs(Math.atan2(Math.sin(player.angle - angleTo), Math.cos(player.angle - angleTo)));
+                            if (angleDiff < 0.6) { cDist = d; hitTarget = { obj: e, type: 'enemy' }; }
+                        }
+                    }
+                    for (let a of animals) {
+                        if(a.dead) continue;
+                        let d = Math.hypot(player.x - a.x, player.y - a.y);
+                        if (d < cDist) {
+                            let angleTo = Math.atan2(a.y - player.y, a.x - player.x), angleDiff = Math.abs(Math.atan2(Math.sin(player.angle - angleTo), Math.cos(player.angle - angleTo)));
+                            if (angleDiff < 0.6) { cDist = d; hitTarget = { obj: a, type: 'animal' }; }
+                        }
+                    }
+                    let pCx = Math.floor(player.x / MAP_CHUNK_SIZE), pCy = Math.floor(player.y / MAP_CHUNK_SIZE);
+                    for(let cx = pCx - 1; cx <= pCx + 1; cx++) {
+                        for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
+                            let chunk = getMapChunk(cx, cy);
+                            for(let i=0; i<chunk.length; i++) {
+                                let cObj = chunk[i];
+                                if (cObj.hp !== undefined) {
+                                    let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy);
+                                    if (d < cDist) {
+                                        let angleTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x), angleDiff = Math.abs(Math.atan2(Math.sin(player.angle - angleTo), Math.cos(player.angle - angleTo)));
+                                        if (angleDiff < 0.6) { cDist = d; hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i }; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (hitTarget) {
+                        if (hitTarget.type === 'enemy') {
+                            hitTarget.obj.hp -= w.dmg;
+                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += 100; scoreEl.innerText = score; }
+                        } else if (hitTarget.type === 'animal') {
+                            hitTarget.obj.hp -= w.dmg;
+                            if (hitTarget.obj.hp <= 0) {
+                                hitTarget.obj.dead = true; score += 25; scoreEl.innerText = score; 
+                                hitTarget.obj.items = new Array(10).fill(null); 
+                                for(let k=0; k<Math.floor(Math.random()*3)+1; k++) hitTarget.obj.items[k] = { ...hitTarget.obj.drop }; 
+                            }
+                        } else if (hitTarget.type === 'static') {
+                            let sObj = hitTarget.obj, isTree = TREE_EMOJIS.has(sObj.emoji), isRock = sObj.emoji === '🪨', validHit = false;
+                            if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; }
+                            else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
+                            if (validHit) {
+                                sObj.hp -= w.dmg;
+                                if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); }
+                            }
+                        }
+                    }
+                    fireCooldown = w.fireRate;
+                } else {
+                    for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: player.z - 0.2, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
+                    fireCooldown = w.fireRate;
+                }
             }
 
             for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -617,13 +869,27 @@
                 for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'animal', emoji: e.emoji, size: e.size, rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1, targeted: e === interactTarget, dead: e.dead }); }
                 for (let b of buildings) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: b.emoji, size: 4.5, rX: dx*-dirY+dy*dirX, rZ, h: b.z - 0.2, targeted: b === interactTarget }); }
             } else {
-                ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, 0, canvas.width, hY);
-                ctx.fillStyle = '#5c4033'; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
+                if (activeBuilding.emoji === '⛺') {
+                    ctx.fillStyle = '#0a0d04'; // dark sky / night gap 
+                    ctx.fillRect(0, 0, canvas.width, hY);
+                    ctx.fillStyle = patternArmyGreenFloor; 
+                    ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
+                } else {
+                    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, 0, canvas.width, hY);
+                    ctx.fillStyle = '#5c4033'; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
+                }
 
                 for (let e of getInteriorEntities()) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: e.emoji, size: e.size, rX: dx*-dirY+dy*dirX, rZ, h: e.z, targeted: e.action === interactTarget?.action }); }
                 for (let w of getInteriorWalls()) {
-                    let cx = (w.p1.x + w.p2.x)/2, cy = (w.p1.y + w.p2.y)/2, dx = cx - player.x, dy = cy - player.y, rZ = dx * dirX + dy * dirY;
-                    if (rZ > -2 && rZ < VIEW_DIST) visible.push({ type: 'wall', p1: w.p1, p2: w.p2, color: w.color, rX: dx*-dirY+dy*dirX, rZ });
+                    let cx, cy;
+                    if (w.pts) {
+                        cx = w.pts.reduce((sum, p) => sum + p.x, 0) / w.pts.length;
+                        cy = w.pts.reduce((sum, p) => sum + p.y, 0) / w.pts.length;
+                    } else {
+                        cx = (w.p1.x + w.p2.x)/2; cy = (w.p1.y + w.p2.y)/2;
+                    }
+                    let dx = cx - player.x, dy = cy - player.y, rZ = dx * dirX + dy * dirY;
+                    if (rZ > -2 && rZ < VIEW_DIST) visible.push({ type: 'wall', wallObj: w, rX: dx*-dirY+dy*dirX, rZ });
                 }
             }
 
@@ -638,17 +904,36 @@
                 while(cur < visible.length && visible[cur].rZ >= z) {
                     let o = visible[cur++];
                     if (o.type === 'wall') {
-                        let pts = [ {x: o.p1.x, y: o.p1.y, z: activeBuilding.wallH}, {x: o.p2.x, y: o.p2.y, z: activeBuilding.wallH}, {x: o.p2.x, y: o.p2.y, z: 0}, {x: o.p1.x, y: o.p1.y, z: 0} ], camPts = [];
-                        for (let i=0; i<4; i++) { let dx = pts[i].x - player.x, dy = pts[i].y - player.y; camPts.push({ rX: dx * -dirY + dy * dirX, rZ: dx * dirX + dy * dirY, z: pts[i].z }); }
-                        let clipped = [];
-                        for (let i=0; i<4; i++) {
-                            let p1 = camPts[i], p2 = camPts[(i+1)%4];
-                            if (p1.rZ >= 0.1) clipped.push(p1);
-                            if ((p1.rZ >= 0.1) !== (p2.rZ >= 0.1)) { let t = (0.1 - p1.rZ) / (p2.rZ - p1.rZ); clipped.push({ rX: p1.rX + t * (p2.rX - p1.rX), rZ: 0.1, z: p1.z + t * (p2.z - p1.z) }); }
+                        let w = o.wallObj;
+                        let pts = w.pts ? w.pts : [ 
+                            {x: w.p1.x, y: w.p1.y, z: activeBuilding.wallH}, 
+                            {x: w.p2.x, y: w.p2.y, z: activeBuilding.wallH}, 
+                            {x: w.p2.x, y: w.p2.y, z: 0}, 
+                            {x: w.p1.x, y: w.p1.y, z: 0} 
+                        ];
+                        
+                        let camPts = [];
+                        for (let i=0; i<pts.length; i++) { 
+                            let dx = pts[i].x - player.x, dy = pts[i].y - player.y; 
+                            camPts.push({ rX: dx * -dirY + dy * dirX, rZ: dx * dirX + dy * dirY, z: pts[i].z }); 
                         }
+                        
+                        let clipped = [];
+                        for (let i=0; i<pts.length; i++) {
+                            let p1 = camPts[i], p2 = camPts[(i+1)%pts.length];
+                            if (p1.rZ >= 0.1) clipped.push(p1);
+                            if ((p1.rZ >= 0.1) !== (p2.rZ >= 0.1)) { 
+                                let t = (0.1 - p1.rZ) / (p2.rZ - p1.rZ); 
+                                clipped.push({ rX: p1.rX + t * (p2.rX - p1.rX), rZ: 0.1, z: p1.z + t * (p2.z - p1.z) }); 
+                            }
+                        }
+                        
                         if (clipped.length >= 3) {
-                            ctx.fillStyle = o.color; ctx.strokeStyle = '#220000'; ctx.lineWidth = 1; ctx.beginPath();
-                            for (let i=0; i<clipped.length; i++) { let sx = canvas.width/2 + (clipped[i].rX/clipped[i].rZ)*fov, sy = hY + ((player.z - clipped[i].z)/clipped[i].rZ)*fov; if (i===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy); }
+                            ctx.fillStyle = w.color; ctx.strokeStyle = w.pts ? '#1a2410' : '#220000'; ctx.lineWidth = 1; ctx.beginPath();
+                            for (let i=0; i<clipped.length; i++) { 
+                                let sx = canvas.width/2 + (clipped[i].rX/clipped[i].rZ)*fov, sy = hY + ((player.z - clipped[i].z)/clipped[i].rZ)*fov; 
+                                if (i===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy); 
+                            }
                             ctx.closePath(); ctx.fill(); ctx.stroke();
                         }
                     } else {
