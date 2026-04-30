@@ -88,7 +88,7 @@
         .craft-reqs { font-size: 13px; color: #aaa; display: flex; gap: 8px; flex-wrap: wrap;}
 
         #debug-menu {
-            position: absolute; top: 20px; right: 20px; width: 220px;
+            position: absolute; top: 20px; right: 20px; width: 240px;
             display: none; z-index: 40; font-size: 14px;
             max-height: 90vh; overflow-y: auto;
         }
@@ -148,6 +148,15 @@
 
     <div id="debug-menu" class="panel">
         <h2>Debug Settings</h2>
+        <div class="dbg-row">
+            <label>Time (0-24):</label>
+            <input type="range" id="dbg-time" value="12" min="0" max="24" step="0.1" style="width: 70px;">
+            <span id="dbg-time-val" style="width: 30px; text-align: right;">12.0</span>
+        </div>
+        <div class="dbg-row">
+            <label>Time Spd x:</label>
+            <input type="number" id="dbg-time-speed" value="1" min="0" max="1000">
+        </div>
         <div class="dbg-row">
             <label>Set HP:</label>
             <input type="number" id="dbg-hp" value="100">
@@ -220,6 +229,12 @@
         const interactTooltip = document.getElementById('interact-tooltip'), debugMenu = document.getElementById('debug-menu');
         
         const stairMenu = document.getElementById('stair-menu'), stairMenuTitle = document.getElementById('stair-menu-title');
+        
+        const dbgTimeEl = document.getElementById('dbg-time'), dbgTimeValEl = document.getElementById('dbg-time-val');
+        const dbgTimeSpeedEl = document.getElementById('dbg-time-speed');
+
+        let gameTime = 12.0;
+        let timeSpeed = 1.0;
 
         // Texture Generators for Tent Fuzz / Grain
         function createNoisePattern(baseColor, noiseAlphaDark, noiseAlphaLight) {
@@ -254,6 +269,8 @@
             }
         ];
 
+        dbgTimeEl.oninput = e => { gameTime = parseFloat(e.target.value); dbgTimeValEl.innerText = gameTime.toFixed(1); };
+        dbgTimeSpeedEl.oninput = e => { timeSpeed = parseFloat(e.target.value) || 1.0; };
         document.getElementById('btn-hp').onclick = () => { player.hp = parseInt(document.getElementById('dbg-hp').value); hpEl.innerText = player.hp; };
         document.getElementById('btn-stam').onclick = () => { player.stamina = parseInt(document.getElementById('dbg-stam').value); staminaEl.innerText = Math.floor(player.stamina); };
         document.getElementById('btn-food').onclick = () => { player.food = parseInt(document.getElementById('dbg-food').value); foodEl.innerText = player.food; };
@@ -264,6 +281,35 @@
         document.getElementById('dbg-sprint').onchange = e => sprintMult = parseFloat(e.target.value) || 1.5;
         document.getElementById('dbg-jump').onchange = e => jumpPower = parseFloat(e.target.value) || 0.2;
         document.getElementById('dbg-flight').onchange = e => flightMode = e.target.checked;
+
+        function getSkyColor(t) {
+            const stops = [
+                [0, 5, 5, 20],      
+                [5, 5, 5, 30],      
+                [6.5, 255, 120, 80],
+                [8, 135, 206, 235], 
+                [18, 135, 206, 235],
+                [19.5, 255, 100, 50],
+                [21, 5, 5, 20],     
+                [24, 5, 5, 20]      
+            ];
+            for (let i = 0; i < stops.length - 1; i++) {
+                if (t >= stops[i][0] && t <= stops[i+1][0]) {
+                    let s1 = stops[i], s2 = stops[i+1];
+                    let ratio = (t - s1[0]) / (s2[0] - s1[0]);
+                    return { r: s1[1] + (s2[1] - s1[1]) * ratio, g: s1[2] + (s2[2] - s1[2]) * ratio, b: s1[3] + (s2[3] - s1[3]) * ratio };
+                }
+            }
+            return {r: 135, g: 206, b: 235};
+        }
+
+        function getAmbientLight(t) {
+            if (t < 5 || t > 21) return 0.2;
+            if (t >= 8 && t <= 18) return 1.0;
+            if (t >= 5 && t < 8) return 0.2 + 0.8 * ((t - 5) / 3);
+            if (t > 18 && t <= 21) return 1.0 - 0.8 * ((t - 18) / 3);
+            return 1.0;
+        }
 
         for(let i = 0; i < 20; i++) { let slot = document.createElement('div'); slot.className = 'inv-slot'; slot.dataset.index = i; slot.dataset.type = 'player'; playerInvGrid.appendChild(slot); }
         for(let i = 0; i < 10; i++) { let slot = document.createElement('div'); slot.className = 'inv-slot'; slot.dataset.index = i; slot.dataset.type = 'container'; containerInvGrid.appendChild(slot); }
@@ -675,6 +721,17 @@
 
         function update() {
             if (isPaused) return;
+
+            // Update Time (24 game hours over 15 real minutes -> 54000 ticks at 60 FPS)
+            // Multiplied by the user's custom time speed
+            gameTime += (24 / 54000) * timeSpeed;
+            if (gameTime >= 24) gameTime %= 24; // Ensure it smoothly loops back to 0
+            
+            if (isDebugOpen && tickCounter % 10 === 0) {
+                dbgTimeEl.value = gameTime;
+                dbgTimeValEl.innerText = gameTime.toFixed(1);
+            }
+
             if (!godMode) { tickCounter++; if (tickCounter % 120 === 0) { if (player.food > 0) { player.food -= 1; foodEl.innerText = player.food; } else takeDamage(1); } } 
             else { hpEl.innerText = player.hp; foodEl.innerText = player.food; }
 
@@ -851,8 +908,13 @@
             const pX = -dirY * 0.8, pY = dirX * 0.8;
             visible.length = 0;
 
+            let sky = getSkyColor(gameTime);
+            let ambient = getAmbientLight(gameTime);
+
             if (gameState === 'overworld') {
-                ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = `rgb(${sky.r|0}, ${sky.g|0}, ${sky.b|0})`; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
                 let pCx = Math.floor(player.x / MAP_CHUNK_SIZE), pCy = Math.floor(player.y / MAP_CHUNK_SIZE), chunkRadius = Math.ceil(VIEW_DIST / MAP_CHUNK_SIZE);
                 for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
                     for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
@@ -901,6 +963,9 @@
             for (let z = VIEW_DIST; z > 0.1; ) {
                 let zStep = z > 40 ? 1.5 : (z > 20 ? 0.8 : (z > 8 ? 0.4 : 0.2));
                 
+                let doFilter = ambient < 1.0 && gameState === 'overworld';
+                if (doFilter) ctx.filter = `brightness(${ambient})`;
+
                 while(cur < visible.length && visible[cur].rZ >= z) {
                     let o = visible[cur++];
                     if (o.type === 'wall') {
@@ -953,7 +1018,8 @@
                         } else { ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/o.rZ), 0, 7); ctx.fill(); }
                     }
                 }
-                
+                if (doFilter) ctx.filter = 'none';
+
                 if (gameState === 'overworld') {
                     let sxStep = z > 30 ? 30 : (z > 15 ? 20 : 10); ctx.beginPath(); let started = false, avgH = 0, ptsCount = 0;
                     for (let sx = -sxStep; sx <= canvas.width+sxStep; sx += sxStep) {
@@ -967,7 +1033,9 @@
                     let baseG = Math.min(220, Math.max(30, 90 + avgH * 14)) * (1 - biomeBlend) + Math.min(255, Math.max(120, 170 + avgH * 12)) * biomeBlend;
                     let baseB = 30 * (1 - biomeBlend) + Math.min(255, Math.max(80, 110 + avgH * 12)) * biomeBlend;
                     if (Math.floor(z * 2.5) % 2 === 0) { baseR*=0.92; baseG*=0.92; baseB*=0.92; } let fog = Math.min(1, z/VIEW_DIST);
-                    ctx.fillStyle = 'rgb('+((baseR*(1-fog)+135*fog)|0)+','+((baseG*(1-fog)+206*fog)|0)+','+((baseB*(1-fog)+235*fog)|0)+')'; ctx.fill(); 
+                    
+                    baseR *= ambient; baseG *= ambient; baseB *= ambient;
+                    ctx.fillStyle = 'rgb('+((baseR*(1-fog)+sky.r*fog)|0)+','+((baseG*(1-fog)+sky.g*fog)|0)+','+((baseB*(1-fog)+sky.b*fog)|0)+')'; ctx.fill(); 
                 }
                 z -= zStep;
             }
