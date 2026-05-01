@@ -565,6 +565,20 @@
             mapChunks.set(key, chunk); return chunk;
         }
 
+        // CCD Helper Function for Fast Projectiles
+        function checkSegCyl(px, py, pz, cx, cy, cz, ex, ey, ez, esize, rad) {
+            let dx = cx - px, dy = cy - py;
+            let len2 = dx*dx + dy*dy;
+            let t = 0;
+            if (len2 > 0) t = Math.max(0, Math.min(1, ((ex - px) * dx + (ey - py) * dy) / len2));
+            let closeX = px + t * dx, closeY = py + t * dy;
+            if (Math.hypot(closeX - ex, closeY - ey) < rad) {
+                let closeZ = pz + t * (cz - pz);
+                if (closeZ > ez && closeZ < ez + esize) return closeZ;
+            }
+            return false;
+        }
+
         function addDamageText(x, y, z, amt) {
             if(!showDebugInfo) return;
             damageTexts.push({ x: x + (Math.random()-0.5)*0.5, y: y + (Math.random()-0.5)*0.5, z: z, amt: amt, life: 60 });
@@ -846,8 +860,11 @@
                 let pxC = Math.floor(player.x / MAP_CHUNK_SIZE), pyC = Math.floor(player.y / MAP_CHUNK_SIZE);
                 for(let x=pxC-2; x<=pxC+2; x++) for(let y=pyC-2; y<=pyC+2; y++) getMapChunk(x,y);
 
-                // NATURAL SPAWNING LOGIC
-                if (spawnEnemiesToggle && enemies.length < 35 && Math.random() < 0.015) { 
+                // NATURAL SPAWNING LOGIC (Time-dependent)
+                let isNight = gameTime < 6 || gameTime >= 19;
+                let spawnChance = isNight ? 0.001 : 0.0002; // 0.0002 at 60fps = 1 trigger every ~83 seconds
+
+                if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
                     let angle = Math.random() * Math.PI * 2;
                     let dist = 25 + Math.random() * 15;
                     let ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
@@ -861,12 +878,12 @@
                             let clusterSize = 1;
                             if (biome < 0.35) clusterSize = Math.floor(Math.random() * 3) + 3; // Forest: 3-5
                             else if (biome < 0.65) clusterSize = Math.floor(Math.random() * 3) + 1; // Plains: 1-3
-                            else clusterSize = Math.floor(Math.random() * 2) + 1; // Desert: 1-2
+                            else clusterSize = 1; // Desert: 1
 
                             for (let k = 0; k < clusterSize; k++) {
                                 let zx = ex + (Math.random() - 0.5) * 4;
                                 let zy = ey + (Math.random() - 0.5) * 4;
-                                if (!isSolid(zx, zy) && enemies.length < 35) {
+                                if (!isSolid(zx, zy) && enemies.length < 20) {
                                     enemies.push({ type: 'zombie', x: zx, y: zy, z: getElevation(zx, zy), hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 });
                                 }
                             }
@@ -1018,14 +1035,24 @@
             }
 
             for (let i = projectiles.length - 1; i >= 0; i--) {
-                let p = projectiles[i]; p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--;
+                let p = projectiles[i]; 
+                let prevX = p.x, prevY = p.y, prevZ = p.z; // Track previous position for CCD
+                
+                p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--;
                 let hit = (p.z < (gameState==='overworld'?getElevation(p.x, p.y):0) || isSolid(p.x, p.y));
+                
                 if (p.owner === 'player' && gameState === 'overworld') {
                     for (let ei = enemies.length - 1; ei >= 0; ei--) { 
                         let e = enemies[ei];
-                        if (e.type === 'experimental' || e.type === 'zombie') {
-                            if (Math.hypot(p.x-e.x, p.y-e.y) < 0.4 && p.z > e.z && p.z < e.z+e.size) {
-                                let relZ = p.z - e.z; let mult = 1.0;
+                        let isLocational = (e.type === 'experimental' || e.type === 'zombie');
+                        let rad = isLocational ? 0.4 : 0.6;
+                        
+                        // Continuous Collision Detection Check
+                        let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, e.x, e.y, e.z, e.size, rad);
+                        
+                        if (hitZ !== false) {
+                            if (isLocational) {
+                                let relZ = hitZ - e.z; let mult = 1.0;
                                 if (relZ > e.size * 0.88) mult = 2.0;       // Head (top 12%)
                                 else if (relZ > e.size * 0.72) mult = 1.2;  // Upper Chest
                                 else if (relZ > e.size * 0.44) mult = 1.0;  // Lower Abdomen
@@ -1033,40 +1060,47 @@
                                 
                                 let totalDmg = p.dmg * mult;
                                 e.hp -= totalDmg; hit = true; e.flash = 5;
-                                addDamageText(e.x, e.y, p.z, totalDmg);
+                                addDamageText(e.x, e.y, hitZ, totalDmg);
 
                                 let bCol = getBloodColor(e.type);
-                                if (bCol) spawnBlood(p.x, p.y, p.z, bCol, mult === 2.0 ? 25 : 8);
+                                if (bCol) spawnBlood(p.x, p.y, hitZ, bCol, mult === 2.0 ? 25 : 8);
 
                                 if (e.hp <= 0) { enemies.splice(ei, 1); score += 150; scoreEl.innerText = score; }
                                 break;
-                            }
-                        } else {
-                            if (Math.hypot(p.x-e.x, p.y-e.y) < 0.6 && p.z > e.z && p.z < e.z+e.size) { 
+                            } else {
                                 e.hp -= p.dmg; hit = true; e.flash = 5;
-                                addDamageText(e.x, e.y, p.z, p.dmg);
+                                addDamageText(e.x, e.y, hitZ, p.dmg);
                                 
                                 let bCol = getBloodColor(e.type || 'alien');
-                                if(bCol) spawnBlood(p.x, p.y, p.z, bCol, 10);
+                                if(bCol) spawnBlood(p.x, p.y, hitZ, bCol, 10);
 
                                 if (e.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; } 
                                 break; 
                             }
                         }
                     }
-                    if (!hit) for (let ai = animals.length - 1; ai >= 0; ai--) { 
-                        let a = animals[ai]; 
-                        if (!a.dead && Math.hypot(p.x-a.x, p.y-a.y) < 0.6 && p.z > a.z && p.z < a.z+a.size) { 
-                            a.hp -= p.dmg; hit = true; 
-                            addDamageText(a.x, a.y, p.z, p.dmg);
-                            let bCol = getBloodColor('animal');
-                            if(bCol) spawnBlood(p.x, p.y, p.z, bCol, 10);
+                    if (!hit) {
+                        for (let ai = animals.length - 1; ai >= 0; ai--) { 
+                            let a = animals[ai]; 
+                            if (!a.dead) {
+                                let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, a.x, a.y, a.z, a.size, 0.6);
+                                if (hitZ !== false) { 
+                                    a.hp -= p.dmg; hit = true; 
+                                    addDamageText(a.x, a.y, hitZ, p.dmg);
+                                    let bCol = getBloodColor('animal');
+                                    if(bCol) spawnBlood(p.x, p.y, hitZ, bCol, 10);
 
-                            if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; } 
-                            break; 
-                        } 
+                                    if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; } 
+                                    break; 
+                                } 
+                            }
+                        }
                     }
-                } else if (Math.hypot(p.x-player.x, p.y-player.y) < 0.5 && p.z > player.z-1.2 && p.z < player.z) { takeDamage(p.dmg); hit = true; }
+                } else if (p.owner === 'enemy') {
+                    // Enemy to Player CCD Check
+                    let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, player.x, player.y, player.z - 1.2, 1.2, 0.4);
+                    if (hitZ !== false) { takeDamage(p.dmg); hit = true; }
+                }
                 if (hit || p.life <= 0) projectiles.splice(i, 1);
             }
         }
