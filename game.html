@@ -197,6 +197,21 @@
             <label><input type="checkbox" id="dbg-flight"> Flight Mode</label>
         </div>
         <hr style="border-color:#555; margin:10px 0;">
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-info"> Show Debug Info</label>
+        </div>
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-spawnenemies" checked> Spawn Enemies</label>
+        </div>
+        <div class="dbg-row">
+            <button onclick="killAll()" style="width:100%; background:#833;">Kill All Enemies</button>
+        </div>
+        <div style="text-align:center; margin-bottom: 5px; margin-top:5px;">Spawn Enemy Type</div>
+        <div class="dbg-row spawn-btns" style="justify-content: center;">
+            <button onclick="spawnEnemy('alien')" title="Alien">👽</button>
+            <button onclick="spawnEnemy('experimental')" title="Experimental Dummy">🧍</button>
+        </div>
+        <hr style="border-color:#555; margin:10px 0;">
         <div style="text-align:center; margin-bottom: 5px;">Spawn Entity</div>
         <div class="dbg-row spawn-btns" style="justify-content: center;">
             <button onclick="spawnDebug('🐄')">🐄</button>
@@ -258,8 +273,10 @@
         let godMode = false, noclip = false, speedMult = 1.0;
         let flightMode = false, jumpPower = 0.2;
         let infiniteStamina = false, sprintMult = 1.5;
+        let spawnEnemiesToggle = true, showDebugInfo = false;
 
         const destroyedEntities = new Set();
+        const damageTexts = [];
 
         const RECIPES = [
             {
@@ -281,17 +298,14 @@
         document.getElementById('dbg-sprint').onchange = e => sprintMult = parseFloat(e.target.value) || 1.5;
         document.getElementById('dbg-jump').onchange = e => jumpPower = parseFloat(e.target.value) || 0.2;
         document.getElementById('dbg-flight').onchange = e => flightMode = e.target.checked;
+        document.getElementById('dbg-spawnenemies').onchange = e => spawnEnemiesToggle = e.target.checked;
+        document.getElementById('dbg-info').onchange = e => showDebugInfo = e.target.checked;
 
         function getSkyColor(t) {
             const stops = [
-                [0, 5, 5, 20],      
-                [5, 5, 5, 30],      
-                [6.5, 255, 120, 80],
-                [8, 135, 206, 235], 
-                [18, 135, 206, 235],
-                [19.5, 255, 100, 50],
-                [21, 5, 5, 20],     
-                [24, 5, 5, 20]      
+                [0, 5, 5, 20], [5, 5, 5, 30], [6.5, 255, 120, 80],
+                [8, 135, 206, 235], [18, 135, 206, 235], [19.5, 255, 100, 50],
+                [21, 5, 5, 20], [24, 5, 5, 20]      
             ];
             for (let i = 0; i < stops.length - 1; i++) {
                 if (t >= stops[i][0] && t <= stops[i+1][0]) {
@@ -550,11 +564,35 @@
             mapChunks.set(key, chunk); return chunk;
         }
 
+        function addDamageText(x, y, z, amt) {
+            if(!showDebugInfo) return;
+            damageTexts.push({ x: x + (Math.random()-0.5)*0.5, y: y + (Math.random()-0.5)*0.5, z: z, amt: amt, life: 60 });
+        }
+
+        window.killAll = function() {
+            enemies.length = 0;
+        };
+
         window.spawnBuilding = function() {
             let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1;
             let floors = parseInt(document.getElementById('dbg-b-floors').value) || 1;
             let cx = player.x + Math.cos(player.angle) * 8, cy = player.y + Math.sin(player.angle) * 8;
             buildings.push({ x: cx, y: cy, z: getElevation(cx, cy), emoji: '🏚️', rooms: rooms, floors: floors, roomW: 10, roomH: 10, wallH: 3.5 });
+        };
+        
+        window.spawnEnemy = function(type) {
+            let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5;
+            let ez = getElevation(ex, ey);
+            if (!isSolid(ex, ey)) {
+                if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
+                else enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 });
+            }
+        };
+
+        window.spawnDebug = function(em) {
+            let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getElevation(cx, cy);
+            if(em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) });
+            else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 });
         };
 
         function enterBuilding(b) {
@@ -595,7 +633,7 @@
                 let totalW = activeBuilding.rooms * activeBuilding.roomW, h = activeBuilding.roomH;
                 if (activeBuilding.emoji === '⛺') {
                     if (x < 0.2 || x > totalW - 0.2 || y < 0.2 || y > h - 0.2) return true;
-                    // Dynamic slanted roof collision logic (narrower as you get further from center Y)
+                    // Dynamic slanted roof collision logic
                     let distFromCenter = Math.abs(y - h/2);
                     if (distFromCenter > (h/2) - 0.6) return true;
                     return false;
@@ -637,27 +675,14 @@
                 let steps = 6; 
                 for(let i=0; i<steps; i++) {
                     let x1 = (i/steps)*totalW, x2 = ((i+1)/steps)*totalW;
-                    walls.push({
-                        pts: [ {x:x1, y:h/2, z:b.wallH}, {x:x2, y:h/2, z:b.wallH}, {x:x2, y:0, z:0}, {x:x1, y:0, z:0} ],
-                        color: patternArmyGreen
-                    });
-                    walls.push({
-                        pts: [ {x:x2, y:h/2, z:b.wallH}, {x:x1, y:h/2, z:b.wallH}, {x:x1, y:h, z:0}, {x:x2, y:h, z:0} ],
-                        color: patternArmyGreen
-                    });
+                    walls.push({ pts: [ {x:x1, y:h/2, z:b.wallH}, {x:x2, y:h/2, z:b.wallH}, {x:x2, y:0, z:0}, {x:x1, y:0, z:0} ], color: patternArmyGreen });
+                    walls.push({ pts: [ {x:x2, y:h/2, z:b.wallH}, {x:x1, y:h/2, z:b.wallH}, {x:x1, y:h, z:0}, {x:x2, y:h, z:0} ], color: patternArmyGreen });
                 }
-                walls.push({
-                    pts: [ {x:0, y:h/2, z:b.wallH}, {x:0, y:0, z:0}, {x:0, y:h, z:0} ],
-                    color: patternArmyGreenDark
-                });
-                walls.push({
-                    pts: [ {x:totalW, y:h/2, z:b.wallH}, {x:totalW, y:h, z:0}, {x:totalW, y:0, z:0} ],
-                    color: patternArmyGreenDark
-                });
+                walls.push({ pts: [ {x:0, y:h/2, z:b.wallH}, {x:0, y:0, z:0}, {x:0, y:h, z:0} ], color: patternArmyGreenDark });
+                walls.push({ pts: [ {x:totalW, y:h/2, z:b.wallH}, {x:totalW, y:h, z:0}, {x:totalW, y:0, z:0} ], color: patternArmyGreenDark });
                 return walls;
             }
 
-            // Standard Rectangular Walls
             function addSegWall(p1x, p1y, p2x, p2y, color) {
                 let dx = p2x - p1x, dy = p2y - p1y, len = Math.hypot(dx, dy), steps = Math.ceil(len / 2);
                 for(let i=0; i<steps; i++) walls.push({ p1: {x: p1x + dx*(i/steps), y: p1y + dy*(i/steps)}, p2: {x: p1x + dx*((i+1)/steps), y: p1y + dy*((i+1)/steps)}, color: color });
@@ -722,10 +747,9 @@
         function update() {
             if (isPaused) return;
 
-            // Update Time (24 game hours over 15 real minutes -> 54000 ticks at 60 FPS)
-            // Multiplied by the user's custom time speed
+            // Update Time
             gameTime += (24 / 54000) * timeSpeed;
-            if (gameTime >= 24) gameTime %= 24; // Ensure it smoothly loops back to 0
+            if (gameTime >= 24) gameTime %= 24; 
             
             if (isDebugOpen && tickCounter % 10 === 0) {
                 dbgTimeEl.value = gameTime;
@@ -772,13 +796,38 @@
                 }
             }
             
+            // Handle Damage Texts Updates
+            for(let i = damageTexts.length - 1; i >= 0; i--) {
+                damageTexts[i].z += 0.02; 
+                damageTexts[i].life--;
+                if(damageTexts[i].life <= 0) damageTexts.splice(i, 1);
+            }
+
             if (gameState === 'overworld') {
                 let pxC = Math.floor(player.x / MAP_CHUNK_SIZE), pyC = Math.floor(player.y / MAP_CHUNK_SIZE);
                 for(let x=pxC-2; x<=pxC+2; x++) for(let y=pyC-2; y<=pyC+2; y++) getMapChunk(x,y);
 
-                if (enemies.length < 15 && Math.random() < 0.015) { 
+                if (spawnEnemiesToggle && enemies.length < 15 && Math.random() < 0.015) { 
                     let ex = player.x + Math.cos(Math.random() * Math.PI * 2) * (25 + Math.random() * 15), ey = player.y + Math.sin(Math.random() * Math.PI * 2) * (25 + Math.random() * 15);
-                    if (!isSolid(ex, ey)) enemies.push({ x: ex, y: ey, z: getElevation(ex, ey), hp: 4, cooldown: 60, size: 1.2, emoji: '👽' });
+                    if (!isSolid(ex, ey)) {
+                        if (Math.random() < 0.5) enemies.push({ type: 'alien', x: ex, y: ey, z: getElevation(ex, ey), hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
+                        else enemies.push({ type: 'experimental', x: ex, y: ey, z: getElevation(ex, ey), hp: 10, cooldown: 60, size: 1.4, flash: 0 });
+                    }
+                }
+
+                for (let ei = enemies.length - 1; ei >= 0; ei--) {
+                    let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); 
+                    if (e.flash && e.flash > 0) e.flash--;
+                    if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
+                    if (d < 40) { 
+                        if (d > 8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } 
+                        e.z = getElevation(e.x, e.y); 
+                        if (--e.cooldown <= 0) { 
+                            let projZ = (e.type === 'experimental' ? e.z + e.size * 0.8 : e.z + 0.6);
+                            projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:projZ, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-projZ)/d*0.6, life:100, dmg:10 }); 
+                            e.cooldown = 120; 
+                        } 
+                    }
                 }
 
                 for (let i = animals.length - 1; i >= 0; i--) {
@@ -853,10 +902,12 @@
 
                     if (hitTarget) {
                         if (hitTarget.type === 'enemy') {
-                            hitTarget.obj.hp -= w.dmg;
-                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += 100; scoreEl.innerText = score; }
+                            hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5;
+                            addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
+                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type==='experimental'?150:100); scoreEl.innerText = score; }
                         } else if (hitTarget.type === 'animal') {
                             hitTarget.obj.hp -= w.dmg;
+                            addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
                             if (hitTarget.obj.hp <= 0) {
                                 hitTarget.obj.dead = true; score += 25; scoreEl.innerText = score; 
                                 hitTarget.obj.items = new Array(10).fill(null); 
@@ -868,6 +919,7 @@
                             else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
                             if (validHit) {
                                 sObj.hp -= w.dmg;
+                                addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg);
                                 if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); }
                             }
                         }
@@ -883,17 +935,42 @@
                 let p = projectiles[i]; p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--;
                 let hit = (p.z < (gameState==='overworld'?getElevation(p.x, p.y):0) || isSolid(p.x, p.y));
                 if (p.owner === 'player' && gameState === 'overworld') {
-                    for (let ei = enemies.length - 1; ei >= 0; ei--) { let e = enemies[ei]; if (Math.hypot(p.x-e.x, p.y-e.y) < 0.6 && p.z > e.z && p.z < e.z+e.size) { e.hp -= p.dmg; hit = true; if (e.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; } break; } }
-                    if (!hit) for (let ai = animals.length - 1; ai >= 0; ai--) { let a = animals[ai]; if (!a.dead && Math.hypot(p.x-a.x, p.y-a.y) < 0.6 && p.z > a.z && p.z < a.z+a.size) { a.hp -= p.dmg; hit = true; if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; } break; } }
+                    for (let ei = enemies.length - 1; ei >= 0; ei--) { 
+                        let e = enemies[ei];
+                        if (e.type === 'experimental') {
+                            if (Math.hypot(p.x-e.x, p.y-e.y) < 0.4 && p.z > e.z && p.z < e.z+e.size) {
+                                let relZ = p.z - e.z; let mult = 1.0;
+                                if (relZ > e.size * 0.88) mult = 2.0;       // Head (top 12%)
+                                else if (relZ > e.size * 0.72) mult = 1.2;  // Upper Chest
+                                else if (relZ > e.size * 0.44) mult = 1.0;  // Lower Abdomen
+                                else mult = 0.5;                            // Legs (bottom 44%)
+                                
+                                let totalDmg = p.dmg * mult;
+                                e.hp -= totalDmg; hit = true; e.flash = 5;
+                                addDamageText(e.x, e.y, p.z, totalDmg);
+                                if (e.hp <= 0) { enemies.splice(ei, 1); score += 150; scoreEl.innerText = score; }
+                                break;
+                            }
+                        } else {
+                            if (Math.hypot(p.x-e.x, p.y-e.y) < 0.6 && p.z > e.z && p.z < e.z+e.size) { 
+                                e.hp -= p.dmg; hit = true; e.flash = 5;
+                                addDamageText(e.x, e.y, p.z, p.dmg);
+                                if (e.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; } 
+                                break; 
+                            }
+                        }
+                    }
+                    if (!hit) for (let ai = animals.length - 1; ai >= 0; ai--) { 
+                        let a = animals[ai]; 
+                        if (!a.dead && Math.hypot(p.x-a.x, p.y-a.y) < 0.6 && p.z > a.z && p.z < a.z+a.size) { 
+                            a.hp -= p.dmg; hit = true; 
+                            addDamageText(a.x, a.y, p.z, p.dmg);
+                            if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; } 
+                            break; 
+                        } 
+                    }
                 } else if (Math.hypot(p.x-player.x, p.y-player.y) < 0.5 && p.z > player.z-1.2 && p.z < player.z) { takeDamage(p.dmg); hit = true; }
                 if (hit || p.life <= 0) projectiles.splice(i, 1);
-            }
-
-            if (gameState === 'overworld') {
-                for (let ei = enemies.length - 1; ei >= 0; ei--) {
-                    let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
-                    if (d < 40) { if (d > 8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } e.z = getElevation(e.x, e.y); if (--e.cooldown <= 0) { projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:e.z+0.6, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-e.z)/d*0.6, life:100, dmg:10 }); e.cooldown = 120; } }
-                }
             }
         }
 
@@ -922,20 +999,25 @@
                         let chunk = getMapChunk(cx, cy);
                         for (let i = 0; i < chunk.length; i++) {
                             let obj = chunk[i], dx = obj.wx - player.x, dy = obj.wy - player.y, rZ = dx * dirX + dy * dirY;
-                            if (rZ > 0.2 && rZ < VIEW_DIST && Math.abs(dx * -dirY + dy * dirX) < (rZ * 2.0) / currentZoom) visible.push({ type: obj.type, emoji: obj.emoji, size: obj.size, rX: dx * -dirY + dy * dirX, rZ, h: obj.h });
+                            if (rZ > 0.2 && rZ < VIEW_DIST && Math.abs(dx * -dirY + dy * dirX) < (rZ * 2.0) / currentZoom) visible.push({ type: obj.type, emoji: obj.emoji, size: obj.size, hp: obj.hp, rX: dx * -dirY + dy * dirX, rZ, h: obj.h });
                         }
                     }
                 }
-                for (let e of enemies) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: e.emoji, size: e.size, rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1 }); }
+                for (let e of enemies) { 
+                    let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; 
+                    if (rZ > 0.2 && rZ < VIEW_DIST) {
+                        if (e.type === 'experimental') visible.push({ type: 'experimental', obj: e, size: e.size, hp: e.hp, rX: dx*-dirY+dy*dirX, rZ, h: e.z });
+                        else visible.push({ type: 'emoji', emoji: e.emoji || '👽', size: e.size, hp: e.hp, flash: e.flash, rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1 }); 
+                    }
+                }
                 for (let e of containers) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: e.emoji, size: e.size, rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1, targeted: e === interactTarget }); }
-                for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'animal', emoji: e.emoji, size: e.size, rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1, targeted: e === interactTarget, dead: e.dead }); }
+                for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'animal', emoji: e.emoji, size: e.size, hp: (!e.dead ? e.hp : undefined), rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1, targeted: e === interactTarget, dead: e.dead }); }
                 for (let b of buildings) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: b.emoji, size: 4.5, rX: dx*-dirY+dy*dirX, rZ, h: b.z - 0.2, targeted: b === interactTarget }); }
+                for (let d of damageTexts) { let dx = d.x - player.x, dy = d.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'dmgText', text: Math.round(d.amt*10)/10, rX: dx*-dirY+dy*dirX, rZ, h: d.z, life: d.life }); }
             } else {
                 if (activeBuilding.emoji === '⛺') {
-                    ctx.fillStyle = '#0a0d04'; // dark sky / night gap 
-                    ctx.fillRect(0, 0, canvas.width, hY);
-                    ctx.fillStyle = patternArmyGreenFloor; 
-                    ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
+                    ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY);
+                    ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
                 } else {
                     ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, 0, canvas.width, hY);
                     ctx.fillStyle = '#5c4033'; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
@@ -944,12 +1026,8 @@
                 for (let e of getInteriorEntities()) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: e.emoji, size: e.size, rX: dx*-dirY+dy*dirX, rZ, h: e.z, targeted: e.action === interactTarget?.action }); }
                 for (let w of getInteriorWalls()) {
                     let cx, cy;
-                    if (w.pts) {
-                        cx = w.pts.reduce((sum, p) => sum + p.x, 0) / w.pts.length;
-                        cy = w.pts.reduce((sum, p) => sum + p.y, 0) / w.pts.length;
-                    } else {
-                        cx = (w.p1.x + w.p2.x)/2; cy = (w.p1.y + w.p2.y)/2;
-                    }
+                    if (w.pts) { cx = w.pts.reduce((sum, p) => sum + p.x, 0) / w.pts.length; cy = w.pts.reduce((sum, p) => sum + p.y, 0) / w.pts.length; } 
+                    else { cx = (w.p1.x + w.p2.x)/2; cy = (w.p1.y + w.p2.y)/2; }
                     let dx = cx - player.x, dy = cy - player.y, rZ = dx * dirX + dy * dirY;
                     if (rZ > -2 && rZ < VIEW_DIST) visible.push({ type: 'wall', wallObj: w, rX: dx*-dirY+dy*dirX, rZ });
                 }
@@ -962,7 +1040,6 @@
 
             for (let z = VIEW_DIST; z > 0.1; ) {
                 let zStep = z > 40 ? 1.5 : (z > 20 ? 0.8 : (z > 8 ? 0.4 : 0.2));
-                
                 let doFilter = ambient < 1.0 && gameState === 'overworld';
                 if (doFilter) ctx.filter = `brightness(${ambient})`;
 
@@ -971,18 +1048,14 @@
                     if (o.type === 'wall') {
                         let w = o.wallObj;
                         let pts = w.pts ? w.pts : [ 
-                            {x: w.p1.x, y: w.p1.y, z: activeBuilding.wallH}, 
-                            {x: w.p2.x, y: w.p2.y, z: activeBuilding.wallH}, 
-                            {x: w.p2.x, y: w.p2.y, z: 0}, 
-                            {x: w.p1.x, y: w.p1.y, z: 0} 
+                            {x: w.p1.x, y: w.p1.y, z: activeBuilding.wallH}, {x: w.p2.x, y: w.p2.y, z: activeBuilding.wallH}, 
+                            {x: w.p2.x, y: w.p2.y, z: 0}, {x: w.p1.x, y: w.p1.y, z: 0} 
                         ];
-                        
                         let camPts = [];
                         for (let i=0; i<pts.length; i++) { 
                             let dx = pts[i].x - player.x, dy = pts[i].y - player.y; 
                             camPts.push({ rX: dx * -dirY + dy * dirX, rZ: dx * dirX + dy * dirY, z: pts[i].z }); 
                         }
-                        
                         let clipped = [];
                         for (let i=0; i<pts.length; i++) {
                             let p1 = camPts[i], p2 = camPts[(i+1)%pts.length];
@@ -992,7 +1065,6 @@
                                 clipped.push({ rX: p1.rX + t * (p2.rX - p1.rX), rZ: 0.1, z: p1.z + t * (p2.z - p1.z) }); 
                             }
                         }
-                        
                         if (clipped.length >= 3) {
                             ctx.fillStyle = w.color; ctx.strokeStyle = w.pts ? '#1a2410' : '#220000'; ctx.lineWidth = 1; ctx.beginPath();
                             for (let i=0; i<clipped.length; i++) { 
@@ -1001,12 +1073,59 @@
                             }
                             ctx.closePath(); ctx.fill(); ctx.stroke();
                         }
+                    } else if (o.type === 'experimental') {
+                        let e = o.obj;
+                        let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
+                        let sz = (fov/o.rZ)*o.size; 
+                        let isFlash = e.flash > 0;
+                        
+                        // Dimensions exactly mapping to the 0.44/0.28/0.16/0.12 scale
+                        let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
+                        let topLegs = sy - legH;
+                        let topAbd = topLegs - abdH;
+                        let topChest = topAbd - chestH;
+                        
+                        ctx.fillStyle = isFlash ? 'white' : '#888888';
+                        
+                        // Draw Legs
+                        let legW = sz * 0.20;
+                        ctx.fillRect(sx - legW/2, topLegs, legW, legH);
+
+                        // Draw Lower Abdomen (Tucked in)
+                        let abdW = sz * 0.18;
+                        ctx.fillRect(sx - abdW/2, topAbd, abdW, abdH);
+
+                        // Draw Upper Chest (Wider)
+                        let chestW = sz * 0.26;
+                        ctx.fillRect(sx - chestW/2, topChest, chestW, chestH);
+
+                        // Draw Head (Emoji)
+                        let headSz = sz * 0.25; 
+                        if (Math.floor(headSz) + 'px sans-serif' !== _lastFont) { ctx.font = Math.floor(headSz) + 'px sans-serif'; _lastFont = ctx.font; }
+                        if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
+                        if (isFlash) { ctx.shadowColor = 'white'; ctx.shadowBlur = 25; }
+                        ctx.fillText('👽', sx, topChest - headR / 2);
+                        if (isFlash) ctx.shadowBlur = 0;
+
+                        if (showDebugInfo && o.hp !== undefined) {
+                            ctx.fillStyle = 'lime';
+                            ctx.font = Math.max(10, 15/o.rZ) + 'px Courier';
+                            ctx.fillText('HP:'+o.hp.toFixed(1), sx, sy - sz - 15);
+                        }
+                    } else if (o.type === 'dmgText') {
+                        let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
+                        ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`;
+                        let df = 'bold ' + Math.max(12, 24/o.rZ) + 'px sans-serif';
+                        if (_lastFont !== df) { ctx.font = df; _lastFont = df; }
+                        if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
+                        ctx.fillText(o.text, sx, sy);
                     } else {
                         let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
+                        let sz = o.size ? (fov/o.rZ)*o.size : 0; 
                         if (o.type === 'emoji' || o.type === 'animal') {
-                            let sz = (fov/o.rZ)*o.size; const fontStr = Math.floor(sz) + 'px sans-serif';
+                            const fontStr = Math.floor(sz) + 'px sans-serif';
                             if (fontStr !== _lastFont) { ctx.font = fontStr; _lastFont = fontStr; }
-                            if (o.targeted) { ctx.shadowColor = "white"; ctx.shadowBlur = 15; }
+                            if (o.targeted || (o.flash && o.flash > 0)) { ctx.shadowColor = "white"; ctx.shadowBlur = o.flash ? 25 : 15; }
                             if (o.type === 'animal' && o.dead) {
                                 if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                                 ctx.save(); ctx.translate(sx, sy - sz / 2); ctx.rotate(Math.PI); ctx.fillText(o.emoji, 0, 0); ctx.restore();
@@ -1014,7 +1133,15 @@
                                 if (_lastBaseline !== 'bottom') { ctx.textBaseline = 'bottom'; _lastBaseline = 'bottom'; }
                                 ctx.fillText(o.emoji, sx, sy);
                             }
-                            if (o.targeted) ctx.shadowBlur = 0;
+                            if (o.targeted || o.flash) ctx.shadowBlur = 0;
+
+                            if (showDebugInfo && o.hp !== undefined) {
+                                ctx.fillStyle = 'lime';
+                                let hf = Math.max(10, 15/o.rZ) + 'px Courier';
+                                if (_lastFont !== hf) { ctx.font = hf; _lastFont = hf; }
+                                if (_lastBaseline !== 'bottom') { ctx.textBaseline = 'bottom'; _lastBaseline = 'bottom'; }
+                                ctx.fillText('HP:'+o.hp.toFixed(1), sx, sy - sz - 5);
+                            }
                         } else { ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/o.rZ), 0, 7); ctx.fill(); }
                     }
                 }
