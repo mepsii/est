@@ -1,0 +1,91 @@
+body { margin: 0; overflow: hidden; background-color: #000; }
+canvas { display: block; width: 100vw; height: 100vh; }
+#ui {
+    position: absolute; top: 20px; left: 20px;
+    color: white; font-family: 'Courier New', Courier, monospace;
+    text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10;
+}
+#overlay {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.8); display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: white; font-family: sans-serif; z-index: 20; cursor: pointer;
+}
+#damage-flash, #heal-flash {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+    pointer-events: none; z-index: 15; transition: opacity 0.1s; opacity: 0;
+}
+#damage-flash { background: red; }
+#heal-flash { background: lime; } 
+.hud-item { font-size: 24px; margin-bottom: 5px; font-weight: bold; }
+#weapon-name { color: #ffff00; }
+#hp { color: #ff3333; }
+#food { color: #ffaa00; }
+#stamina { color: #33ccff; }
+
+.panel {
+    background: rgba(20, 20, 20, 0.95); border: 2px solid #555; 
+    border-radius: 8px; padding: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    font-family: sans-serif; color: white;
+}
+.panel h2 { margin: 0 0 10px 0; font-size: 20px; text-align: center; }
+
+#interact-tooltip {
+    position: absolute; top: 55%; left: 50%; transform: translate(-50%, -50%);
+    color: white; font-family: sans-serif; font-size: 18px; font-weight: bold;
+    text-shadow: 1px 1px 2px #000; display: none; pointer-events: none; z-index: 12;
+}
+
+#stair-menu {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: none; z-index: 50; width: 220px; text-align: center;
+}
+#stair-menu button {
+    background: #444; color: white; border: 1px solid #666; 
+    cursor: pointer; padding: 12px; font-size: 16px; 
+    border-radius: 4px; width: 100%; margin-bottom: 8px;
+    font-family: sans-serif; font-weight: bold;
+}
+#stair-menu button:hover { background: #666; }
+
+#inventory-screen {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+    display: none; align-items: flex-start; justify-content: center; gap: 20px;
+    z-index: 30; background: rgba(0, 0, 0, 0.5); user-select: none;
+    padding-top: 10vh; box-sizing: border-box;
+}
+.inv-panel { width: 320px; display: flex; flex-direction: column; max-height: 80vh; }
+.inv-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.inv-slot {
+    aspect-ratio: 1; background: rgba(0, 0, 0, 0.6);
+    border: 1px solid #444; border-radius: 4px; display: flex;
+    align-items: center; justify-content: center; font-size: 30px;
+    cursor: pointer; transition: background 0.1s; position: relative;
+}
+.inv-slot:hover { background: rgba(100, 100, 100, 0.5); }
+#inv-hints {
+    position: absolute; bottom: 30px; color: #ccc; font-size: 18px;
+    text-shadow: 1px 1px 2px #000; text-align: center; width: 100%;
+}
+
+#crafting-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 5px;}
+.craft-btn { 
+    background: #333; color: white; border: 1px solid #666; padding: 10px; 
+    cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 4px;
+    border-radius: 4px; font-family: sans-serif; transition: background 0.1s;
+}
+.craft-btn:hover:not(:disabled) { background: #555; }
+.craft-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.craft-title { font-size: 16px; font-weight: bold; }
+.craft-reqs { font-size: 13px; color: #aaa; display: flex; gap: 8px; flex-wrap: wrap;}
+
+#debug-menu {
+    position: absolute; top: 20px; right: 20px; width: 240px;
+    display: none; z-index: 40; font-size: 14px;
+    max-height: 90vh; overflow-y: auto;
+}
+.dbg-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dbg-row input[type="number"] { width: 60px; background: #333; color: white; border: 1px solid #666; }
+.dbg-row button { background: #444; color: white; border: 1px solid #666; cursor: pointer; padding: 3px 6px;}
+.dbg-row button:hover { background: #666; }
+.spawn-btns button { font-size: 20px; padding: 5px; margin: 2px; }

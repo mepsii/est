@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EmojiSurvivalTest</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="damage-flash"></div>
+    <div id="heal-flash"></div>
+    <div id="ui">
+        <div class="hud-item">HP: <span id="hp">100</span></div>
+        <div class="hud-item">Stam: <span id="stamina">100</span></div>
+        <div class="hud-item">Food: <span id="food">100</span></div>
+        <div class="hud-item">Score: <span id="score">0</span></div>
+        <div class="hud-item">Equipped: <span id="weapon-name">Pistol</span></div>
+        <div class="hud-item">ADS: <span id="ads-status">OFF</span></div>
+    </div>
+
+    <div id="interact-tooltip">[E] Interact</div>
+    
+    <div id="overlay">
+        <h1>EmojiSurvivalTest</h1>
+        <p>1-5: Weapons/Tools | Space: Jump | Shift: Sprint | L-Click: Shoot/Chop | R-Click: Zoom | I: Inv & Crafting | E: Interact</p>
+        <p style="font-size: 0.8em; margin-top: 20px;">Explore, Hunt, Survive. Find containers & animals for bandages & food. <br>(Press `~` for Debug Menu)</p>
+    </div>
+
+    <div id="stair-menu" class="panel">
+        <h2 id="stair-menu-title">Stairwell</h2>
+        <button id="btn-stair-up">Go Up</button>
+        <button id="btn-stair-down">Go Down</button>
+        <button id="btn-stair-cancel" style="background: #883333;">Cancel</button>
+    </div>
+
+    <div id="inventory-screen">
+        <div id="player-ui" class="panel inv-panel">
+            <h2>Inventory</h2>
+            <div id="player-inv-grid" class="inv-grid"></div>
+        </div>
+        
+        <!-- Crafting Panel -->
+        <div id="crafting-ui" class="panel inv-panel">
+            <h2>Crafting</h2>
+            <div id="crafting-list"></div>
+        </div>
+
+        <div id="container-ui" class="panel inv-panel" style="display: none;">
+            <h2>Container</h2>
+            <div id="container-inv-grid" class="inv-grid"></div>
+        </div>
+        
+        <div id="inv-hints">Left-Click to Move | Right-Click to Use/Place Item</div>
+    </div>
+
+    <div id="debug-menu" class="panel">
+        <h2>Debug Settings</h2>
+        <div class="dbg-row">
+            <label>Time (0-24):</label>
+            <input type="range" id="dbg-time" value="12" min="0" max="24" step="0.1" style="width: 70px;">
+            <span id="dbg-time-val" style="width: 30px; text-align: right;">12.0</span>
+        </div>
+        <div class="dbg-row">
+            <label>Time Spd x:</label>
+            <input type="number" id="dbg-time-speed" value="1" min="0" max="1000">
+        </div>
+        <div class="dbg-row">
+            <label>Set HP:</label>
+            <input type="number" id="dbg-hp" value="100">
+            <button id="btn-hp">Apply</button>
+        </div>
+        <div class="dbg-row">
+            <label>Set Stam:</label>
+            <input type="number" id="dbg-stam" value="100">
+            <button id="btn-stam">Apply</button>
+        </div>
+        <div class="dbg-row">
+            <label>Set Food:</label>
+            <input type="number" id="dbg-food" value="100">
+            <button id="btn-food">Apply</button>
+        </div>
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-god"> God Mode</label>
+        </div>
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-noclip"> Noclip</label>
+        </div>
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-infstam"> Inf Stamina</label>
+        </div>
+        <div class="dbg-row">
+            <label>Speed %:</label>
+            <input type="number" id="dbg-speed" value="100">
+        </div>
+        <div class="dbg-row">
+            <label>Sprint Spd:</label>
+            <input type="number" id="dbg-sprint" value="1.5" step="0.1">
+        </div>
+        <div class="dbg-row">
+            <label>Jump Power:</label>
+            <input type="number" id="dbg-jump" value="0.2" step="0.05">
+        </div>
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-flight"> Flight Mode</label>
+        </div>
+        <hr style="border-color:#555; margin:10px 0;">
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-info"> Show Debug Info</label>
+        </div>
+        <div class="dbg-row">
+            <label><input type="checkbox" id="dbg-spawnenemies" checked> Spawn Enemies</label>
+        </div>
+        <div class="dbg-row">
+            <button onclick="killAll()" style="width:100%; background:#833;">Kill All Enemies</button>
+        </div>
+        <div style="text-align:center; margin-bottom: 5px; margin-top:5px;">Spawn Enemy Type</div>
+        <div class="dbg-row spawn-btns" style="justify-content: center;">
+            <button onclick="spawnEnemy('alien')" title="Original Alien">👽</button>
+            <button onclick="spawnEnemy('experimental')" title="Experimental Alien">👽2</button>
+            <button onclick="spawnEnemy('zombie')" title="Zombie">🧟</button>
+        </div>
+        <hr style="border-color:#555; margin:10px 0;">
+        <div style="text-align:center; margin-bottom: 5px;">Spawn Entity</div>
+        <div class="dbg-row spawn-btns" style="justify-content: center;">
+            <button onclick="spawnDebug('🐄')">🐄</button>
+            <button onclick="spawnDebug('🐖')">🐖</button>
+            <button onclick="spawnDebug('🐓')">🐓</button>
+            <button onclick="spawnDebug('🐑')">🐑</button>
+            <button onclick="spawnDebug('📦')">📦</button>
+        </div>
+        <hr style="border-color:#555; margin:10px 0;">
+        <div style="text-align:center; margin-bottom: 5px;">Spawn Building</div>
+        <div class="dbg-row">
+            <input type="number" id="dbg-b-rooms" value="2" min="1" max="5" style="width: 35px;" title="Rooms"> Rms
+            <input type="number" id="dbg-b-floors" value="3" min="1" max="5" style="width: 35px;" title="Floors"> Flrs
+            <button onclick="spawnBuilding()">Spawn</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    
+    <script src="game.js"></script>
+</body>
+</html>
