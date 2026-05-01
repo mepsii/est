@@ -209,7 +209,8 @@
         <div style="text-align:center; margin-bottom: 5px; margin-top:5px;">Spawn Enemy Type</div>
         <div class="dbg-row spawn-btns" style="justify-content: center;">
             <button onclick="spawnEnemy('alien')" title="Alien">👽</button>
-            <button onclick="spawnEnemy('experimental')" title="Experimental Dummy">🧍</button>
+            <button onclick="spawnEnemy('experimental')" title="Experimental Alien">👽2</button>
+            <button onclick="spawnEnemy('zombie')" title="Zombie">🧟</button>
         </div>
         <hr style="border-color:#555; margin:10px 0;">
         <div style="text-align:center; margin-bottom: 5px;">Spawn Entity</div>
@@ -251,7 +252,6 @@
         let gameTime = 12.0;
         let timeSpeed = 1.0;
 
-        // Texture Generators for Tent Fuzz / Grain
         function createNoisePattern(baseColor, noiseAlphaDark, noiseAlphaLight) {
             let tc = document.createElement('canvas');
             tc.width = 128; tc.height = 128; 
@@ -585,6 +585,7 @@
             let ez = getElevation(ex, ey);
             if (!isSolid(ex, ey)) {
                 if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
+                else if (type === 'zombie') enemies.push({ type: 'zombie', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
                 else enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 });
             }
         };
@@ -810,6 +811,7 @@
                 if (spawnEnemiesToggle && enemies.length < 15 && Math.random() < 0.015) { 
                     let ex = player.x + Math.cos(Math.random() * Math.PI * 2) * (25 + Math.random() * 15), ey = player.y + Math.sin(Math.random() * Math.PI * 2) * (25 + Math.random() * 15);
                     if (!isSolid(ex, ey)) {
+                        // Keep zombies out of natural spawn pool for now
                         if (Math.random() < 0.5) enemies.push({ type: 'alien', x: ex, y: ey, z: getElevation(ex, ey), hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
                         else enemies.push({ type: 'experimental', x: ex, y: ey, z: getElevation(ex, ey), hp: 10, cooldown: 60, size: 1.4, flash: 0 });
                     }
@@ -819,14 +821,37 @@
                     let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); 
                     if (e.flash && e.flash > 0) e.flash--;
                     if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
+                    
                     if (d < 40) { 
-                        if (d > 8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } 
-                        e.z = getElevation(e.x, e.y); 
-                        if (--e.cooldown <= 0) { 
-                            let projZ = (e.type === 'experimental' ? e.z + e.size * 0.8 : e.z + 0.6);
-                            projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:projZ, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-projZ)/d*0.6, life:100, dmg:10 }); 
-                            e.cooldown = 120; 
-                        } 
+                        if (e.type === 'zombie') {
+                            // Melee Zombie behavior
+                            if (d > 0.8) { 
+                                e.x += (player.x-e.x)/d * 0.02; 
+                                e.y += (player.y-e.y)/d * 0.02; 
+                            } 
+                            e.z = getElevation(e.x, e.y); 
+                            
+                            if (d < 1.5) {
+                                if (--e.cooldown <= 0) {
+                                    takeDamage(5); // Zombie bite damage
+                                    e.cooldown = 60; // 1 attack per second roughly
+                                }
+                            } else {
+                                e.cooldown = Math.max(0, e.cooldown - 1);
+                            }
+                        } else {
+                            // Ranged Alien behavior
+                            if (d > 8) { 
+                                e.x += (player.x-e.x)/d * 0.02; 
+                                e.y += (player.y-e.y)/d * 0.02; 
+                            } 
+                            e.z = getElevation(e.x, e.y); 
+                            if (--e.cooldown <= 0) { 
+                                let projZ = (e.type === 'experimental' ? e.z + e.size * 0.8 : e.z + 0.6);
+                                projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:projZ, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-projZ)/d*0.6, life:100, dmg:10 }); 
+                                e.cooldown = 120; 
+                            } 
+                        }
                     }
                 }
 
@@ -904,7 +929,7 @@
                         if (hitTarget.type === 'enemy') {
                             hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5;
                             addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
-                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type==='experimental'?150:100); scoreEl.innerText = score; }
+                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
                         } else if (hitTarget.type === 'animal') {
                             hitTarget.obj.hp -= w.dmg;
                             addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
@@ -937,7 +962,7 @@
                 if (p.owner === 'player' && gameState === 'overworld') {
                     for (let ei = enemies.length - 1; ei >= 0; ei--) { 
                         let e = enemies[ei];
-                        if (e.type === 'experimental') {
+                        if (e.type === 'experimental' || e.type === 'zombie') {
                             if (Math.hypot(p.x-e.x, p.y-e.y) < 0.4 && p.z > e.z && p.z < e.z+e.size) {
                                 let relZ = p.z - e.z; let mult = 1.0;
                                 if (relZ > e.size * 0.88) mult = 2.0;       // Head (top 12%)
@@ -1006,7 +1031,7 @@
                 for (let e of enemies) { 
                     let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; 
                     if (rZ > 0.2 && rZ < VIEW_DIST) {
-                        if (e.type === 'experimental') visible.push({ type: 'experimental', obj: e, size: e.size, hp: e.hp, rX: dx*-dirY+dy*dirX, rZ, h: e.z });
+                        if (e.type === 'experimental' || e.type === 'zombie') visible.push({ type: 'locationalEnemy', obj: e, size: e.size, hp: e.hp, flash: e.flash, rX: dx*-dirY+dy*dirX, rZ, h: e.z });
                         else visible.push({ type: 'emoji', emoji: e.emoji || '👽', size: e.size, hp: e.hp, flash: e.flash, rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1 }); 
                     }
                 }
@@ -1073,11 +1098,12 @@
                             }
                             ctx.closePath(); ctx.fill(); ctx.stroke();
                         }
-                    } else if (o.type === 'experimental') {
+                    } else if (o.type === 'locationalEnemy') {
                         let e = o.obj;
                         let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
                         let sz = (fov/o.rZ)*o.size; 
                         let isFlash = e.flash > 0;
+                        let isZombie = e.type === 'zombie';
                         
                         // Dimensions exactly mapping to the 0.44/0.28/0.16/0.12 scale
                         let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
@@ -1085,18 +1111,19 @@
                         let topAbd = topLegs - abdH;
                         let topChest = topAbd - chestH;
                         
-                        ctx.fillStyle = isFlash ? 'white' : '#888888';
-                        
                         // Draw Legs
                         let legW = sz * 0.20;
+                        ctx.fillStyle = isFlash ? 'white' : (isZombie ? '#1e5622' : '#888888');
                         ctx.fillRect(sx - legW/2, topLegs, legW, legH);
 
                         // Draw Lower Abdomen (Tucked in)
                         let abdW = sz * 0.18;
+                        ctx.fillStyle = isFlash ? 'white' : (isZombie ? '#2e7d32' : '#888888');
                         ctx.fillRect(sx - abdW/2, topAbd, abdW, abdH);
 
                         // Draw Upper Chest (Wider)
                         let chestW = sz * 0.26;
+                        ctx.fillStyle = isFlash ? 'white' : (isZombie ? '#388e3c' : '#888888');
                         ctx.fillRect(sx - chestW/2, topChest, chestW, chestH);
 
                         // Draw Head (Emoji)
@@ -1104,12 +1131,14 @@
                         if (Math.floor(headSz) + 'px sans-serif' !== _lastFont) { ctx.font = Math.floor(headSz) + 'px sans-serif'; _lastFont = ctx.font; }
                         if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                         if (isFlash) { ctx.shadowColor = 'white'; ctx.shadowBlur = 25; }
-                        ctx.fillText('👽', sx, topChest - headR / 2);
+                        ctx.fillText(isZombie ? '🧟' : '👽', sx, topChest - headR / 2);
                         if (isFlash) ctx.shadowBlur = 0;
 
                         if (showDebugInfo && o.hp !== undefined) {
                             ctx.fillStyle = 'lime';
-                            ctx.font = Math.max(10, 15/o.rZ) + 'px Courier';
+                            let hf = Math.max(10, 15/o.rZ) + 'px Courier';
+                            if (_lastFont !== hf) { ctx.font = hf; _lastFont = hf; }
+                            if (_lastBaseline !== 'bottom') { ctx.textBaseline = 'bottom'; _lastBaseline = 'bottom'; }
                             ctx.fillText('HP:'+o.hp.toFixed(1), sx, sy - sz - 15);
                         }
                     } else if (o.type === 'dmgText') {
