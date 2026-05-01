@@ -21,7 +21,7 @@ let timeSpeed = 1.0;
 const SpriteCache = {
     sprites: new Map(),
     get(emoji, shadow = false, rotate = false, ambient = 1.0) {
-        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20); // Higher precision for smoother lighting
+        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20); 
         const key = `${emoji}_${shadow}_${rotate}_${ambStep}`;
         if (this.sprites.has(key)) return this.sprites.get(key);
 
@@ -63,7 +63,7 @@ let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
     let o = renderPool[renderCount++];
-    // Fix inheritance bugs from object recycling
+    // Wipe recycled properties perfectly clean
     o.flash = 0;
     o.targeted = false;
     o.dead = false;
@@ -233,7 +233,7 @@ invScreen.addEventListener('mousedown', (e) => {
                 let sx = player.x + Math.cos(player.angle) * 4.0, sy = player.y + Math.sin(player.angle) * 4.0, sz = getElevation(sx, sy);
                 
                 if (item.type === 'torch') {
-                    torches.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.0 });
+                    torches.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.0, flicker: 1.0 });
                 } else {
                     let isTent = item.emoji === '⛺';
                     buildings.push({ x: sx, y: sy, z: sz, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
@@ -382,7 +382,7 @@ window.spawnEnemy = (type) => {
 window.spawnDebug = (em) => { 
     let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getElevation(cx, cy); 
     if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
-    else if (em === '🔥') torches.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.0 }); 
+    else if (em === '🔥') torches.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.0, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 
 };
 
@@ -466,7 +466,7 @@ document.addEventListener('mousemove', (e) => { if (!isPaused) { player.angle +=
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
     if (e.key >= '1' && e.key <= '5') switchWeapon(parseInt(e.key));
-    if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; // FLASHLIGHT TOGGLE
+    if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; // Flashlight Toggle
     if (e.key.toLowerCase() === 'e' && interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) { 
         if (interactTarget.rooms) enterBuilding(interactTarget); else if (interactTarget.action === 'exit') exitBuilding();
         else if (interactTarget.action === 'stairs') { if (activeBuilding.floors > 1) { if (activeFloor === 0) changeFloor(1); else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1); else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); } } }
@@ -491,6 +491,11 @@ function update() {
 
     currentZoom += ((isZooming ? 1.8 : 0.8) - currentZoom) * 0.15;
     
+    // Update Torch Flicker smoothly based on position and time
+    for (let t of torches) {
+        t.flicker = 0.85 + Math.sin(tickCounter * 0.15 + t.x * 10) * 0.1 + Math.sin(tickCounter * 0.4 + t.y * 5) * 0.05;
+    }
+
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'], isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
     if (isSprinting) { if (!infiniteStamina && !godMode) player.stamina = Math.max(0, player.stamina - 0.5); } else { if (player.stamina < 100) player.stamina = Math.min(100, player.stamina + 0.3); }
     staminaEl.innerText = Math.floor(player.stamina);
@@ -704,18 +709,25 @@ function render() {
             let o = activeRenderList[cur++];
             let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
             
-            // Per-object dynamic light calculation based on screen-space and distance math
+            // Per-object dynamic light calculation (Quadratic falloffs)
             let objLight = gameState === 'overworld' ? ambient : 1.0;
             if (objLight < 1.0) {
-                if (isFlashlightOn && o.rZ > 0 && o.rZ < 40) {
+                let flashAdd = 0;
+                if (isFlashlightOn && o.rZ > 0) {
                     let cX = (sx - canvas.width/2) / fov, cY = (sy - canvas.height/2) / fov, rad = Math.hypot(cX, cY);
-                    if (rad < 0.45) objLight += (1 - rad/0.45) * (1 - o.rZ/40) * 0.8;
+                    if (rad < 0.25) { // Narrower beam
+                        let intensity = rad < 0.05 ? 1.0 : Math.pow(1 - (rad - 0.05)/0.20, 2);
+                        flashAdd = intensity * Math.max(0, 1 - o.rZ/50) * 1.5; // Boosted intensity 
+                    }
                 }
+                
+                let torchAdd = 0;
                 for (let t of torches) {
-                    let dx = o.wX - t.x, dy = o.wY - t.y, dz = o.h - t.z;
-                    let dist = Math.hypot(dx, dy, dz);
-                    if (dist < 15) objLight += (1 - dist/15) * 0.8;
+                    let dist = Math.hypot(o.wX - t.x, o.wY - t.y, o.h - t.z);
+                    if (dist < 18) torchAdd += Math.pow(1 - dist/18, 2) * t.flicker * 1.2; // Smooth quadratic falloff
                 }
+                
+                objLight += Math.max(flashAdd, torchAdd); // Use brightest source
                 if (objLight > 1.0) objLight = 1.0;
             }
 
@@ -820,26 +832,45 @@ function render() {
     // --- DRAW GROUND LIGHTING OVERLAYS FOR TERRAIN ILLUMINATION ---
     if (gameState === 'overworld' && ambient < 1.0) {
         ctx.globalCompositeOperation = 'lighter';
+        
         // Additive Torch Overlays
         for (let t of torches) {
             let dx = t.x - player.x, dy = t.y - player.y, rZ = dx * dirX + dy * dirY;
-            if (rZ > 0.1 && rZ < 40) {
+            if (rZ > 0.1 && rZ < 50) {
                 let sx = canvas.width/2 + (dx*-dirY+dy*dirX)/rZ*fov, sy = hY + ((player.z - t.z)/rZ)*fov;
-                let radX = (15 / rZ) * fov; // 15 world unit radius
-                ctx.save(); ctx.translate(sx, sy); ctx.scale(1, 0.4); // flatten into ellipse for ground perspective
+                let radX = (15 / rZ) * fov; // Ground glow radius
+                let distFade = Math.min(1, 40 / rZ); // Prevent distance light bleeding over foreground
+                let f = t.flicker;
+                
+                // Floor glow
+                ctx.save(); ctx.translate(sx, sy); ctx.scale(1, 0.35); // Flatten naturally into an ellipse
                 let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radX);
-                grad.addColorStop(0, `rgba(255, 160, 50, ${0.8 * (1 - ambient)})`);
-                grad.addColorStop(1, `rgba(255, 160, 50, 0)`);
+                grad.addColorStop(0, `rgba(255, 140, 30, ${0.7 * f * (1 - ambient) * distFade})`);
+                grad.addColorStop(0.3, `rgba(255, 80, 10, ${0.3 * f * (1 - ambient) * distFade})`);
+                grad.addColorStop(1, `rgba(255, 50, 0, 0)`);
                 ctx.fillStyle = grad; ctx.fillRect(-radX, -radX, radX*2, radX*2); ctx.restore();
+
+                // Core bloom centered directly on the flame emoji
+                let bloomRad = (2.5 / rZ) * fov;
+                ctx.save(); ctx.translate(sx, sy - (1.5/rZ)*fov); // Elevated to match emoji height
+                let bGrad = ctx.createRadialGradient(0,0,0, 0,0, bloomRad);
+                bGrad.addColorStop(0, `rgba(255, 200, 100, ${0.9 * f})`);
+                bGrad.addColorStop(1, `rgba(255, 100, 0, 0)`);
+                ctx.fillStyle = bGrad; ctx.fillRect(-bloomRad, -bloomRad, bloomRad*2, bloomRad*2); ctx.restore();
             }
         }
-        // Additive Flashlight Overlay
+        
+        // Additive Flashlight Overlay (Tight hotspot, wider spill)
         if (isFlashlightOn) {
-            let cx = canvas.width / 2, cy = canvas.height / 2, rad = fov * 0.45;
-            let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-            grad.addColorStop(0, `rgba(255, 255, 255, ${0.5 * (1 - ambient)})`);
-            grad.addColorStop(1, `rgba(255, 255, 255, 0)`);
-            ctx.fillStyle = grad; ctx.fillRect(cx - rad, cy - rad, rad*2, rad*2);
+            let cx = canvas.width / 2, cy = canvas.height / 2;
+            let radOuter = fov * 0.25;
+            let radInner = fov * 0.05;
+            let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radOuter);
+            let alpha = 0.5 * (1 - ambient);
+            grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+            grad.addColorStop(radInner/radOuter, `rgba(200, 220, 255, ${alpha * 0.4})`);
+            grad.addColorStop(1, `rgba(150, 180, 255, 0)`);
+            ctx.fillStyle = grad; ctx.fillRect(cx - radOuter, cy - radOuter, radOuter*2, radOuter*2);
         }
         ctx.globalCompositeOperation = 'source-over';
     }
