@@ -18,18 +18,20 @@ let gameTime = 12.0;
 let timeSpeed = 1.0;
 
 // --- Performance Utilities ---
-// Offscreen cache to pre-render emojis so we never call slow ctx.fillText or ctx.shadowBlur on the main thread loop
+// Offscreen cache: Now perfectly bakes night-time darkness natively into the image
 const SpriteCache = {
     sprites: new Map(),
-    get(emoji, shadow = false, rotate = false) {
-        const key = `${emoji}_${shadow}_${rotate}`;
+    get(emoji, shadow = false, rotate = false, ambient = 1.0) {
+        // Quantize ambient light into 10 steps to prevent caching too many variations
+        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.2, Math.round(ambient * 10) / 10);
+        const key = `${emoji}_${shadow}_${rotate}_${ambStep}`;
         if (this.sprites.has(key)) return this.sprites.get(key);
 
-        const baseSize = 128; // Render very large once, hardware scales it efficiently
+        const baseSize = 128; 
         const c = document.createElement('canvas');
         c.width = baseSize * 1.5;
         c.height = baseSize * 1.5;
-        const cx = c.getContext('2d');
+        const cx = c.getContext('2d', { willReadFrequently: true });
         
         cx.font = `${baseSize}px sans-serif`;
         cx.textAlign = 'center';
@@ -40,16 +42,26 @@ const SpriteCache = {
             cx.shadowBlur = 25;
         }
 
-        cx.translate(c.width / 2, c.height - 20); // Anchor at bottom center (with pad)
+        cx.translate(c.width / 2, c.height - 20); 
         if (rotate) cx.rotate(Math.PI);
         
         cx.fillText(emoji, 0, 0);
+
+        // Natively darken the sprite on the offscreen canvas (much faster than ctx.filter)
+        // We skip darkening if it has a shadow (flash/target outline) so they "pop" in the dark!
+        if (ambStep < 1.0 && !shadow) {
+            cx.globalCompositeOperation = 'source-atop';
+            cx.fillStyle = `rgba(0, 0, 0, ${1.0 - ambStep})`;
+            cx.fillRect(-c.width, -c.height, c.width * 2, c.height * 2);
+            cx.globalCompositeOperation = 'source-over';
+        }
+
         this.sprites.set(key, c);
         return c;
     }
 };
 
-// Object Pooling for Rendering (Eliminates Garbage Collection micro-stutters)
+// Object Pooling for Rendering
 const renderPool = [];
 let renderCount = 0;
 function getRenderItem() {
@@ -327,13 +339,20 @@ function checkSegCyl(px, py, pz, cx, cy, cz, ex, ey, ez, esize, rad) {
 }
 
 function addDamageText(x, y, z, amt) { if(showDebugInfo) damageTexts.push({ x: x + (Math.random()-0.5)*0.5, y: y + (Math.random()-0.5)*0.5, z: z, amt: amt, life: 60 }); }
-function spawnBlood(x, y, z, color, count) {
+
+// Blood Colors as RGB to smoothly darken at night via math instead of slow filters
+function getBloodColor(type) { 
+    if (type === 'alien' || type === 'experimental') return {r: 51, g: 255, b: 51}; 
+    if (type === 'zombie') return {r: 92, g: 64, b: 51};
+    if (type === 'animal') return {r: 255, g: 51, b: 51};
+    return null; 
+}
+function spawnBlood(x, y, z, colorObj, count) {
     for (let i = 0; i < count; i++) {
         let angle = Math.random() * Math.PI * 2, speed = Math.random() * 0.15 + 0.05, vz = Math.random() * 0.15 + 0.05;
-        bloodParticles.push({ x: x, y: y, z: z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz, color: color, life: 60 + Math.random() * 30, size: Math.random() * 0.08 + 0.04 });
+        bloodParticles.push({ x: x, y: y, z: z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz, color: colorObj, life: 60 + Math.random() * 30, size: Math.random() * 0.08 + 0.04 });
     }
 }
-function getBloodColor(type) { return (type === 'alien' || type === 'experimental') ? '#33ff33' : (type === 'zombie' ? '#5c4033' : (type === 'animal' ? '#ff3333' : null)); }
 
 window.killAll = () => enemies.length = 0;
 window.spawnBuilding = () => { let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1, floors = parseInt(document.getElementById('dbg-b-floors').value) || 1; let cx = player.x + Math.cos(player.angle) * 8, cy = player.y + Math.sin(player.angle) * 8; buildings.push({ x: cx, y: cy, z: getElevation(cx, cy), emoji: '🏚️', rooms: rooms, floors: floors, roomW: 10, roomH: 10, wallH: 3.5 }); };
@@ -604,7 +623,7 @@ function render() {
     const dirX = Math.cos(player.angle), dirY = Math.sin(player.angle);
     const pX = -dirY * 0.8, pY = dirX * 0.8;
     
-    renderCount = 0; // Reset rendering pool
+    renderCount = 0; 
 
     let sky = getSkyColor(gameTime);
     let ambient = getAmbientLight(gameTime);
@@ -657,8 +676,6 @@ function render() {
 
     for (let z = VIEW_DIST; z > 0.1; ) {
         let zStep = z > 40 ? 1.5 : (z > 20 ? 0.8 : (z > 8 ? 0.4 : 0.2));
-        let doFilter = ambient < 1.0 && gameState === 'overworld';
-        if (doFilter) ctx.filter = `brightness(${ambient})`;
 
         while(cur < activeRenderList.length && activeRenderList[cur].rZ >= z) {
             let o = activeRenderList[cur++];
@@ -683,13 +700,19 @@ function render() {
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
                 let topLegs = sy - legH, topAbd = topLegs - abdH, topChest = topAbd - chestH;
                 
-                ctx.fillStyle = isFlash ? 'white' : (isZombie ? '#1e5622' : '#888888'); ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
-                ctx.fillStyle = isFlash ? 'white' : (isZombie ? '#2e7d32' : '#888888'); ctx.fillRect(sx - (sz * 0.18)/2, topAbd, sz * 0.18, abdH);
-                ctx.fillStyle = isFlash ? 'white' : (isZombie ? '#388e3c' : '#888888'); ctx.fillRect(sx - (sz * 0.26)/2, topChest, sz * 0.26, chestH);
+                // Pure Math multiplier for nighttime darkness
+                let curAmbient = gameState === 'overworld' ? ambient : 1.0;
+                
+                let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*curAmbient|0},${86*curAmbient|0},${34*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
+                let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*curAmbient|0},${125*curAmbient|0},${50*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
+                let color3 = isFlash ? 'white' : (isZombie ? `rgb(${56*curAmbient|0},${142*curAmbient|0},${60*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
 
-                // Use the sprite cache for the head
-                const headSprite = SpriteCache.get(isZombie ? '🧟' : '👽', isFlash, false);
-                let headScale = (headR * 2) / 128; // The cache is rendered at 128px
+                ctx.fillStyle = color1; ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
+                ctx.fillStyle = color2; ctx.fillRect(sx - (sz * 0.18)/2, topAbd, sz * 0.18, abdH);
+                ctx.fillStyle = color3; ctx.fillRect(sx - (sz * 0.26)/2, topChest, sz * 0.26, chestH);
+
+                const headSprite = SpriteCache.get(isZombie ? '🧟' : '👽', isFlash, false, curAmbient);
+                let headScale = (headR * 2) / 128;
                 let hw = headSprite.width * headScale, hh = headSprite.height * headScale;
                 ctx.drawImage(headSprite, sx - hw/2, (topChest - headR/2) - (headSprite.height - 20) * headScale, hw, hh);
 
@@ -705,22 +728,28 @@ function render() {
                 ctx.fillText(o.text, sx, sy);
             } else if (o.type === 'blood') {
                 let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov, sz = Math.max(2, (fov/o.rZ) * o.size);
-                ctx.fillStyle = o.color; ctx.globalAlpha = Math.min(1.0, o.life / 20.0);
-                ctx.fillRect(sx - sz/2, sy - sz/2, sz, sz); ctx.globalAlpha = 1.0;
+                
+                let curAmbient = gameState === 'overworld' ? ambient : 1.0;
+                let br = o.color.r * curAmbient | 0;
+                let bg = o.color.g * curAmbient | 0;
+                let bb = o.color.b * curAmbient | 0;
+                let alpha = Math.min(1.0, o.life / 20.0);
+                
+                ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, ${alpha})`;
+                ctx.fillRect(sx - sz/2, sy - sz/2, sz, sz);
             } else {
                 let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov, sz = o.size ? (fov/o.rZ)*o.size : 0; 
                 if (o.type === 'emoji' || o.type === 'animal') {
-                    // Sprite cache massively improves performance here
                     const isFlashed = o.targeted || (o.flash && o.flash > 0);
                     const isDead = o.type === 'animal' && o.dead;
-                    const sprite = SpriteCache.get(o.emoji, isFlashed, isDead);
+                    
+                    const sprite = SpriteCache.get(o.emoji, isFlashed, isDead, gameState === 'overworld' ? ambient : 1.0);
                     
                     let scale = sz / 128;
                     let sw = sprite.width * scale;
                     let sh = sprite.height * scale;
-                    
-                    // The cache is anchored at x: center, y: height - 20 (plus scale modifier)
                     let anchorY = isDead ? (sprite.height/2) : (sprite.height - 20); 
+                    
                     ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - anchorY*scale, sw, sh);
 
                     if (showDebugInfo && o.hp !== undefined) {
@@ -731,12 +760,9 @@ function render() {
                 } else { ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/o.rZ), 0, 7); ctx.fill(); }
             }
         }
-        if (doFilter) ctx.filter = 'none';
 
         if (gameState === 'overworld') {
             let sxStep = z > 30 ? 30 : (z > 15 ? 20 : 10); ctx.beginPath(); let started = false, avgH = 0, ptsCount = 0;
-            
-            // Math optimizations hoisted out of the horizontal slice loop
             const sxMult = 2 / canvas.width;
             const bPx = player.x + z*dirX, bPy = player.y + z*dirY;
             const zPx = z*pX, zPy = z*pY;
