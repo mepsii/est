@@ -18,11 +18,9 @@ let gameTime = 12.0;
 let timeSpeed = 1.0;
 
 // --- Performance Utilities ---
-// Offscreen cache: Now perfectly bakes night-time darkness natively into the image
 const SpriteCache = {
     sprites: new Map(),
     get(emoji, shadow = false, rotate = false, ambient = 1.0) {
-        // Quantize ambient light into 10 steps to prevent caching too many variations
         let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.2, Math.round(ambient * 10) / 10);
         const key = `${emoji}_${shadow}_${rotate}_${ambStep}`;
         if (this.sprites.has(key)) return this.sprites.get(key);
@@ -47,8 +45,6 @@ const SpriteCache = {
         
         cx.fillText(emoji, 0, 0);
 
-        // Natively darken the sprite on the offscreen canvas (much faster than ctx.filter)
-        // We skip darkening if it has a shadow (flash/target outline) so they "pop" in the dark!
         if (ambStep < 1.0 && !shadow) {
             cx.globalCompositeOperation = 'source-atop';
             cx.fillStyle = `rgba(0, 0, 0, ${1.0 - ambStep})`;
@@ -66,7 +62,13 @@ const renderPool = [];
 let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
-    return renderPool[renderCount++];
+    let o = renderPool[renderCount++];
+    // FIX: Wipe recycled properties clean so shadows don't "bleed" to trees/rocks
+    o.flash = 0;
+    o.targeted = false;
+    o.dead = false;
+    o.hp = undefined;
+    return o;
 }
 
 function createNoisePattern(baseColor, noiseAlphaDark, noiseAlphaLight) {
@@ -340,7 +342,6 @@ function checkSegCyl(px, py, pz, cx, cy, cz, ex, ey, ez, esize, rad) {
 
 function addDamageText(x, y, z, amt) { if(showDebugInfo) damageTexts.push({ x: x + (Math.random()-0.5)*0.5, y: y + (Math.random()-0.5)*0.5, z: z, amt: amt, life: 60 }); }
 
-// Blood Colors as RGB to smoothly darken at night via math instead of slow filters
 function getBloodColor(type) { 
     if (type === 'alien' || type === 'experimental') return {r: 51, g: 255, b: 51}; 
     if (type === 'zombie') return {r: 92, g: 64, b: 51};
@@ -700,7 +701,6 @@ function render() {
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
                 let topLegs = sy - legH, topAbd = topLegs - abdH, topChest = topAbd - chestH;
                 
-                // Pure Math multiplier for nighttime darkness
                 let curAmbient = gameState === 'overworld' ? ambient : 1.0;
                 
                 let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*curAmbient|0},${86*curAmbient|0},${34*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
@@ -728,11 +728,8 @@ function render() {
                 ctx.fillText(o.text, sx, sy);
             } else if (o.type === 'blood') {
                 let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov, sz = Math.max(2, (fov/o.rZ) * o.size);
-                
                 let curAmbient = gameState === 'overworld' ? ambient : 1.0;
-                let br = o.color.r * curAmbient | 0;
-                let bg = o.color.g * curAmbient | 0;
-                let bb = o.color.b * curAmbient | 0;
+                let br = o.color.r * curAmbient | 0; let bg = o.color.g * curAmbient | 0; let bb = o.color.b * curAmbient | 0;
                 let alpha = Math.min(1.0, o.life / 20.0);
                 
                 ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, ${alpha})`;
