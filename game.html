@@ -277,6 +277,7 @@
 
         const destroyedEntities = new Set();
         const damageTexts = [];
+        const bloodParticles = [];
 
         const RECIPES = [
             {
@@ -569,6 +570,30 @@
             damageTexts.push({ x: x + (Math.random()-0.5)*0.5, y: y + (Math.random()-0.5)*0.5, z: z, amt: amt, life: 60 });
         }
 
+        function spawnBlood(x, y, z, color, count) {
+            for (let i = 0; i < count; i++) {
+                let angle = Math.random() * Math.PI * 2;
+                let speed = Math.random() * 0.15 + 0.05;
+                let vz = Math.random() * 0.15 + 0.05;
+                bloodParticles.push({
+                    x: x, y: y, z: z,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    vz: vz,
+                    color: color,
+                    life: 60 + Math.random() * 30,
+                    size: Math.random() * 0.08 + 0.04
+                });
+            }
+        }
+
+        function getBloodColor(type) {
+            if (type === 'alien' || type === 'experimental') return '#33ff33';
+            if (type === 'zombie') return '#5c4033';
+            if (type === 'animal') return '#ff3333';
+            return null;
+        }
+
         window.killAll = function() {
             enemies.length = 0;
         };
@@ -804,6 +829,20 @@
                 if(damageTexts[i].life <= 0) damageTexts.splice(i, 1);
             }
 
+            // Handle Blood Particles
+            for(let i = bloodParticles.length - 1; i >= 0; i--) {
+                let b = bloodParticles[i];
+                b.x += b.vx; b.y += b.vy; b.z += b.vz;
+                b.vz -= 0.02; // gravity
+                let gZ = gameState === 'overworld' ? getElevation(b.x, b.y) : 0;
+                if (b.z <= gZ) {
+                    b.z = gZ; 
+                    b.vx = 0; b.vy = 0; b.vz = 0; 
+                }
+                b.life--;
+                if (b.life <= 0) bloodParticles.splice(i, 1);
+            }
+
             if (gameState === 'overworld') {
                 let pxC = Math.floor(player.x / MAP_CHUNK_SIZE), pyC = Math.floor(player.y / MAP_CHUNK_SIZE);
                 for(let x=pxC-2; x<=pxC+2; x++) for(let y=pyC-2; y<=pyC+2; y++) getMapChunk(x,y);
@@ -811,7 +850,6 @@
                 if (spawnEnemiesToggle && enemies.length < 15 && Math.random() < 0.015) { 
                     let ex = player.x + Math.cos(Math.random() * Math.PI * 2) * (25 + Math.random() * 15), ey = player.y + Math.sin(Math.random() * Math.PI * 2) * (25 + Math.random() * 15);
                     if (!isSolid(ex, ey)) {
-                        // Keep zombies out of natural spawn pool for now
                         if (Math.random() < 0.5) enemies.push({ type: 'alien', x: ex, y: ey, z: getElevation(ex, ey), hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
                         else enemies.push({ type: 'experimental', x: ex, y: ey, z: getElevation(ex, ey), hp: 10, cooldown: 60, size: 1.4, flash: 0 });
                     }
@@ -824,7 +862,6 @@
                     
                     if (d < 40) { 
                         if (e.type === 'zombie') {
-                            // Melee Zombie behavior
                             if (d > 0.8) { 
                                 e.x += (player.x-e.x)/d * 0.02; 
                                 e.y += (player.y-e.y)/d * 0.02; 
@@ -833,14 +870,13 @@
                             
                             if (d < 1.5) {
                                 if (--e.cooldown <= 0) {
-                                    takeDamage(5); // Zombie bite damage
-                                    e.cooldown = 60; // 1 attack per second roughly
+                                    takeDamage(5); 
+                                    e.cooldown = 60; 
                                 }
                             } else {
                                 e.cooldown = Math.max(0, e.cooldown - 1);
                             }
                         } else {
-                            // Ranged Alien behavior
                             if (d > 8) { 
                                 e.x += (player.x-e.x)/d * 0.02; 
                                 e.y += (player.y-e.y)/d * 0.02; 
@@ -929,10 +965,16 @@
                         if (hitTarget.type === 'enemy') {
                             hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5;
                             addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
+                            let bCol = getBloodColor(hitTarget.obj.type);
+                            if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
+
                             if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
                         } else if (hitTarget.type === 'animal') {
                             hitTarget.obj.hp -= w.dmg;
                             addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
+                            let bCol = getBloodColor('animal');
+                            if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
+
                             if (hitTarget.obj.hp <= 0) {
                                 hitTarget.obj.dead = true; score += 25; scoreEl.innerText = score; 
                                 hitTarget.obj.items = new Array(10).fill(null); 
@@ -973,6 +1015,10 @@
                                 let totalDmg = p.dmg * mult;
                                 e.hp -= totalDmg; hit = true; e.flash = 5;
                                 addDamageText(e.x, e.y, p.z, totalDmg);
+
+                                let bCol = getBloodColor(e.type);
+                                if (bCol) spawnBlood(p.x, p.y, p.z, bCol, mult === 2.0 ? 25 : 8);
+
                                 if (e.hp <= 0) { enemies.splice(ei, 1); score += 150; scoreEl.innerText = score; }
                                 break;
                             }
@@ -980,6 +1026,10 @@
                             if (Math.hypot(p.x-e.x, p.y-e.y) < 0.6 && p.z > e.z && p.z < e.z+e.size) { 
                                 e.hp -= p.dmg; hit = true; e.flash = 5;
                                 addDamageText(e.x, e.y, p.z, p.dmg);
+                                
+                                let bCol = getBloodColor(e.type || 'alien');
+                                if(bCol) spawnBlood(p.x, p.y, p.z, bCol, 10);
+
                                 if (e.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; } 
                                 break; 
                             }
@@ -990,6 +1040,9 @@
                         if (!a.dead && Math.hypot(p.x-a.x, p.y-a.y) < 0.6 && p.z > a.z && p.z < a.z+a.size) { 
                             a.hp -= p.dmg; hit = true; 
                             addDamageText(a.x, a.y, p.z, p.dmg);
+                            let bCol = getBloodColor('animal');
+                            if(bCol) spawnBlood(p.x, p.y, p.z, bCol, 10);
+
                             if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; } 
                             break; 
                         } 
@@ -1039,6 +1092,7 @@
                 for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'animal', emoji: e.emoji, size: e.size, hp: (!e.dead ? e.hp : undefined), rX: dx*-dirY+dy*dirX, rZ, h: e.z - 0.1, targeted: e === interactTarget, dead: e.dead }); }
                 for (let b of buildings) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'emoji', emoji: b.emoji, size: 4.5, rX: dx*-dirY+dy*dirX, rZ, h: b.z - 0.2, targeted: b === interactTarget }); }
                 for (let d of damageTexts) { let dx = d.x - player.x, dy = d.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) visible.push({ type: 'dmgText', text: Math.round(d.amt*10)/10, rX: dx*-dirY+dy*dirX, rZ, h: d.z, life: d.life }); }
+                for (let b of bloodParticles) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) visible.push({ type: 'blood', color: b.color, size: b.size, rX: dx*-dirY+dy*dirX, rZ, h: b.z, life: b.life }); }
             } else {
                 if (activeBuilding.emoji === '⛺') {
                     ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY);
@@ -1056,6 +1110,7 @@
                     let dx = cx - player.x, dy = cy - player.y, rZ = dx * dirX + dy * dirY;
                     if (rZ > -2 && rZ < VIEW_DIST) visible.push({ type: 'wall', wallObj: w, rX: dx*-dirY+dy*dirX, rZ });
                 }
+                for (let b of bloodParticles) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) visible.push({ type: 'blood', color: b.color, size: b.size, rX: dx*-dirY+dy*dirX, rZ, h: b.z, life: b.life }); }
             }
 
             for (let p of projectiles) { let dx = p.x - player.x, dy = p.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) visible.push({ type: 'bullet', owner: p.owner, rX: dx*-dirY+dy*dirX, rZ, h: p.z }); }
@@ -1148,6 +1203,13 @@
                         if (_lastFont !== df) { ctx.font = df; _lastFont = df; }
                         if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                         ctx.fillText(o.text, sx, sy);
+                    } else if (o.type === 'blood') {
+                        let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
+                        let sz = Math.max(2, (fov/o.rZ) * o.size);
+                        ctx.fillStyle = o.color;
+                        ctx.globalAlpha = Math.min(1.0, o.life / 20.0); // Fade out last 20 frames
+                        ctx.fillRect(sx - sz/2, sy - sz/2, sz, sz);
+                        ctx.globalAlpha = 1.0;
                     } else {
                         let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
                         let sz = o.size ? (fov/o.rZ)*o.size : 0; 
