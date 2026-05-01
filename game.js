@@ -21,7 +21,7 @@ let timeSpeed = 1.0;
 const SpriteCache = {
     sprites: new Map(),
     get(emoji, shadow = false, rotate = false, ambient = 1.0) {
-        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.2, Math.round(ambient * 10) / 10);
+        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20); // Higher precision for smoother lighting
         const key = `${emoji}_${shadow}_${rotate}_${ambStep}`;
         if (this.sprites.has(key)) return this.sprites.get(key);
 
@@ -63,11 +63,13 @@ let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
     let o = renderPool[renderCount++];
-    // FIX: Wipe recycled properties clean so shadows don't "bleed" to trees/rocks
+    // Fix inheritance bugs from object recycling
     o.flash = 0;
     o.targeted = false;
     o.dead = false;
     o.hp = undefined;
+    o.wX = 0; 
+    o.wY = 0;
     return o;
 }
 
@@ -95,11 +97,18 @@ let flightMode = false, jumpPower = 0.2;
 let infiniteStamina = false, sprintMult = 1.5;
 let spawnEnemiesToggle = true, showDebugInfo = false;
 
+// LIGHTING VARS
+let isFlashlightOn = false;
+const torches = [];
+
 const destroyedEntities = new Set();
 const damageTexts = [];
 const bloodParticles = [];
 
-const RECIPES = [{ name: "Tent", result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 }, req: { '🪵': 2, '🧶': 2 } }];
+const RECIPES = [
+    { name: "Tent", result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 }, req: { '🪵': 2, '🧶': 2 } },
+    { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 1 } }
+];
 
 dbgTimeEl.oninput = e => { gameTime = parseFloat(e.target.value); dbgTimeValEl.innerText = gameTime.toFixed(1); };
 dbgTimeSpeedEl.oninput = e => { timeSpeed = parseFloat(e.target.value) || 1.0; };
@@ -159,7 +168,7 @@ function updateCraftingUI() {
     craftingList.innerHTML = '';
     let resourceCounts = {};
     for (let item of inventory) {
-        if (item && (item.type === 'resource' || item.type === 'building')) {
+        if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch')) {
             resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
         }
     }
@@ -198,7 +207,7 @@ function craftRecipe(index) {
 }
 
 function giveItem(itemData) {
-    if (itemData.type === 'resource' || itemData.type === 'building') {
+    if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch') {
         let existing = inventory.find(i => i && i.emoji === itemData.emoji);
         if (existing) { existing.count = (existing.count || 1) + (itemData.count || 1); updateInventories(); return; }
     }
@@ -220,10 +229,15 @@ invScreen.addEventListener('mousedown', (e) => {
                 player.food = godMode ? player.food : Math.min(100, player.food + item.amount); foodEl.innerText = player.food; 
                 inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             }
-            else if (item.type === 'building') {
-                let sx = player.x + Math.cos(player.angle) * 5.0, sy = player.y + Math.sin(player.angle) * 5.0, sz = getElevation(sx, sy);
-                let isTent = item.emoji === '⛺';
-                buildings.push({ x: sx, y: sy, z: sz, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
+            else if (item.type === 'building' || item.type === 'torch') {
+                let sx = player.x + Math.cos(player.angle) * 4.0, sy = player.y + Math.sin(player.angle) * 4.0, sz = getElevation(sx, sy);
+                
+                if (item.type === 'torch') {
+                    torches.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.0 });
+                } else {
+                    let isTent = item.emoji === '⛺';
+                    buildings.push({ x: sx, y: sy, z: sz, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
+                }
                 item.count--; if (item.count <= 0) inventory[index] = null; updateInventories();
             }
         } else if (activeContainer) { 
@@ -232,7 +246,7 @@ invScreen.addEventListener('mousedown', (e) => {
         }
     } else if (type === 'container' && !isRightClick) {
         let item = activeContainer.items[index]; if (!item) return;
-        if (item.type === 'resource' || item.type === 'building') {
+        if (item.type === 'resource' || item.type === 'building' || item.type === 'torch') {
             let existing = inventory.find(i => i && i.emoji === item.emoji);
             if (existing) { existing.count = (existing.count || 1) + (item.count || 1); activeContainer.items[index] = null; updateInventories(); return; }
         }
@@ -365,7 +379,12 @@ window.spawnEnemy = (type) => {
         else enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 });
     }
 };
-window.spawnDebug = (em) => { let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getElevation(cx, cy); if(em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); };
+window.spawnDebug = (em) => { 
+    let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getElevation(cx, cy); 
+    if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
+    else if (em === '🔥') torches.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.0 }); 
+    else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 
+};
 
 function enterBuilding(b) {
     savedOverworld = { x: player.x, y: player.y, z: player.z, angle: player.angle, pitch: player.pitch };
@@ -447,6 +466,7 @@ document.addEventListener('mousemove', (e) => { if (!isPaused) { player.angle +=
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
     if (e.key >= '1' && e.key <= '5') switchWeapon(parseInt(e.key));
+    if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; // FLASHLIGHT TOGGLE
     if (e.key.toLowerCase() === 'e' && interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) { 
         if (interactTarget.rooms) enterBuilding(interactTarget); else if (interactTarget.action === 'exit') exitBuilding();
         else if (interactTarget.action === 'stairs') { if (activeBuilding.floors > 1) { if (activeFloor === 0) changeFloor(1); else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1); else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); } } }
@@ -641,7 +661,7 @@ function render() {
                 for (let i = 0; i < chunk.length; i++) {
                     let obj = chunk[i], dx = obj.wx - player.x, dy = obj.wy - player.y, rZ = dx * dirX + dy * dirY;
                     if (rZ > 0.2 && rZ < VIEW_DIST && Math.abs(dx * -dirY + dy * dirX) < (rZ * 2.0) / currentZoom) {
-                        let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.rX = dx * -dirY + dy * dirX; o.rZ = rZ; o.h = obj.h;
+                        let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.rX = dx * -dirY + dy * dirX; o.rZ = rZ; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
                     }
                 }
             }
@@ -649,14 +669,15 @@ function render() {
         for (let e of enemies) { 
             let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; 
             if (rZ > 0.2 && rZ < VIEW_DIST) {
-                let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.size = e.size; o.h = e.z;
+                let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y;
                 if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; }
                 else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; o.h -= 0.1; }
             }
         }
-        for (let e of containers) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z - 0.1; o.targeted = e === interactTarget; } }
-        for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z - 0.1; o.targeted = e === interactTarget; o.dead = e.dead; } }
-        for (let b of buildings) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = b.z - 0.2; o.targeted = b === interactTarget; } }
+        for (let t of torches) { let dx = t.x - player.x, dy = t.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = t.emoji; o.size = t.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = t.z - 0.1; o.wX = t.x; o.wY = t.y; } }
+        for (let e of containers) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z - 0.1; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
+        for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z - 0.1; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
+        for (let b of buildings) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = b.z - 0.2; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
         for (let d of damageTexts) { let dx = d.x - player.x, dy = d.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = d.z; o.life = d.life; } }
         for (let b of bloodParticles) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = b.z; o.life = b.life; } }
     } else {
@@ -675,11 +696,29 @@ function render() {
 
     let cur = 0; if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
 
+    // --- DRAW TERRAIN BACK-TO-FRONT ---
     for (let z = VIEW_DIST; z > 0.1; ) {
         let zStep = z > 40 ? 1.5 : (z > 20 ? 0.8 : (z > 8 ? 0.4 : 0.2));
 
         while(cur < activeRenderList.length && activeRenderList[cur].rZ >= z) {
             let o = activeRenderList[cur++];
+            let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
+            
+            // Per-object dynamic light calculation based on screen-space and distance math
+            let objLight = gameState === 'overworld' ? ambient : 1.0;
+            if (objLight < 1.0) {
+                if (isFlashlightOn && o.rZ > 0 && o.rZ < 40) {
+                    let cX = (sx - canvas.width/2) / fov, cY = (sy - canvas.height/2) / fov, rad = Math.hypot(cX, cY);
+                    if (rad < 0.45) objLight += (1 - rad/0.45) * (1 - o.rZ/40) * 0.8;
+                }
+                for (let t of torches) {
+                    let dx = o.wX - t.x, dy = o.wY - t.y, dz = o.h - t.z;
+                    let dist = Math.hypot(dx, dy, dz);
+                    if (dist < 15) objLight += (1 - dist/15) * 0.8;
+                }
+                if (objLight > 1.0) objLight = 1.0;
+            }
+
             if (o.type === 'wall') {
                 let w = o.wallObj;
                 let pts = w.pts ? w.pts : [ {x: w.p1.x, y: w.p1.y, z: activeBuilding.wallH}, {x: w.p2.x, y: w.p2.y, z: activeBuilding.wallH}, {x: w.p2.x, y: w.p2.y, z: 0}, {x: w.p1.x, y: w.p1.y, z: 0} ];
@@ -692,26 +731,24 @@ function render() {
                 }
                 if (clipped.length >= 3) {
                     ctx.fillStyle = w.color; ctx.strokeStyle = w.pts ? '#1a2410' : '#220000'; ctx.lineWidth = 1; ctx.beginPath();
-                    for (let i=0; i<clipped.length; i++) { let sx = canvas.width/2 + (clipped[i].rX/clipped[i].rZ)*fov, sy = hY + ((player.z - clipped[i].z)/clipped[i].rZ)*fov; if (i===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy); }
+                    for (let i=0; i<clipped.length; i++) { let wsx = canvas.width/2 + (clipped[i].rX/clipped[i].rZ)*fov, wsy = hY + ((player.z - clipped[i].z)/clipped[i].rZ)*fov; if (i===0) ctx.moveTo(wsx, wsy); else ctx.lineTo(wsx, wsy); }
                     ctx.closePath(); ctx.fill(); ctx.stroke();
                 }
             } else if (o.type === 'locationalEnemy') {
-                let e = o.obj, sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov, sz = (fov/o.rZ)*o.size; 
+                let e = o.obj, sz = (fov/o.rZ)*o.size; 
                 let isFlash = e.flash > 0, isZombie = e.type === 'zombie';
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
                 let topLegs = sy - legH, topAbd = topLegs - abdH, topChest = topAbd - chestH;
                 
-                let curAmbient = gameState === 'overworld' ? ambient : 1.0;
-                
-                let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*curAmbient|0},${86*curAmbient|0},${34*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
-                let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*curAmbient|0},${125*curAmbient|0},${50*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
-                let color3 = isFlash ? 'white' : (isZombie ? `rgb(${56*curAmbient|0},${142*curAmbient|0},${60*curAmbient|0})` : `rgb(${136*curAmbient|0},${136*curAmbient|0},${136*curAmbient|0})`);
+                let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*objLight|0},${86*objLight|0},${34*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
+                let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*objLight|0},${125*objLight|0},${50*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
+                let color3 = isFlash ? 'white' : (isZombie ? `rgb(${56*objLight|0},${142*objLight|0},${60*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
 
                 ctx.fillStyle = color1; ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
                 ctx.fillStyle = color2; ctx.fillRect(sx - (sz * 0.18)/2, topAbd, sz * 0.18, abdH);
                 ctx.fillStyle = color3; ctx.fillRect(sx - (sz * 0.26)/2, topChest, sz * 0.26, chestH);
 
-                const headSprite = SpriteCache.get(isZombie ? '🧟' : '👽', isFlash, false, curAmbient);
+                const headSprite = SpriteCache.get(isZombie ? '🧟' : '👽', isFlash, false, objLight);
                 let headScale = (headR * 2) / 128;
                 let hw = headSprite.width * headScale, hh = headSprite.height * headScale;
                 ctx.drawImage(headSprite, sx - hw/2, (topChest - headR/2) - (headSprite.height - 20) * headScale, hw, hh);
@@ -722,25 +759,23 @@ function render() {
                     ctx.fillText('HP:'+o.hp.toFixed(1), sx, sy - sz - 15);
                 }
             } else if (o.type === 'dmgText') {
-                let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
                 ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/o.rZ) + 'px sans-serif';
                 if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                 ctx.fillText(o.text, sx, sy);
             } else if (o.type === 'blood') {
-                let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov, sz = Math.max(2, (fov/o.rZ) * o.size);
-                let curAmbient = gameState === 'overworld' ? ambient : 1.0;
-                let br = o.color.r * curAmbient | 0; let bg = o.color.g * curAmbient | 0; let bb = o.color.b * curAmbient | 0;
+                let sz = Math.max(2, (fov/o.rZ) * o.size);
+                let br = o.color.r * objLight | 0; let bg = o.color.g * objLight | 0; let bb = o.color.b * objLight | 0;
                 let alpha = Math.min(1.0, o.life / 20.0);
                 
                 ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, ${alpha})`;
                 ctx.fillRect(sx - sz/2, sy - sz/2, sz, sz);
             } else {
-                let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov, sz = o.size ? (fov/o.rZ)*o.size : 0; 
+                let sz = o.size ? (fov/o.rZ)*o.size : 0; 
                 if (o.type === 'emoji' || o.type === 'animal') {
                     const isFlashed = o.targeted || (o.flash && o.flash > 0);
                     const isDead = o.type === 'animal' && o.dead;
                     
-                    const sprite = SpriteCache.get(o.emoji, isFlashed, isDead, gameState === 'overworld' ? ambient : 1.0);
+                    const sprite = SpriteCache.get(o.emoji, isFlashed, isDead, objLight);
                     
                     let scale = sz / 128;
                     let sw = sprite.width * scale;
@@ -780,6 +815,33 @@ function render() {
             ctx.fillStyle = 'rgb('+((baseR*(1-fog)+sky.r*fog)|0)+','+((baseG*(1-fog)+sky.g*fog)|0)+','+((baseB*(1-fog)+sky.b*fog)|0)+')'; ctx.fill(); 
         }
         z -= zStep;
+    }
+
+    // --- DRAW GROUND LIGHTING OVERLAYS FOR TERRAIN ILLUMINATION ---
+    if (gameState === 'overworld' && ambient < 1.0) {
+        ctx.globalCompositeOperation = 'lighter';
+        // Additive Torch Overlays
+        for (let t of torches) {
+            let dx = t.x - player.x, dy = t.y - player.y, rZ = dx * dirX + dy * dirY;
+            if (rZ > 0.1 && rZ < 40) {
+                let sx = canvas.width/2 + (dx*-dirY+dy*dirX)/rZ*fov, sy = hY + ((player.z - t.z)/rZ)*fov;
+                let radX = (15 / rZ) * fov; // 15 world unit radius
+                ctx.save(); ctx.translate(sx, sy); ctx.scale(1, 0.4); // flatten into ellipse for ground perspective
+                let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radX);
+                grad.addColorStop(0, `rgba(255, 160, 50, ${0.8 * (1 - ambient)})`);
+                grad.addColorStop(1, `rgba(255, 160, 50, 0)`);
+                ctx.fillStyle = grad; ctx.fillRect(-radX, -radX, radX*2, radX*2); ctx.restore();
+            }
+        }
+        // Additive Flashlight Overlay
+        if (isFlashlightOn) {
+            let cx = canvas.width / 2, cy = canvas.height / 2, rad = fov * 0.45;
+            let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+            grad.addColorStop(0, `rgba(255, 255, 255, ${0.5 * (1 - ambient)})`);
+            grad.addColorStop(1, `rgba(255, 255, 255, 0)`);
+            ctx.fillStyle = grad; ctx.fillRect(cx - rad, cy - rad, rad*2, rad*2);
+        }
+        ctx.globalCompositeOperation = 'source-over';
     }
 
     ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
