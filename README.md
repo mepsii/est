@@ -10,25 +10,21 @@
 - multiple mobs
 - 3 projectile based guns, 2 tools
 - enemies
-- cell based interior system
+- cell based interior systems
 - random map generation
 - basic crafting
 - resource gathering
 - inventory system
 - 2 biomes
-- food and stamina bars
+- food and stamina systems
+- locational damage systems
+- blood particle systems
 
 ----
 
 <h2>intended features:</h2>
 
-- clean up and spit shine on literally everything
-- inventory system overhaul
-- more placeable objects
-- more guns, tools, items, crafting recipes, everything
-- more biomes, and enviromental objects
-- sounds, animations, and sprites (eventually), get rid of placeholder emojis
-- whatever else comes to me ig, this is such a work in progress
+- tbd
 
 ----
 
