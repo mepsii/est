@@ -41,7 +41,13 @@ const SpriteCache = {
         }
 
         cx.translate(c.width / 2, c.height - 20); 
-        if (rotate) cx.rotate(Math.PI);
+        
+        // Correctly shift to the emoji's center, rotate, and shift back
+        if (rotate) {
+            cx.translate(0, -baseSize / 2);
+            cx.rotate(Math.PI);
+            cx.translate(0, baseSize / 2);
+        }
         
         cx.fillText(emoji, 0, 0);
 
@@ -844,7 +850,8 @@ function render() {
                     let scale = sz / 128;
                     let sw = sprite.width * scale;
                     let sh = sprite.height * scale;
-                    let anchorY = isDead ? (sprite.height/2) : (sprite.height - 20); 
+                    
+                    let anchorY = (sprite.height - 20); 
                     
                     ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - anchorY*scale, sw, sh);
 
