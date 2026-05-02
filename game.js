@@ -45,7 +45,6 @@ const SpriteCache = {
         
         cx.fillText(emoji, 0, 0);
 
-        // Natural Night Tinting (Deep Navy Blue instead of just black)
         if (ambStep < 1.0 && !shadow) {
             cx.globalCompositeOperation = 'source-atop';
             cx.fillStyle = `rgba(15, 20, 35, ${1.0 - ambStep})`;
@@ -58,7 +57,6 @@ const SpriteCache = {
     }
 };
 
-// Object Pooling for Rendering
 const renderPool = [];
 let renderCount = 0;
 function getRenderItem() {
@@ -491,7 +489,7 @@ function update() {
         let wave1 = Math.sin(tickTime * 1.7 + c.x) * 0.03;
         let wave2 = Math.sin(tickTime * 2.3 + c.y) * 0.03;
         let wave3 = Math.sin(tickTime * 5.1 - c.x) * 0.02;
-        let pop = Math.random() > 0.95 ? (Math.random() * 0.08) : 0; // occasional flame snap/pop
+        let pop = Math.random() > 0.95 ? (Math.random() * 0.08) : 0; 
         c.flicker = 0.85 + wave1 + wave2 + wave3 + pop;
     }
 
@@ -734,11 +732,13 @@ function render() {
                     let objCenterZ = (o.h + (o.size ? o.size/2 : 0));
                     let dz = objCenterZ - (player.z - 0.2); 
                     let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                    if (dist > 0.1 && dist < 50) {
+                    if (dist > 0.1 && dist < 45) {
                         let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ; 
-                        if (dot > 0.95) { 
-                            let beamAtt = (dot - 0.95) / 0.05; 
-                            lightIntensity += beamAtt * Math.pow(1 - dist/50, 2) * 2.0;
+                        if (dot > 0.90) { 
+                            let core = Math.max(0, (dot - 0.98) / 0.02);
+                            let flood = Math.max(0, (dot - 0.90) / 0.08);
+                            let att = (core * 0.6 + Math.pow(flood, 2.0) * 0.4) * Math.pow(1 - dist/45, 2);
+                            lightIntensity += att * 1.5;
                         }
                     }
                 }
@@ -767,17 +767,16 @@ function render() {
                 ctx.globalCompositeOperation = 'lighter';
                 
                 // Purely Atmospheric Air Bloom (Soft magical dust/air glow)
-                // Much softer transparent gradients, spreading further.
                 let airRad = (15.0 * o.size / o.rZ) * fov;
                 ctx.save(); 
                 ctx.translate(sx, flameCenterY); 
                 let aGrad = ctx.createRadialGradient(0,0,0, 0,0, airRad);
-                let aAlpha = 0.15 * f * (1 - curAmbient) * distFade; // Max 15% opacity
+                let aAlpha = 0.15 * f * (1 - curAmbient) * distFade; // Very soft, natural fade
                 
-                aGrad.addColorStop(0, `rgba(255, 160, 60, ${aAlpha})`);
-                aGrad.addColorStop(0.3, `rgba(255, 100, 20, ${aAlpha * 0.5})`);
-                aGrad.addColorStop(0.6, `rgba(200, 50, 5, ${aAlpha * 0.15})`);
-                aGrad.addColorStop(1, `rgba(150, 20, 0, 0)`);
+                aGrad.addColorStop(0, `rgba(255, 140, 50, ${aAlpha})`);
+                aGrad.addColorStop(0.3, `rgba(255, 80, 20, ${aAlpha * 0.5})`);
+                aGrad.addColorStop(0.6, `rgba(200, 40, 5, ${aAlpha * 0.15})`);
+                aGrad.addColorStop(1, `rgba(150, 10, 0, 0)`);
                 
                 ctx.fillStyle = aGrad; 
                 ctx.fillRect(-airRad, -airRad, airRad*2, airRad*2); 
@@ -908,18 +907,20 @@ function render() {
                         }
                     }
                     
-                    // True 3D Geometric Flashlight Cone on the Terrain
+                    // True 3D Geometric Flashlight Cone on the Terrain (Old Incandescent Style)
                     if (isFlashlightOn) {
                         let dx = midWX - player.x, dy = midWY - player.y;
-                        let dz = midH - (player.z - 0.2); // Light originating from camera height
+                        let dz = midH - (player.z - 0.2); 
                         let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                        if (dist > 0.1 && dist < 50) {
+                        if (dist > 0.1 && dist < 45) {
                             let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ;
-                            if (dot > 0.95) { // Sharp spotlight threshold
-                                let att = ((dot - 0.95) / 0.05) * Math.pow(1 - dist/50, 2) * 2.0;
-                                r += 255 * att;
-                                g += 255 * att;
-                                b += 255 * att;
+                            if (dot > 0.90) { // Wider, softer flood angle
+                                let core = Math.max(0, (dot - 0.98) / 0.02);
+                                let flood = Math.max(0, (dot - 0.90) / 0.08);
+                                let att = (core * 0.6 + Math.pow(flood, 2.0) * 0.4) * Math.pow(1 - dist/45, 2);
+                                r += 245 * att * 1.5;
+                                g += 210 * att * 1.5; // Classic warm flashlight hue
+                                b += 130 * att * 1.5;
                             }
                         }
                     }
@@ -948,18 +949,21 @@ function render() {
     }
 
     // --- SCREEN-SPACE FLASHLIGHT GLARE OVERLAY ---
-    // Made extremely subtle, purely simulating dust/glare on the player's physical lens/eyes
+    // Simulates lens dirt and air glare in the center of the camera
     if (gameState === 'overworld' && ambient < 1.0 && isFlashlightOn) {
         ctx.globalCompositeOperation = 'lighter';
         let cx = canvas.width / 2, cy = hY - player.pitch; 
-        let radOuter = Math.min(canvas.width, canvas.height) * 0.4; 
-        let radInner = radOuter * 0.1;
+        let radOuter = Math.min(canvas.width, canvas.height) * 0.45; 
+        let radInner = radOuter * 0.05; 
         
         let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radOuter);
-        let alpha = 0.15 * (1 - ambient); // Dimmer, more transparent ambient glare
-        grad.addColorStop(0, `rgba(200, 230, 255, ${alpha})`);
-        grad.addColorStop(radInner/radOuter, `rgba(150, 200, 255, ${alpha * 0.5})`);
-        grad.addColorStop(1, `rgba(100, 150, 255, 0)`);
+        let alpha = 0.10 * (1 - ambient); // Very transparent and subtle natural glare
+        
+        // Vintage yellowish-orange glare progression
+        grad.addColorStop(0, `rgba(255, 240, 200, ${alpha * 2.0})`);
+        grad.addColorStop(radInner/radOuter, `rgba(240, 210, 130, ${alpha})`);
+        grad.addColorStop(0.4, `rgba(150, 110, 40, ${alpha * 0.2})`);
+        grad.addColorStop(1, `rgba(50, 30, 10, 0)`);
         
         ctx.fillStyle = grad; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
