@@ -45,6 +45,7 @@ const SpriteCache = {
         
         cx.fillText(emoji, 0, 0);
 
+        // Natural Night Tinting (Deep Navy Blue instead of just black)
         if (ambStep < 1.0 && !shadow) {
             cx.globalCompositeOperation = 'source-atop';
             cx.fillStyle = `rgba(15, 20, 35, ${1.0 - ambStep})`;
@@ -57,6 +58,7 @@ const SpriteCache = {
     }
 };
 
+// Object Pooling for Rendering
 const renderPool = [];
 let renderCount = 0;
 function getRenderItem() {
@@ -225,7 +227,7 @@ invScreen.addEventListener('mousedown', (e) => {
                 let sx = player.x + Math.cos(player.angle) * 4.0, sy = player.y + Math.sin(player.angle) * 4.0, sz = getElevation(sx, sy);
                 
                 if (item.type === 'campfire') {
-                    campfires.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.8, flicker: 1.0 });
+                    campfires.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.2, flicker: 1.0 });
                 } else {
                     let isTent = item.emoji === '⛺';
                     buildings.push({ x: sx, y: sy, z: sz, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
@@ -374,7 +376,7 @@ window.spawnEnemy = (type) => {
 window.spawnDebug = (em) => { 
     let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getElevation(cx, cy); 
     if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
-    else if (em === '🔥') campfires.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.8, flicker: 1.0 }); 
+    else if (em === '🔥') campfires.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.2, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 
 };
 
@@ -483,13 +485,14 @@ function update() {
 
     currentZoom += ((isZooming ? 1.8 : 0.8) - currentZoom) * 0.15;
     
-    // Natural Campfire Flicker
-    let tickTime = tickCounter * 0.03;
+    // Snappy Natural Campfire Flicker
+    let tickTime = tickCounter * 0.05;
     for (let c of campfires) {
-        let noise = (Math.random() - 0.5) * 0.04;
-        let wave1 = Math.sin(tickTime * 2.1 + c.x) * 0.04;
-        let wave2 = Math.sin(tickTime * 3.7 + c.y) * 0.04;
-        c.flicker = 0.9 + wave1 + wave2 + noise; 
+        let wave1 = Math.sin(tickTime * 1.7 + c.x) * 0.03;
+        let wave2 = Math.sin(tickTime * 2.3 + c.y) * 0.03;
+        let wave3 = Math.sin(tickTime * 5.1 - c.x) * 0.02;
+        let pop = Math.random() > 0.95 ? (Math.random() * 0.08) : 0; // occasional flame snap/pop
+        c.flicker = 0.85 + wave1 + wave2 + wave3 + pop;
     }
 
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'], isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
@@ -644,6 +647,12 @@ function render() {
     const dirX = Math.cos(player.angle), dirY = Math.sin(player.angle);
     const pX = -dirY * 0.8, pY = dirX * 0.8;
     
+    // Exact true 3D aim vector for the flashlight cone
+    const pitchAngle = Math.atan2(player.pitch, fov);
+    const aimX = dirX * Math.cos(pitchAngle);
+    const aimY = dirY * Math.cos(pitchAngle);
+    const aimZ = Math.sin(pitchAngle);
+
     renderCount = 0; 
 
     let sky = getSkyColor(gameTime);
@@ -719,26 +728,29 @@ function render() {
             if (objLight < 1.0 && o.type !== 'campfireBloom' && o.type !== 'wall') {
                 let lightIntensity = 0;
 
-                // Flashlight cone
+                // 3D Geometric Flashlight Spotlight
                 if (isFlashlightOn && o.wX !== undefined && o.wY !== undefined) {
                     let dx = o.wX - player.x, dy = o.wY - player.y;
-                    let dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist > 0.1 && dist < 40) {
-                        let dot = (dx/dist)*dirX + (dy/dist)*dirY; 
-                        if (dot > 0.88) { 
-                            let beamAtt = (dot - 0.88) / 0.12; 
-                            lightIntensity += beamAtt * Math.pow(1 - dist/40, 2) * 1.5;
+                    let objCenterZ = (o.h + (o.size ? o.size/2 : 0));
+                    let dz = objCenterZ - (player.z - 0.2); 
+                    let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                    if (dist > 0.1 && dist < 50) {
+                        let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ; 
+                        if (dot > 0.95) { 
+                            let beamAtt = (dot - 0.95) / 0.05; 
+                            lightIntensity += beamAtt * Math.pow(1 - dist/50, 2) * 2.0;
                         }
                     }
                 }
                 
-                // Campfire 3D Sphere Influence (Calculates Z distance as well!)
+                // 3D Campfire Sphere Influence
                 if (o.wX !== undefined && o.wY !== undefined) {
                     for (let c of visibleCampfires) {
-                        let dx = o.wX - c.x, dy = o.wY - c.y, dz = (o.h || 0) - c.z;
+                        let dx = o.wX - c.x, dy = o.wY - c.y;
+                        let dz = (o.h || 0) - c.z; // True height difference
                         let dist = Math.sqrt(dx*dx + dy*dy + dz*dz); 
                         if (dist < 22) { 
-                            lightIntensity += Math.pow(1 - dist/22, 2) * c.flicker * 1.5;
+                            lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5;
                         }
                     }
                 }
@@ -749,21 +761,24 @@ function render() {
             if (o.type === 'campfireBloom') {
                 let curAmbient = gameState === 'overworld' ? ambient : 1.0;
                 let f = o.flicker;
-                let flameCenterY = sy - (0.5 * o.size / o.rZ) * fov; 
+                let flameCenterY = sy - (0.4 * o.size / o.rZ) * fov; 
                 let distFade = Math.min(1, 40 / o.rZ); 
                 
                 ctx.globalCompositeOperation = 'lighter';
                 
-                // Purely Atmospheric Bloom (Spherical, non-squashed, magical dust/air glow)
-                // Ground light is completely removed here because it's baked into the 3D terrain below.
-                let airRad = (12.0 * o.size / o.rZ) * fov;
+                // Purely Atmospheric Air Bloom (Soft magical dust/air glow)
+                // Much softer transparent gradients, spreading further.
+                let airRad = (15.0 * o.size / o.rZ) * fov;
                 ctx.save(); 
                 ctx.translate(sx, flameCenterY); 
                 let aGrad = ctx.createRadialGradient(0,0,0, 0,0, airRad);
-                let aAlpha = 0.25 * f * (1 - curAmbient) * distFade;
-                aGrad.addColorStop(0, `rgba(255, 180, 80, ${aAlpha})`);
-                aGrad.addColorStop(0.4, `rgba(255, 100, 20, ${aAlpha * 0.3})`);
-                aGrad.addColorStop(1, `rgba(255, 30, 0, 0)`);
+                let aAlpha = 0.15 * f * (1 - curAmbient) * distFade; // Max 15% opacity
+                
+                aGrad.addColorStop(0, `rgba(255, 160, 60, ${aAlpha})`);
+                aGrad.addColorStop(0.3, `rgba(255, 100, 20, ${aAlpha * 0.5})`);
+                aGrad.addColorStop(0.6, `rgba(200, 50, 5, ${aAlpha * 0.15})`);
+                aGrad.addColorStop(1, `rgba(150, 20, 0, 0)`);
+                
                 ctx.fillStyle = aGrad; 
                 ctx.fillRect(-airRad, -airRad, airRad*2, airRad*2); 
                 ctx.restore();
@@ -853,7 +868,6 @@ function render() {
             let fog = Math.min(1, z/VIEW_DIST);
             let nightFactor = 1.0 - ambient;
 
-            // Precalculate left edge to chain polygons
             let prevCX = -sxStep * sxMult - 1;
             let prevWX = bPx + zPx * prevCX;
             let prevWY = bPy + zPy * prevCX;
@@ -867,7 +881,6 @@ function render() {
                 let h = getElevation(wX, wY);
                 let sy = hY + ((player.z - h)/z)*fov;
 
-                // Center of this terrain segment
                 let midWX = (prevWX + wX) / 2;
                 let midWY = (prevWY + wY) / 2;
                 let midH = (prevH + h) / 2;
@@ -878,31 +891,32 @@ function render() {
                 let baseB = 30 * (1 - biomeBlend) + Math.min(255, Math.max(80, 110 + midH * 12)) * biomeBlend;
                 if (Math.floor(z * 2.5) % 2 === 0) { baseR*=0.92; baseG*=0.92; baseB*=0.92; } 
 
-                // Default lighting & Deep Navy Night Tint
                 let r = baseR * ambient + baseR * nightFactor * 0.05;
                 let g = baseG * ambient + baseG * nightFactor * 0.12;
                 let b = baseB * ambient + baseB * nightFactor * 0.28;
 
-                // Add Point Lights specifically to this piece of terrain
                 if (ambient < 1.0) {
+                    // True 3D Campfire Math on the Terrain
                     for (let c of visibleCampfires) {
                         let dx = midWX - c.x, dy = midWY - c.y, dz = midH - c.z;
-                        let dist = Math.sqrt(dx*dx + dy*dy + dz*dz); // True 3D depth to the light
+                        let dist = Math.sqrt(dx*dx + dy*dy + dz*dz); 
                         if (dist < 22) {
-                            let att = Math.pow(1 - dist/22, 2) * c.flicker;
+                            let att = Math.pow(1 - dist/22, 2.5) * c.flicker;
                             r += 255 * att * 1.5;
-                            g += 110 * att * 1.5;
-                            b += 20 * att * 1.5;
+                            g += 140 * att * 1.5; // Warmer natural orange/yellow
+                            b += 50 * att * 1.5;
                         }
                     }
                     
+                    // True 3D Geometric Flashlight Cone on the Terrain
                     if (isFlashlightOn) {
                         let dx = midWX - player.x, dy = midWY - player.y;
-                        let dist = Math.sqrt(dx*dx + dy*dy);
-                        if (dist > 0.1 && dist < 40) {
-                            let dot = (dx/dist)*dirX + (dy/dist)*dirY;
-                            if (dot > 0.88) {
-                                let att = ((dot - 0.88) / 0.12) * Math.pow(1 - dist/40, 2) * 1.5;
+                        let dz = midH - (player.z - 0.2); // Light originating from camera height
+                        let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        if (dist > 0.1 && dist < 50) {
+                            let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ;
+                            if (dot > 0.95) { // Sharp spotlight threshold
+                                let att = ((dot - 0.95) / 0.05) * Math.pow(1 - dist/50, 2) * 2.0;
                                 r += 255 * att;
                                 g += 255 * att;
                                 b += 255 * att;
@@ -911,16 +925,14 @@ function render() {
                     }
                 }
 
-                // Apply Fog
                 r = r * (1 - fog) + sky.r * fog;
                 g = g * (1 - fog) + sky.g * fog;
                 b = b * (1 - fog) + sky.b * fog;
 
                 ctx.fillStyle = `rgb(${Math.min(255, r)|0}, ${Math.min(255, g)|0}, ${Math.min(255, b)|0})`;
                 
-                // Draw this slice of terrain down to the bottom
                 ctx.beginPath();
-                ctx.moveTo(sx - sxStep - 1, Math.floor(prevSY)); // Overlap left slightly to kill seams
+                ctx.moveTo(sx - sxStep - 1, Math.floor(prevSY)); 
                 ctx.lineTo(sx, Math.floor(sy));
                 ctx.lineTo(sx, canvas.height + 10);
                 ctx.lineTo(sx - sxStep - 1, canvas.height + 10);
@@ -935,17 +947,18 @@ function render() {
         z -= zStep;
     }
 
-    // --- SCREEN-SPACE CIRCULAR FLASHLIGHT OVERLAY ---
+    // --- SCREEN-SPACE FLASHLIGHT GLARE OVERLAY ---
+    // Made extremely subtle, purely simulating dust/glare on the player's physical lens/eyes
     if (gameState === 'overworld' && ambient < 1.0 && isFlashlightOn) {
         ctx.globalCompositeOperation = 'lighter';
-        let cx = canvas.width / 2, cy = hY - player.pitch; // Centered exactly on aim/crosshair
-        let radOuter = Math.min(canvas.width, canvas.height) * 0.45; // Responsive circle
-        let radInner = radOuter * 0.2;
+        let cx = canvas.width / 2, cy = hY - player.pitch; 
+        let radOuter = Math.min(canvas.width, canvas.height) * 0.4; 
+        let radInner = radOuter * 0.1;
         
         let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radOuter);
-        let alpha = 0.6 * (1 - ambient);
-        grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
-        grad.addColorStop(radInner/radOuter, `rgba(200, 220, 255, ${alpha * 0.5})`);
+        let alpha = 0.15 * (1 - ambient); // Dimmer, more transparent ambient glare
+        grad.addColorStop(0, `rgba(200, 230, 255, ${alpha})`);
+        grad.addColorStop(radInner/radOuter, `rgba(150, 200, 255, ${alpha * 0.5})`);
         grad.addColorStop(1, `rgba(100, 150, 255, 0)`);
         
         ctx.fillStyle = grad; 
