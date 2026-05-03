@@ -14,6 +14,10 @@ const stairMenu = document.getElementById('stair-menu'), stairMenuTitle = docume
 const dbgTimeEl = document.getElementById('dbg-time'), dbgTimeValEl = document.getElementById('dbg-time-val');
 const dbgTimeSpeedEl = document.getElementById('dbg-time-speed');
 
+// --- Engine Variables ---
+let activeRenderList = [];
+let _lastAlign = '', _lastFont = '', _lastBaseline = '';
+
 // --- Performance Utilities ---
 const SpriteCache = {
     sprites: new Map(),
@@ -38,7 +42,6 @@ const SpriteCache = {
         }
 
         cx.translate(c.width / 2, c.height - 20); 
-        
         if (rotate) {
             cx.translate(0, -baseSize / 2);
             cx.rotate(Math.PI);
@@ -80,9 +83,9 @@ function createNoisePattern(baseColor, noiseAlphaDark, noiseAlphaLight) {
     }
     return ctx.createPattern(tc, 'repeat');
 }
+const patternArmyGreenFloor = createNoisePattern('#323F18', 0.3, 0.05);
 const patternArmyGreen = createNoisePattern('#4A5D23', 0.2, 0.05);
 const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
-const patternArmyGreenFloor = createNoisePattern('#323F18', 0.3, 0.05);
 
 // --- Game Data & Configs ---
 const RECIPES = [
@@ -95,7 +98,9 @@ const WEAPONS = {
     2: { name: "SMG", fireRate: 4, spread: 0.04, speed: 3.0, count: 1, dmg: 1 }, 
     3: { name: "Shotgun", fireRate: 40, spread: 0.08, speed: 2.2, count: 12, dmg: 2 },
     4: { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe' },
-    5: { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe' }
+    5: { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe' },
+    6: { name: "Shovel", fireRate: 15, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel' },
+    7: { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place' }
 };
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };
@@ -108,7 +113,7 @@ const ANIMAL_TYPES = [
 ];
 const TREE_EMOJIS = new Set(['🌲', '🌳', '🪾']), FLOWER_EMOJIS = new Set(['🌻', '🌹', '🌷', '🌼', '💀']);
 
-const MAP_CHUNK_SIZE = 10, VIEW_DIST = 60; 
+const VIEW_DIST = 45, CHUNK_SIZE = 8; // Render distance expanded!
 
 // --- Game State Variables ---
 let gameTime = 12.0;
@@ -116,7 +121,7 @@ let timeSpeed = 1.0;
 let isInventoryOpen = false, isDebugOpen = false, isStairMenuOpen = false, interactTarget = null, activeContainer = null;
 let inventory = new Array(20).fill(null); 
 let godMode = false, noclip = false, speedMult = 1.0;
-let flightMode = false, jumpPower = 0.2;
+let flightMode = false, jumpPower = 0.28;
 let infiniteStamina = false, sprintMult = 1.5;
 let spawnEnemiesToggle = true, showDebugInfo = false;
 let isFlashlightOn = false;
@@ -130,4 +135,4 @@ const destroyedEntities = new Set();
 const damageTexts = [];
 const bloodParticles = [];
 const projectiles = [], enemies = [], containers = [], animals = [], buildings = [];
-const player = { x: 0, y: 0, z: 0, vz: 0, angle: 0, pitch: 0, speed: 0.11, baseHeight: 1.2, hp: 100, food: 100, stamina: 100 };
+const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100 };
