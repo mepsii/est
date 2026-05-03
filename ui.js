@@ -84,7 +84,7 @@ invScreen.addEventListener('mousedown', (e) => {
                 inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             }
             else if (item.type === 'building' || item.type === 'campfire') {
-                let sx = player.x + Math.cos(player.angle) * 4.0, sy = player.y + Math.sin(player.angle) * 4.0, sz = getElevation(sx, sy);
+                let sx = player.x + Math.cos(player.angle) * 4.0, sy = player.y + Math.sin(player.angle) * 4.0, sz = getGridBaseHeight(Math.floor(sx), Math.floor(sy)) + 1;
                 if (item.type === 'campfire') {
                     campfires.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.2, flicker: 1.0 });
                 } else {
@@ -129,7 +129,7 @@ document.addEventListener('mousemove', (e) => { if (!isPaused) { player.angle +=
 
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
-    if (e.key >= '1' && e.key <= '5') switchWeapon(parseInt(e.key));
+    if (e.key >= '1' && e.key <= '7') switchWeapon(parseInt(e.key));
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     if (e.key.toLowerCase() === 'e' && interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) { 
         if (interactTarget.rooms) enterBuilding(interactTarget); else if (interactTarget.action === 'exit') exitBuilding();
@@ -152,7 +152,7 @@ document.getElementById('dbg-noclip').onchange = e => noclip = e.target.checked;
 document.getElementById('dbg-infstam').onchange = e => infiniteStamina = e.target.checked;
 document.getElementById('dbg-speed').onchange = e => speedMult = (parseInt(e.target.value) || 100) / 100;
 document.getElementById('dbg-sprint').onchange = e => sprintMult = parseFloat(e.target.value) || 1.5;
-document.getElementById('dbg-jump').onchange = e => jumpPower = parseFloat(e.target.value) || 0.2;
+document.getElementById('dbg-jump').onchange = e => jumpPower = parseFloat(e.target.value) || 0.28;
 document.getElementById('dbg-flight').onchange = e => flightMode = e.target.checked;
 document.getElementById('dbg-spawnenemies').onchange = e => spawnEnemiesToggle = e.target.checked;
 document.getElementById('dbg-info').onchange = e => showDebugInfo = e.target.checked;
@@ -162,18 +162,19 @@ document.getElementById('btn-stair-up').onclick = () => { changeFloor(1); closeS
 document.getElementById('btn-stair-down').onclick = () => { changeFloor(-1); closeStairMenu(); };
 document.getElementById('btn-stair-cancel').onclick = closeStairMenu;
 
+// Handlers specific for debug spawn button commands inside index.html
 window.killAll = () => enemies.length = 0;
-window.spawnBuilding = () => { let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1, floors = parseInt(document.getElementById('dbg-b-floors').value) || 1; let cx = player.x + Math.cos(player.angle) * 8, cy = player.y + Math.sin(player.angle) * 8; buildings.push({ x: cx, y: cy, z: getElevation(cx, cy), emoji: '🏚️', rooms: rooms, floors: floors, roomW: 10, roomH: 10, wallH: 3.5 }); };
+window.spawnBuilding = () => { let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1, floors = parseInt(document.getElementById('dbg-b-floors').value) || 1; let cx = player.x + Math.cos(player.angle) * 8, cy = player.y + Math.sin(player.angle) * 8; buildings.push({ x: cx, y: cy, z: getGridBaseHeight(Math.floor(cx), Math.floor(cy))+1, emoji: '🏚️', rooms: rooms, floors: floors, roomW: 10, roomH: 10, wallH: 3.5 }); };
 window.spawnEnemy = (type) => {
-    let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5, ez = getElevation(ex, ey);
-    if (!isSolid(ex, ey)) {
+    let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5, ez = getGridBaseHeight(Math.floor(ex), Math.floor(ey)) + 1;
+    if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez))) {
         if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
         else if (type === 'zombie') enemies.push({ type: 'zombie', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
         else enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 });
     }
 };
 window.spawnDebug = (em) => { 
-    let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getElevation(cx, cy); 
+    let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getGridBaseHeight(Math.floor(cx), Math.floor(cy)) + 1; 
     if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
     else if (em === '🔥') campfires.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.2, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 

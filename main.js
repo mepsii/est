@@ -40,9 +40,6 @@ function takeDamage(amt) { if (godMode) return; player.hp -= amt; hpEl.innerText
 function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 window.addEventListener('resize', resize); resize();
 
-// Initialize player Z height
-player.z = getElevation(0, 0) + player.baseHeight;
-
 // --- Update Physics & Logic ---
 function update() {
     if (isPaused) return;
@@ -55,14 +52,12 @@ function update() {
 
     currentZoom += ((isZooming ? 1.8 : 0.8) - currentZoom) * 0.15;
     
-    // Snappy Natural Campfire Flicker
     let tickTime = tickCounter * 0.05;
     for (let c of campfires) {
         let wave1 = Math.sin(tickTime * 1.7 + c.x) * 0.03;
         let wave2 = Math.sin(tickTime * 2.3 + c.y) * 0.03;
         let wave3 = Math.sin(tickTime * 5.1 - c.x) * 0.02;
-        let pop = Math.random() > 0.95 ? (Math.random() * 0.08) : 0; 
-        c.flicker = 0.85 + wave1 + wave2 + wave3 + pop;
+        c.flicker = 0.85 + wave1 + wave2 + wave3 + (Math.random() > 0.95 ? (Math.random() * 0.08) : 0);
     }
 
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'], isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
@@ -73,28 +68,59 @@ function update() {
     if (keys['KeyW']) mv += player.speed * curSpeedMult; if (keys['KeyS']) mv -= player.speed * curSpeedMult;
     if (keys['KeyA']) st -= player.speed * curSpeedMult; if (keys['KeyD']) st += player.speed * curSpeedMult;
     
-    let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st, ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
-    if (noclip || !isSolid(nx, ny)) { player.x = nx; player.y = ny; }
+    // True 3D Collision Movement with Wall Sliding
+    if (gameState === 'overworld') {
+        let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
+        let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
+        
+        if (!checkCollision(nx, player.y, player.z)) player.x = nx;
+        if (!checkCollision(player.x, ny, player.z)) player.y = ny;
 
-    let floorZ = (gameState === 'overworld') ? getElevation(player.x, player.y) : 0, groundZ = floorZ + player.baseHeight;
+        if (flightMode) { 
+            player.vz = 0; 
+            if (keys['Space']) player.z += player.speed * speedMult * 1.5; 
+            if (keys['ShiftLeft'] || keys['ControlLeft']) player.z -= player.speed * speedMult * 1.5; 
+        } else {
+            if (!checkCollision(player.x, player.y, player.z - 0.05)) {
+                player.vz -= 0.015; // fall
+            } else {
+                if (player.vz < 0) { player.vz = 0; player.z = Math.ceil(player.z - 0.05) + 0.01; } 
+                if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
+            }
+            player.z += player.vz;
+            if (player.vz > 0 && checkCollision(player.x, player.y, player.z)) {
+                player.z -= player.vz; // Hit roof
+                player.vz = 0;
+            }
+        }
+    } else if (gameState === 'interior') {
+        let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
+        let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
+        if (!isSolid(nx, player.y)) player.x = nx;
+        if (!isSolid(player.x, ny)) player.y = ny;
+    }
 
-    if (flightMode) { player.vz = 0; if (keys['Space']) player.z += player.speed * speedMult * 1.5; if (keys['ShiftLeft'] || keys['ControlLeft']) player.z -= player.speed * speedMult * 1.5; } 
-    else { player.vz -= 0.02; player.z += player.vz; if (player.z <= groundZ) { player.vz = 0; player.z += (groundZ - player.z) * 0.3; if (Math.abs(player.z - groundZ) < 0.01) player.z = groundZ; if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; } } }
-    
     for(let i = damageTexts.length - 1; i >= 0; i--) { damageTexts[i].z += 0.02; damageTexts[i].life--; if(damageTexts[i].life <= 0) damageTexts.splice(i, 1); }
-    for(let i = bloodParticles.length - 1; i >= 0; i--) { let b = bloodParticles[i]; b.x += b.vx; b.y += b.vy; b.z += b.vz; b.vz -= 0.02; let gZ = gameState === 'overworld' ? getElevation(b.x, b.y) : 0; if (b.z <= gZ) { b.z = gZ + 0.02; b.vx = 0; b.vy = 0; b.vz = 0; } b.life--; if (b.life <= 0) bloodParticles.splice(i, 1); }
+    for(let i = bloodParticles.length - 1; i >= 0; i--) { 
+        let b = bloodParticles[i]; b.x += b.vx; b.y += b.vy; b.z += b.vz; b.vz -= 0.02; 
+        if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) { b.z = Math.floor(b.z) + 1.02; b.vx = 0; b.vy = 0; b.vz = 0; } 
+        b.life--; if (b.life <= 0) bloodParticles.splice(i, 1); 
+    }
 
     if (gameState === 'overworld') {
-        let pxC = Math.floor(player.x / MAP_CHUNK_SIZE), pyC = Math.floor(player.y / MAP_CHUNK_SIZE);
-        for(let x=pxC-2; x<=pxC+2; x++) for(let y=pyC-2; y<=pyC+2; y++) getMapChunk(x,y);
+        let pxC = Math.floor(player.x / CHUNK_SIZE), pyC = Math.floor(player.y / CHUNK_SIZE);
+        // Expanded chunk updating block to match VIEW_DIST
+        let updateRad = Math.ceil(VIEW_DIST / CHUNK_SIZE);
+        for(let x = pxC - updateRad; x <= pxC + updateRad; x++) for(let y = pyC - updateRad; y <= pyC + updateRad; y++) getMapChunk(x, y);
 
         let isNight = gameTime < 6 || gameTime >= 19, spawnChance = isNight ? 0.001 : 0.0002;
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
-            let angle = Math.random() * Math.PI * 2, dist = 25 + Math.random() * 15, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
-            if (!isSolid(ex, ey)) {
+            let angle = Math.random() * Math.PI * 2, dist = 20 + Math.random() * 10, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
+            let ez = getGridBaseHeight(Math.floor(ex), Math.floor(ey)) + 1;
+            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez))) {
                 let biome = getBiome(ex, ey), alienChance = biome >= 0.65 ? 0.05 : 0.01;
-                if (Math.random() < alienChance) { enemies.push({ type: 'experimental', x: ex, y: ey, z: getElevation(ex, ey), hp: 10, cooldown: 60, size: 1.4, flash: 0 }); } 
-                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; if (!isSolid(zx, zy) && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: getElevation(zx, zy), hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
+                if (Math.random() < alienChance) { enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 }); } 
+                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getGridBaseHeight(Math.floor(zx),Math.floor(zy))+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
             }
         }
 
@@ -102,11 +128,13 @@ function update() {
             let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); 
             if (e.flash && e.flash > 0) e.flash--; if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
             if (d < 40) { 
+                if (d > 0.8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } 
+                if (!getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z - 0.1))) e.z -= 0.1;
+                else if (getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))) e.z += 1.0; 
+                
                 if (e.type === 'zombie') {
-                    if (d > 0.8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } e.z = getElevation(e.x, e.y); 
                     if (d < 1.5) { if (--e.cooldown <= 0) { takeDamage(5); e.cooldown = 60; } } else e.cooldown = Math.max(0, e.cooldown - 1);
                 } else {
-                    if (d > 8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } e.z = getElevation(e.x, e.y); 
                     if (--e.cooldown <= 0) { let projZ = (e.type === 'experimental' ? e.z + e.size * 0.8 : e.z + 0.6); projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:projZ, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-projZ)/d*0.6, life:100, dmg:10 }); e.cooldown = 120; } 
                 }
             }
@@ -114,7 +142,12 @@ function update() {
 
         for (let i = animals.length - 1; i >= 0; i--) {
             let a = animals[i]; if (Math.hypot(player.x - a.x, player.y - a.y) > VIEW_DIST * 2.0) { animals.splice(i, 1); continue; }
-            if (!a.dead) { a.moveTimer--; if (a.moveTimer <= 0) { a.moveAngle = Math.random() * Math.PI * 2; a.moveTimer = 50 + Math.random() * 100; } let anx = a.x + Math.cos(a.moveAngle) * a.speed, any = a.y + Math.sin(a.moveAngle) * a.speed; if (!isSolid(anx, any)) { a.x = anx; a.y = any; } a.z = getElevation(a.x, a.y); }
+            if (!a.dead) { 
+                a.moveTimer--; if (a.moveTimer <= 0) { a.moveAngle = Math.random() * Math.PI * 2; a.moveTimer = 50 + Math.random() * 100; } 
+                let anx = a.x + Math.cos(a.moveAngle) * a.speed, any = a.y + Math.sin(a.moveAngle) * a.speed; 
+                if (!getSolid(Math.floor(anx), Math.floor(any), Math.floor(a.z))) { a.x = anx; a.y = any; } 
+                if (!getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z - 0.1))) a.z -= 0.1; else if (getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z))) a.z += 1.0; 
+            }
         }
     }
 
@@ -140,15 +173,21 @@ function update() {
         const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom), w = WEAPONS[currentWeapon];
         if (w.isMelee) {
             let hitTarget = null; let cDist = w.range;
-            for (let e of enemies) { let d = Math.hypot(player.x - e.x, player.y - e.y); if (d < cDist) { let a = Math.atan2(e.y - player.y, e.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - a), Math.cos(player.angle - a))); if (ad < 0.6) { cDist = d; hitTarget = { obj: e, type: 'enemy' }; } } }
-            for (let a of animals) { if(a.dead) continue; let d = Math.hypot(player.x - a.x, player.y - a.y); if (d < cDist) { let aTo = Math.atan2(a.y - player.y, a.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: a, type: 'animal' }; } } }
-            let pCx = Math.floor(player.x / MAP_CHUNK_SIZE), pCy = Math.floor(player.y / MAP_CHUNK_SIZE);
-            for(let cx = pCx - 1; cx <= pCx + 1; cx++) for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
-                let chunk = getMapChunk(cx, cy);
-                for(let i=0; i<chunk.length; i++) {
-                    let cObj = chunk[i]; if (cObj.hp !== undefined) { let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy); if (d < cDist) { let aTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i }; } } }
+            if (gameState === 'overworld') {
+                for (let e of enemies) { let d = Math.hypot(player.x - e.x, player.y - e.y); if (d < cDist) { let a = Math.atan2(e.y - player.y, e.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - a), Math.cos(player.angle - a))); if (ad < 0.6) { cDist = d; hitTarget = { obj: e, type: 'enemy' }; } } }
+                for (let a of animals) { if(a.dead) continue; let d = Math.hypot(player.x - a.x, player.y - a.y); if (d < cDist) { let aTo = Math.atan2(a.y - player.y, a.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: a, type: 'animal' }; } } }
+                
+                if (!hitTarget && (w.toolType === 'axe' || w.toolType === 'pickaxe')) {
+                    let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
+                    for(let cx = pCx - 1; cx <= pCx + 1; cx++) for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
+                        let chunk = getMapChunk(cx, cy);
+                        for(let i=0; i<chunk.length; i++) {
+                            let cObj = chunk[i]; if (cObj.hp !== undefined) { let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy); if (d < cDist) { let aTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i }; } } }
+                        }
+                    }
                 }
             }
+
             if (hitTarget) {
                 if (hitTarget.type === 'enemy') {
                     hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
@@ -163,17 +202,38 @@ function update() {
                     if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
                     if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
                 }
+            } else if ((w.toolType === 'shovel' || w.toolType === 'place') && gameState === 'overworld') {
+                // True 3D Voxel Raycast (Spherical Shovel Scoop)
+                let step = 0.2;
+                for (let i = 0; i <= w.range / step; i++) {
+                    let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
+                    let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
+                    let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step); 
+                    
+                    if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
+                        let targetX = w.toolType === 'place' ? rx - Math.cos(player.angle)*Math.cos(pitchAngle)*step : rx;
+                        let targetY = w.toolType === 'place' ? ry - Math.sin(player.angle)*Math.cos(pitchAngle)*step : ry;
+                        let targetZ = w.toolType === 'place' ? rz - Math.sin(pitchAngle)*step : rz;
+
+                        let amt = w.toolType === 'shovel' ? -1 : 1; 
+                        modifyTerrain(targetX, targetY, targetZ, 1.4, amt);
+                        
+                        let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
+                        spawnBlood(targetX, targetY, targetZ, pCol, 8); // Dirt/Stone particles
+                        break;
+                    }
+                }
             }
             fireCooldown = w.fireRate;
         } else {
-            for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: player.z - 0.2, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
+            for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: player.z + 1.2, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
             fireCooldown = w.fireRate;
         }
     }
 
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i], prevX = p.x, prevY = p.y, prevZ = p.z;
-        p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--; let hit = (p.z < (gameState==='overworld'?getElevation(p.x, p.y):0) || isSolid(p.x, p.y));
+        p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--; let hit = gameState === 'overworld' ? getSolid(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) : false;
         if (p.owner === 'player' && gameState === 'overworld') {
             for (let ei = enemies.length - 1; ei >= 0; ei--) { 
                 let e = enemies[ei], isLocational = (e.type === 'experimental' || e.type === 'zombie'), rad = isLocational ? 0.4 : 0.6;
@@ -202,290 +262,239 @@ function update() {
                     }
                 }
             }
-        } else if (p.owner === 'enemy') { let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, player.x, player.y, player.z - 1.2, 1.2, 0.4); if (hitZ !== false) { takeDamage(p.dmg); hit = true; } }
+        } else if (p.owner === 'enemy') { let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, player.x, player.y, player.z, 1.6, 0.4); if (hitZ !== false) { takeDamage(p.dmg); hit = true; } }
         if (hit || p.life <= 0) projectiles.splice(i, 1);
     }
 }
-
-// --- Render Graphics ---
-const activeRenderList = [];
-let _lastFont = '', _lastBaseline = '', _lastAlign = '';
 
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
     const fov = canvas.width * currentZoom, hY = canvas.height/2 + player.pitch;
-    const dirX = Math.cos(player.angle), dirY = Math.sin(player.angle);
-    const pX = -dirY * 0.8, pY = dirX * 0.8;
-    
-    // Exact true 3D aim vector for the flashlight cone
+    const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
     const pitchAngle = Math.atan2(player.pitch, fov);
-    const aimX = dirX * Math.cos(pitchAngle);
-    const aimY = dirY * Math.cos(pitchAngle);
-    const aimZ = Math.sin(pitchAngle);
+    const aimX = cosA * Math.cos(pitchAngle), aimY = sinA * Math.cos(pitchAngle), aimZ = Math.sin(pitchAngle);
 
     renderCount = 0; 
-
     let sky = getSkyColor(gameTime);
     let ambient = getAmbientLight(gameTime);
+    let visibleCampfires = campfires.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST);
 
-    let visibleCampfires = campfires.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST + 25);
+    ctx.fillStyle = `rgb(${sky.r|0}, ${sky.g|0}, ${sky.b|0})`; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    if (gameState === 'overworld') {
-        ctx.fillStyle = `rgb(${sky.r|0}, ${sky.g|0}, ${sky.b|0})`; 
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        let pCx = Math.floor(player.x / MAP_CHUNK_SIZE), pCy = Math.floor(player.y / MAP_CHUNK_SIZE), chunkRadius = Math.ceil(VIEW_DIST / MAP_CHUNK_SIZE);
-        for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
-            for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
-                if ((cx * MAP_CHUNK_SIZE + MAP_CHUNK_SIZE/2 - player.x)*dirX + (cy * MAP_CHUNK_SIZE + MAP_CHUNK_SIZE/2 - player.y)*dirY < -MAP_CHUNK_SIZE*1.5) continue;
-                let chunk = getMapChunk(cx, cy);
-                for (let i = 0; i < chunk.length; i++) {
-                    let obj = chunk[i], dx = obj.wx - player.x, dy = obj.wy - player.y, rZ = dx * dirX + dy * dirY;
-                    if (rZ > 0.2 && rZ < VIEW_DIST && Math.abs(dx * -dirY + dy * dirX) < (rZ * 2.0) / currentZoom) {
-                        let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.rX = dx * -dirY + dy * dirX; o.rZ = rZ; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
-                    }
-                }
-            }
-        }
-        for (let e of enemies) { 
-            let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; 
-            if (rZ > 0.2 && rZ < VIEW_DIST) {
-                let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y;
-                if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; }
-                else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; o.h -= 0.1; }
-            }
-        }
-        for (let c of campfires) { 
-            let dx = c.x - player.x, dy = c.y - player.y, rZ = dx * dirX + dy * dirY; 
-            if (rZ > 0.2 && rZ < VIEW_DIST) { 
-                let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = c.z - 0.1; o.wX = c.x; o.wY = c.y; 
-                if (ambient < 1.0) {
-                    let g = getRenderItem(); g.type = 'campfireBloom'; g.rX = dx*-dirY+dy*dirX; g.rZ = rZ + 0.01; g.h = c.z; g.flicker = c.flicker; g.size = c.size;
-                }
-            } 
-        }
-        for (let e of containers) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z - 0.1; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
-        for (let e of animals) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z - 0.1; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
-        for (let b of buildings) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = b.z - 0.2; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
-        for (let d of damageTexts) { let dx = d.x - player.x, dy = d.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = d.z; o.life = d.life; } }
-        for (let b of bloodParticles) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = b.z; o.life = b.life; } }
-    } else {
-        if (activeBuilding.emoji === '⛺') { ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY)); } 
-        else { ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = '#5c4033'; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY)); }
-        for (let e of getInteriorEntities()) { let dx = e.x - player.x, dy = e.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = e.z; o.targeted = e.action === interactTarget?.action; } }
-        for (let w of getInteriorWalls()) { let cx = w.pts ? w.pts.reduce((sum, p) => sum + p.x, 0) / w.pts.length : (w.p1.x + w.p2.x)/2, cy = w.pts ? w.pts.reduce((sum, p) => sum + p.y, 0) / w.pts.length : (w.p1.y + w.p2.y)/2, dx = cx - player.x, dy = cy - player.y, rZ = dx * dirX + dy * dirY; if (rZ > -2 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'wall'; o.wallObj = w; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; } }
-        for (let b of bloodParticles) { let dx = b.x - player.x, dy = b.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = b.z; o.life = b.life; } }
+    function project3D(px, py, pz) {
+        let dx = px - player.x, dy = py - player.y, dz = pz - (player.z + player.baseHeight);
+        let rotX = dx * cosA + dy * sinA;
+        if (rotX < 0.1) return null; // Sprite front plane cull
+        let rotY = dx * -sinA + dy * cosA;
+        let sx = canvas.width/2 + (rotY / rotX) * fov;
+        let sy = hY - (dz / rotX) * fov;
+        return { sx, sy, depth: rotX };
     }
 
-    for (let p of projectiles) { let dx = p.x - player.x, dy = p.y - player.y, rZ = dx * dirX + dy * dirY; if (rZ > 0.1 && rZ < VIEW_DIST) { let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.rX = dx*-dirY+dy*dirX; o.rZ = rZ; o.h = p.z; } }
-
-    activeRenderList.length = renderCount;
-    for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
-    activeRenderList.sort((a,b) => b.rZ - a.rZ);
-
-    let cur = 0; if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
-
-    // --- DRAW TERRAIN AND 2.5D OBJECTS BACK-TO-FRONT ---
-    for (let z = VIEW_DIST; z > 0.1; ) {
-        let zStep = z > 40 ? 1.5 : (z > 20 ? 0.8 : (z > 8 ? 0.4 : 0.2));
-
-        while(cur < activeRenderList.length && activeRenderList[cur].rZ >= z) {
-            let o = activeRenderList[cur++];
-            let sx = canvas.width/2 + (o.rX/o.rZ)*fov, sy = hY + ((player.z-o.h)/o.rZ)*fov;
-            
-            // True 3D Object Point-Lighting Calculation
-            let objLight = gameState === 'overworld' ? ambient : 1.0;
-            if (objLight < 1.0 && o.type !== 'campfireBloom' && o.type !== 'wall') {
-                let lightIntensity = 0;
-                if (isFlashlightOn && o.wX !== undefined && o.wY !== undefined) {
-                    let dx = o.wX - player.x, dy = o.wY - player.y;
-                    let objCenterZ = (o.h + (o.size ? o.size/2 : 0));
-                    let dz = objCenterZ - (player.z - 0.2); 
-                    let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                    if (dist > 0.1 && dist < 45) {
-                        let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ; 
-                        if (dot > 0.90) { 
-                            let core = Math.max(0, (dot - 0.98) / 0.02);
-                            let flood = Math.max(0, (dot - 0.90) / 0.08);
-                            let att = (core * 0.6 + Math.pow(flood, 2.0) * 0.4) * Math.pow(1 - dist/45, 2);
-                            lightIntensity += att * 1.5;
+    if (gameState === 'overworld') {
+        let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
+        let chunkRadius = Math.ceil(VIEW_DIST / CHUNK_SIZE);
+        
+        // Render 3D Voxel Meshes & Entities
+        for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
+            for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
+                let dx = cx * CHUNK_SIZE + CHUNK_SIZE/2 - player.x, dy = cy * CHUNK_SIZE + CHUNK_SIZE/2 - player.y;
+                if (dx * cosA + dy * sinA < -CHUNK_SIZE*1.5) continue; // Behind camera
+                
+                let faces = getChunkMesh(cx, cy);
+                for (let i = 0; i < faces.length; i++) {
+                    let f = faces[i];
+                    let dX = f.cx - player.x, dY = f.cy - player.y, dZ = f.cz - (player.z + player.baseHeight);
+                    let rotX = dX * cosA + dY * sinA;
+                    
+                    if (rotX > -2 && rotX < VIEW_DIST) { // Face might slightly cross near plane
+                        // Strict Backface Culling 
+                        if (dX * f.norm.x + dY * f.norm.y + dZ * f.norm.z > 0) continue;
+                        
+                        let distSq = dX*dX + dY*dY + dZ*dZ;
+                        if (distSq < VIEW_DIST*VIEW_DIST) {
+                            let o = getRenderItem(); o.type = 'face'; o.face = f; o.depthSq = distSq;
                         }
                     }
                 }
-                if (o.wX !== undefined && o.wY !== undefined) {
-                    for (let c of visibleCampfires) {
-                        let dx = o.wX - c.x, dy = o.wY - c.y, dz = (o.h || 0) - c.z;
-                        let dist = Math.sqrt(dx*dx + dy*dy + dz*dz); 
-                        if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
+                
+                let chunk = getMapChunk(cx, cy);
+                for (let i = 0; i < chunk.length; i++) {
+                    let obj = chunk[i], dX = obj.wx - player.x, dY = obj.wy - player.y, rotX = dX * cosA + dY * sinA;
+                    if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dX * -sinA + dY * cosA) < (rotX * 2.0) / currentZoom) {
+                        let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = rotX*rotX; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
                     }
                 }
-                objLight = Math.min(1.0, objLight + lightIntensity);
+            }
+        }
+        
+        for (let e of enemies) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.depthSq = rotX*rotX; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y; if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; } else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; } } }
+        for (let c of campfires) { let rotX = (c.x-player.x)*cosA + (c.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'campfireBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
+        for (let e of containers) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
+        for (let e of animals) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
+        for (let b of buildings) { let rotX = (b.x-player.x)*cosA + (b.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
+        for (let d of damageTexts) { let rotX = (d.x-player.x)*cosA + (d.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
+        for (let b of bloodParticles) { let rotX = (b.x-player.x)*cosA + (b.y-player.y)*sinA; if (rotX > 0.1 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y;} }
+    } else {
+        ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
+        let interiorEnts = getInteriorEntities();
+        for (let e of interiorEnts) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
+        let walls = getInteriorWalls();
+        for (let w of walls) {
+            if (w.pts) {
+                let rotX = (w.pts[0].x-player.x)*cosA + (w.pts[0].y-player.y)*sinA; if (rotX > 0.1) { let o = getRenderItem(); o.type = 'wallPoly'; o.pts = w.pts; o.color = w.color; o.depthSq = rotX*rotX; }
+            } else {
+                let r1 = (w.p1.x-player.x)*cosA + (w.p1.y-player.y)*sinA, r2 = (w.p2.x-player.x)*cosA + (w.p2.y-player.y)*sinA;
+                if (r1 > 0.1 || r2 > 0.1) { let o = getRenderItem(); o.type = 'wall'; o.p1 = w.p1; o.p2 = w.p2; o.color = w.color; o.depthSq = Math.min(r1, r2)**2; }
+            }
+        }
+    }
+
+    for (let p of projectiles) { let rotX = (p.x-player.x)*cosA + (p.y-player.y)*sinA; if (rotX > 0.1 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = rotX*rotX; o.h = p.z; o.wX = p.x; o.wY = p.y;} }
+
+    activeRenderList.length = renderCount;
+    for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
+    activeRenderList.sort((a,b) => b.depthSq - a.depthSq); // 3D Painter's Algorithm sorting
+
+    if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
+    ctx.lineJoin = 'round'; // Fixes tiny seams between voxel faces
+
+    for (let i = 0; i < activeRenderList.length; i++) {
+        let o = activeRenderList[i];
+        
+        let objLight = gameState === 'overworld' ? ambient : 1.0;
+        let depth = Math.sqrt(o.depthSq);
+        
+        let isUnderground = o.type === 'face' ? (o.face.cz < getGridBaseHeight(Math.floor(o.face.cx), Math.floor(o.face.cy)) - 2) : false;
+        if (isUnderground) objLight = 0.05; // Plunge caves into darkness
+
+        if (objLight < 1.0 && o.type !== 'campfireBloom') {
+            let lightIntensity = 0;
+            let cx = o.type === 'face' ? o.face.cx : o.wX;
+            let cy = o.type === 'face' ? o.face.cy : o.wY;
+            let cz = o.type === 'face' ? o.face.cz : o.h + (o.size?o.size/2:0);
+            
+            if (isFlashlightOn) {
+                let dx = cx - player.x, dy = cy - player.y, dz = cz - (player.z + player.baseHeight); 
+                let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                if (dist > 0.1 && dist < 45) {
+                    let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ; 
+                    if (dot > 0.90) { 
+                        let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - dist/45, 2);
+                        lightIntensity += att * 1.5;
+                    }
+                }
+            }
+            for (let c of visibleCampfires) {
+                let dist = Math.hypot(cx - c.x, cy - c.y, cz - c.z); 
+                if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
+            }
+            objLight = Math.min(1.0, objLight + lightIntensity);
+        }
+
+        if (o.type === 'face' || o.type === 'wallPoly') {
+            let f = o.type === 'face' ? o.face : o;
+            
+            // True 3D Sutherland-Hodgman projection with near-plane clamping (z = 0.1)
+            let camPts = [];
+            for (let k = 0; k < 4; k++) {
+                let dx = f.pts[k].x - player.x, dy = f.pts[k].y - player.y, dz = f.pts[k].z - (player.z + player.baseHeight);
+                camPts.push({
+                    cx: dx * -sinA + dy * cosA,
+                    cy: dz,
+                    cz: dx * cosA + dy * sinA // distance along view axis
+                });
             }
 
+            let clipped = [];
+            let zNear = 0.1;
+            for(let j=0; j<camPts.length; j++) {
+                let p1 = camPts[j], p2 = camPts[(j+1)%camPts.length];
+                if(p1.cz >= zNear) clipped.push(p1);
+                if((p1.cz >= zNear) !== (p2.cz >= zNear)) {
+                    let t = (zNear - p1.cz) / (p2.cz - p1.cz);
+                    clipped.push({
+                        cx: p1.cx + t * (p2.cx - p1.cx),
+                        cy: p1.cy + t * (p2.cy - p1.cy),
+                        cz: zNear
+                    });
+                }
+            }
+            
+            if (clipped.length < 3) continue; // Face entirely behind near plane
+
+            if (o.type === 'face') {
+                let shade = f.shade * objLight;
+                let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
+
+                let fog = Math.min(1, depth / VIEW_DIST);
+                fr = fr * (1 - fog) + sky.r * fog; fg = fg * (1 - fog) + sky.g * fog; fb = fb * (1 - fog) + sky.b * fog;
+
+                ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
+                ctx.strokeStyle = ctx.fillStyle; 
+            } else {
+                ctx.fillStyle = f.color; ctx.strokeStyle = '#000';
+            }
+            
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            for (let j = 0; j < clipped.length; j++) {
+                let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
+                let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                if (j===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+            }
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            
+        } else if (o.type === 'wall') {
+            let p1 = project3D(o.p1.x, o.p1.y, 0), p2 = project3D(o.p2.x, o.p2.y, 0), p3 = project3D(o.p2.x, o.p2.y, activeBuilding.wallH), p4 = project3D(o.p1.x, o.p1.y, activeBuilding.wallH);
+            if (p1 && p2 && p3 && p4) { ctx.fillStyle = o.color; ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.lineTo(p3.sx, p3.sy); ctx.lineTo(p4.sx, p4.sy); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+        } else {
+            let p = project3D(o.wX, o.wY, o.h);
+            if (!p) continue;
+            let sx = p.sx, sy = p.sy, sz = (fov/depth)*o.size; 
+            
             if (o.type === 'campfireBloom') {
-                let curAmbient = gameState === 'overworld' ? ambient : 1.0;
-                let f = o.flicker;
-                let flameCenterY = sy - (0.4 * o.size / o.rZ) * fov; 
-                let distFade = Math.min(1, 40 / o.rZ); 
+                let f = o.flicker, flameCenterY = sy - (0.4 * o.size / depth) * fov; 
+                let distFade = Math.min(1, 40 / depth); 
                 ctx.globalCompositeOperation = 'lighter';
-                
-                let airRad = (15.0 * o.size / o.rZ) * fov;
+                let airRad = (15.0 * o.size / depth) * fov;
                 ctx.save(); ctx.translate(sx, flameCenterY); 
                 let aGrad = ctx.createRadialGradient(0,0,0, 0,0, airRad);
-                let aAlpha = 0.15 * f * (1 - curAmbient) * distFade; 
-                
-                aGrad.addColorStop(0, `rgba(255, 140, 50, ${aAlpha})`);
-                aGrad.addColorStop(0.3, `rgba(255, 80, 20, ${aAlpha * 0.5})`);
-                aGrad.addColorStop(0.6, `rgba(200, 40, 5, ${aAlpha * 0.15})`);
-                aGrad.addColorStop(1, `rgba(150, 10, 0, 0)`);
-                
+                let aAlpha = 0.15 * f * (1 - objLight) * distFade; 
+                aGrad.addColorStop(0, `rgba(255, 140, 50, ${aAlpha})`); aGrad.addColorStop(0.3, `rgba(255, 80, 20, ${aAlpha * 0.5})`); aGrad.addColorStop(1, `rgba(150, 10, 0, 0)`);
                 ctx.fillStyle = aGrad; ctx.fillRect(-airRad, -airRad, airRad*2, airRad*2); ctx.restore();
                 ctx.globalCompositeOperation = 'source-over';
-            } else if (o.type === 'wall') {
-                let w = o.wallObj;
-                let pts = w.pts ? w.pts : [ {x: w.p1.x, y: w.p1.y, z: activeBuilding.wallH}, {x: w.p2.x, y: w.p2.y, z: activeBuilding.wallH}, {x: w.p2.x, y: w.p2.y, z: 0}, {x: w.p1.x, y: w.p1.y, z: 0} ];
-                let camPts = []; for (let i=0; i<pts.length; i++) { let dx = pts[i].x - player.x, dy = pts[i].y - player.y; camPts.push({ rX: dx * -dirY + dy * dirX, rZ: dx * dirX + dy * dirY, z: pts[i].z }); }
-                let clipped = [];
-                for (let i=0; i<pts.length; i++) {
-                    let p1 = camPts[i], p2 = camPts[(i+1)%pts.length];
-                    if (p1.rZ >= 0.1) clipped.push(p1);
-                    if ((p1.rZ >= 0.1) !== (p2.rZ >= 0.1)) { let t = (0.1 - p1.rZ) / (p2.rZ - p1.rZ); clipped.push({ rX: p1.rX + t * (p2.rX - p1.rX), rZ: 0.1, z: p1.z + t * (p2.z - p1.z) }); }
-                }
-                if (clipped.length >= 3) {
-                    ctx.fillStyle = w.color; ctx.strokeStyle = w.pts ? '#1a2410' : '#220000'; ctx.lineWidth = 1; ctx.beginPath();
-                    for (let i=0; i<clipped.length; i++) { let wsx = canvas.width/2 + (clipped[i].rX/clipped[i].rZ)*fov, wsy = hY + ((player.z - clipped[i].z)/clipped[i].rZ)*fov; if (i===0) ctx.moveTo(wsx, wsy); else ctx.lineTo(wsx, wsy); }
-                    ctx.closePath(); ctx.fill(); ctx.stroke();
-                }
             } else if (o.type === 'locationalEnemy') {
-                let e = o.obj, sz = (fov/o.rZ)*o.size; 
-                let isFlash = e.flash > 0, isZombie = e.type === 'zombie';
+                let e = o.obj, isFlash = e.flash > 0, isZombie = e.type === 'zombie';
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
                 let topLegs = sy - legH, topAbd = topLegs - abdH, topChest = topAbd - chestH;
                 
                 let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*objLight|0},${86*objLight|0},${34*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
                 let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*objLight|0},${125*objLight|0},${50*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
-                let color3 = isFlash ? 'white' : (isZombie ? `rgb(${56*objLight|0},${142*objLight|0},${60*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
-
+                
                 ctx.fillStyle = color1; ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
-                ctx.fillStyle = color2; ctx.fillRect(sx - (sz * 0.18)/2, topAbd, sz * 0.18, abdH);
-                ctx.fillStyle = color3; ctx.fillRect(sx - (sz * 0.26)/2, topChest, sz * 0.26, chestH);
-
+                ctx.fillStyle = color2; ctx.fillRect(sx - (sz * 0.18)/2, topAbd, sz * 0.18, abdH + chestH);
                 const headSprite = SpriteCache.get(isZombie ? '🧟' : '👽', isFlash, false, objLight);
                 let headScale = (headR * 2) / 128;
-                let hw = headSprite.width * headScale, hh = headSprite.height * headScale;
-                ctx.drawImage(headSprite, sx - hw/2, (topChest - headR/2) - (headSprite.height - 20) * headScale, hw, hh);
-
-                if (showDebugInfo && o.hp !== undefined) {
-                    ctx.fillStyle = 'lime'; let hf = Math.max(10, 15/o.rZ) + 'px Courier';
-                    if (_lastFont !== hf) { ctx.font = hf; _lastFont = hf; } if (_lastBaseline !== 'bottom') { ctx.textBaseline = 'bottom'; _lastBaseline = 'bottom'; }
-                    ctx.fillText('HP:'+o.hp.toFixed(1), sx, sy - sz - 15);
-                }
+                ctx.drawImage(headSprite, sx - (headSprite.width*headScale)/2, (topChest - headR/2) - (headSprite.height - 20) * headScale, headSprite.width * headScale, headSprite.height * headScale);
             } else if (o.type === 'dmgText') {
-                ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/o.rZ) + 'px sans-serif';
+                ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/depth) + 'px sans-serif';
                 if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                 ctx.fillText(o.text, sx, sy);
             } else if (o.type === 'blood') {
-                let sz = Math.max(2, (fov/o.rZ) * o.size);
-                let br = o.color.r * objLight | 0; let bg = o.color.g * objLight | 0; let bb = o.color.b * objLight | 0;
-                let alpha = Math.min(1.0, o.life / 20.0);
-                
-                ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, ${alpha})`;
-                ctx.fillRect(sx - sz/2, sy - sz/2, sz, sz);
+                let bsz = Math.max(2, (fov/depth) * o.size);
+                ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, ${Math.min(1.0, o.life / 20.0)})`;
+                ctx.fillRect(sx - bsz/2, sy - bsz/2, bsz, bsz);
+            } else if (o.type === 'emoji' || o.type === 'animal') {
+                const sprite = SpriteCache.get(o.emoji, o.targeted || (o.flash > 0), o.dead, objLight);
+                let scale = sz / 128;
+                ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - (sprite.height - 20)*scale, sprite.width * scale, sprite.height * scale);
             } else {
-                let sz = o.size ? (fov/o.rZ)*o.size : 0; 
-                if (o.type === 'emoji' || o.type === 'animal') {
-                    const isFlashed = o.targeted || (o.flash && o.flash > 0);
-                    const isDead = o.type === 'animal' && o.dead;
-                    
-                    const sprite = SpriteCache.get(o.emoji, isFlashed, isDead, objLight);
-                    let scale = sz / 128;
-                    let anchorY = (sprite.height - 20); 
-                    ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - anchorY*scale, sprite.width * scale, sprite.height * scale);
-
-                    if (showDebugInfo && o.hp !== undefined) {
-                        ctx.fillStyle = 'lime'; let hf = Math.max(10, 15/o.rZ) + 'px Courier';
-                        if (_lastFont !== hf) { ctx.font = hf; _lastFont = hf; } if (_lastBaseline !== 'bottom') { ctx.textBaseline = 'bottom'; _lastBaseline = 'bottom'; }
-                        ctx.fillText('HP:'+o.hp.toFixed(1), sx, sy - sz - 5);
-                    }
-                } else { ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/o.rZ), 0, 7); ctx.fill(); }
+                ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/depth), 0, 7); ctx.fill();
             }
         }
-
-        // --- TRUE 3D DYNAMIC MESH TERRAIN RENDERING ---
-        if (gameState === 'overworld') {
-            let sxStep = z > 30 ? 30 : (z > 15 ? 20 : 10); 
-            const sxMult = 2 / canvas.width;
-            const bPx = player.x + z*dirX, bPy = player.y + z*dirY;
-            const zPx = z*pX, zPy = z*pY;
-
-            let fog = Math.min(1, z/VIEW_DIST);
-            let nightFactor = 1.0 - ambient;
-
-            let prevCX = -sxStep * sxMult - 1;
-            let prevWX = bPx + zPx * prevCX;
-            let prevWY = bPy + zPy * prevCX;
-            let prevH = getElevation(prevWX, prevWY);
-            let prevSY = hY + ((player.z - prevH)/z)*fov;
-
-            for (let sx = 0; sx <= canvas.width + sxStep; sx += sxStep) {
-                let cX = sx * sxMult - 1;
-                let wX = bPx + zPx * cX;
-                let wY = bPy + zPy * cX;
-                let h = getElevation(wX, wY);
-                let sy = hY + ((player.z - h)/z)*fov;
-
-                let midWX = (prevWX + wX) / 2, midWY = (prevWY + wY) / 2, midH = (prevH + h) / 2;
-                let biomeBlend = getBiome(midWX, midWY);
-                let baseR = 30 * (1 - biomeBlend) + Math.min(255, Math.max(150, 200 + midH * 12)) * biomeBlend;
-                let baseG = Math.min(220, Math.max(30, 90 + midH * 14)) * (1 - biomeBlend) + Math.min(255, Math.max(120, 170 + midH * 12)) * biomeBlend;
-                let baseB = 30 * (1 - biomeBlend) + Math.min(255, Math.max(80, 110 + midH * 12)) * biomeBlend;
-                if (Math.floor(z * 2.5) % 2 === 0) { baseR*=0.92; baseG*=0.92; baseB*=0.92; } 
-
-                let r = baseR * ambient + baseR * nightFactor * 0.05;
-                let g = baseG * ambient + baseG * nightFactor * 0.12;
-                let b = baseB * ambient + baseB * nightFactor * 0.28;
-
-                if (ambient < 1.0) {
-                    for (let c of visibleCampfires) {
-                        let dx = midWX - c.x, dy = midWY - c.y, dz = midH - c.z;
-                        let dist = Math.sqrt(dx*dx + dy*dy + dz*dz); 
-                        if (dist < 22) { let att = Math.pow(1 - dist/22, 2.5) * c.flicker; r += 255 * att * 1.5; g += 140 * att * 1.5; b += 50 * att * 1.5; }
-                    }
-                    if (isFlashlightOn) {
-                        let dx = midWX - player.x, dy = midWY - player.y, dz = midH - (player.z - 0.2); 
-                        let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                        if (dist > 0.1 && dist < 45) {
-                            let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ;
-                            if (dot > 0.90) { let core = Math.max(0, (dot - 0.98) / 0.02); let flood = Math.max(0, (dot - 0.90) / 0.08); let att = (core * 0.6 + Math.pow(flood, 2.0) * 0.4) * Math.pow(1 - dist/45, 2); r += 245 * att * 1.5; g += 210 * att * 1.5; b += 130 * att * 1.5; }
-                        }
-                    }
-                }
-
-                r = r * (1 - fog) + sky.r * fog; g = g * (1 - fog) + sky.g * fog; b = b * (1 - fog) + sky.b * fog;
-                ctx.fillStyle = `rgb(${Math.min(255, r)|0}, ${Math.min(255, g)|0}, ${Math.min(255, b)|0})`;
-                
-                ctx.beginPath();
-                ctx.moveTo(sx - sxStep - 1, Math.floor(prevSY)); 
-                ctx.lineTo(sx, Math.floor(sy));
-                ctx.lineTo(sx, canvas.height + 10);
-                ctx.lineTo(sx - sxStep - 1, canvas.height + 10);
-                ctx.fill();
-
-                prevWX = wX; prevWY = wY; prevH = h; prevSY = sy;
-            }
-        }
-        z -= zStep;
-    }
-
-    if (gameState === 'overworld' && ambient < 1.0 && isFlashlightOn) {
-        ctx.globalCompositeOperation = 'lighter';
-        let cx = canvas.width / 2, cy = hY - player.pitch, radOuter = Math.min(canvas.width, canvas.height) * 0.45, radInner = radOuter * 0.05; 
-        let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radOuter), alpha = 0.10 * (1 - ambient); 
-        
-        grad.addColorStop(0, `rgba(255, 240, 200, ${alpha * 2.0})`); grad.addColorStop(radInner/radOuter, `rgba(240, 210, 130, ${alpha})`); grad.addColorStop(0.4, `rgba(150, 110, 40, ${alpha * 0.2})`); grad.addColorStop(1, `rgba(50, 30, 10, 0)`);
-        
-        ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.globalCompositeOperation = 'source-over';
     }
 
     ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
@@ -493,6 +502,5 @@ function render() {
     ctx.moveTo(canvas.width/2, hY-player.pitch-cs); ctx.lineTo(canvas.width/2, hY-player.pitch+cs); ctx.stroke();
 }
 
-// --- Start the game loop ---
 function loop() { update(); render(); requestAnimationFrame(loop); }
 loop();
