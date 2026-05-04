@@ -3,40 +3,38 @@ const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map()
 const chunkMeshes = new Map(), voxelMods = new Map();
 const heightCache = new Map(); 
 const BIOME_PREC = 2, BIOME_MUL = 20011, ENTITY_MUL = 10007, CHUNK_MUL = 2003;
+const MAX_Z = 96; // Raised max world height for deep underground digging
 
 function getHash(x, y, seed = 1) { let h = Math.sin(x * 12.9898 + y * 78.233 + seed) * 43758.5453; return h - Math.floor(h); }
 
 function getBiome(x, y) {
     const key = ((x * BIOME_PREC) | 0) * BIOME_MUL + ((y * BIOME_PREC) | 0);
     let v = biomeCache.get(key); if (v !== undefined) return v;
-    // Lowered frequencies = massive, sweeping biomes
     let n = Math.sin(x * 0.005) + Math.cos(y * 0.006) + Math.sin((x - y) * 0.004);
     v = Math.max(0, Math.min(1, (n / 3) + 0.5)); biomeCache.set(key, v); return v;
 }
 
-// 1. Macro Heightmap (Determines the general shape of the land before 3D carving)
+// 1. Macro Heightmap (Buttery smooth baseline curves)
 function getGridBaseHeightFloat(x, y) {
     let dist2D = x*x + y*y;
-    let safeWeight = Math.max(0, 1.0 - (dist2D / 1200.0)); // Safe Zone radius around (0,0)
-    safeWeight = safeWeight * safeWeight * (3 - 2 * safeWeight); // Smoothstep blending
+    let safeWeight = Math.max(0, 1.0 - (dist2D / 2500.0)); // 50-block wide safe spawn zone
+    safeWeight = safeWeight * safeWeight * (3 - 2 * safeWeight); 
     
     let b = getBiome(x, y); 
-    let h = 18; // Global baseline height
+    let h = 48; // RAISED BASELINE: Gives massive underground depth
     
     // Terrain Feature Generators
-    let dunes = (Math.sin(x * 0.015) + Math.cos(y * 0.015)) * 2.5; 
+    let dunes = (Math.sin(x * 0.015) + Math.cos(y * 0.015)) * 3.0; 
     let plains = (Math.sin(x * 0.02) + Math.cos(y * 0.02)) * 1.5;   
-    let hills = (Math.sin(x * 0.012) + Math.cos(y * 0.012 + Math.sin(x * 0.01))) * 8; 
+    let hills = (Math.sin(x * 0.012) + Math.cos(y * 0.012 + Math.sin(x * 0.01))) * 10.0; 
     
-    // Terraces create plateaus and flat drops for Mesas
     let cx = x * 0.008, cy = y * 0.008;
     let cNoise = (Math.sin(cx) + Math.cos(cy)) * 3.0;
-    let terraces = (cNoise - Math.sin(cNoise * Math.PI) * 0.15) * 8.0 + 4.0; 
+    let terraces = (cNoise - Math.sin(cNoise * Math.PI) * 0.1) * 10.0 + 4.0; 
     
-    // Jagged Mountain peaks
     let mx = x * 0.01, my = y * 0.01;
     let mNoise = Math.sin(mx) + Math.cos(my) + Math.sin(mx*2.1 - my*1.3)*0.5;
-    let mountains = Math.pow(Math.max(0, mNoise), 2.0) * 14.0 + 8.0;
+    let mountains = Math.pow(Math.max(0, mNoise), 2.0) * 20.0 + 10.0;
 
     // Smooth Biome Blending Matrix
     if (b < 0.20) { h += dunes; } 
@@ -47,18 +45,18 @@ function getGridBaseHeightFloat(x, y) {
     else { h += mountains; }
 
     // Natural River/Trench Carving
-    let rx = x * 0.006, ry = y * 0.006;
+    let rx = x * 0.005, ry = y * 0.005;
     let riverNoise = Math.sin(rx) + Math.cos(ry);
-    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 3.5);
-    h -= Math.pow(riverDepth, 2.0) * 8.0;
+    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 4.0);
+    h -= Math.pow(riverDepth, 2.0) * 12.0;
 
-    // Apply the flattened safe spawn zone overriding all generation near (0,0)
-    h = (18 * safeWeight) + (h * (1 - safeWeight));
+    // Flatten exact spawn point
+    h = (48 * safeWeight) + (h * (1 - safeWeight));
 
     return Math.max(2, h); // Protect bedrock layer
 }
 
-// These functions MUST exist for main.js to handle logic properly
+// Ensure global hooks exist for main.js physics logic
 function getGridBaseHeight(x, y) { return Math.floor(getGridBaseHeightFloat(x, y)); }
 function getGridBaseHeightInt(x, y) {
     const key = (x | 0) * 10000 + (y | 0);
@@ -66,39 +64,40 @@ function getGridBaseHeightInt(x, y) {
     v = getGridBaseHeight(x, y); heightCache.set(key, v); return v;
 }
 
-// 2. True 3D Density Engine
+// 2. True 3D Density Engine (For Caves & Cliffs)
 function getSolid(x, y, z) {
     if (z < 0) return true; // Bedrock
-    if (z >= 64) return false; // Sky limit
+    if (z >= MAX_Z) return false; // Sky limit
     let mod = voxelMods.get(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
     if (mod !== undefined) return mod === 1;
 
     let baseH = getGridBaseHeightFloat(x, y);
-    
-    // Calculate base density distance from macro surface
     let density = baseH - z;
+    let depthFromSurface = baseH - z;
 
     let dist2D = x*x + y*y;
-    let safeWeight = Math.max(0, 1.0 - (dist2D / 1200.0));
+    let safeWeight = Math.max(0, 1.0 - (dist2D / 2500.0));
     safeWeight = safeWeight * safeWeight * (3 - 2 * safeWeight);
 
-    // Apply True 3D Warp (Overhangs, sheer recessed cliffs)
     if (safeWeight < 1.0) {
         let b = getBiome(x, y);
-        let warpAmp = (b > 0.5) ? 3.5 : 1.0; // Mountains get wild overhangs, plains stay grounded
-        let warp3D = Math.sin(x*0.05 + y*0.04) + Math.cos(y*0.05 + z*0.04) + Math.sin(x*0.04 - z*0.05);
-        
-        density += warp3D * warpAmp * (1 - safeWeight);
 
-        // 3D Swiss Cheese Caves (Only carve below the immediate surface crust)
-        if (z < baseH + 2 && dist2D > 800.0) { 
-            let cx = x * 0.06, cy = y * 0.06, cz = z * 0.06;
+        // Limit wild 3D overhangs to Mountains & Mesas to keep Plains smooth
+        if (b > 0.65) {
+            let warpAmp = (b > 0.85) ? 4.0 : 2.0; 
+            let warp3D = Math.sin(x*0.05 + y*0.04) + Math.cos(y*0.05 + z*0.04) + Math.sin(x*0.04 - z*0.05);
+            density += warp3D * warpAmp * (1 - safeWeight);
+        }
+
+        // Toned-down Underground Caves (Must be at least 8 blocks deep)
+        if (depthFromSurface > 8 && dist2D > 1000.0) { 
+            let cx = x * 0.05, cy = y * 0.05, cz = z * 0.05;
             let c1 = Math.sin(cx) + Math.cos(cy) + Math.sin(cz);
-            let c2 = Math.cos(cx*1.5 - cy) + Math.sin(cy*1.5 + cz) + Math.cos(cz*1.5);
+            let c2 = Math.cos(cx*1.2 - cy) + Math.sin(cy*1.2 + cz) + Math.cos(cz*1.2);
             let tube = Math.abs(c1 * c2);
             
-            if (tube < 0.15) {
-                density -= (0.15 - tube) * 50.0; // Deeply subtract density inside tubes to carve caves
+            if (tube < 0.06) { // Reduced from 0.15 for rarer, narrower tunnels
+                density -= (0.06 - tube) * 60.0; 
             }
         }
     }
@@ -106,7 +105,6 @@ function getSolid(x, y, z) {
     return density > 0;
 }
 
-// Optimized solid check for mesher
 function getSolidFast(x, y, z) { return getSolid(x, y, z); }
 
 function getVoxelColor(x, y, z) {
@@ -117,8 +115,8 @@ function getVoxelColor(x, y, z) {
     let b = getBiome(x, y);
 
     if (isTopSurface) {
-        // Snow caps on highest peaks
-        if (z > 40 + (Math.sin(x*0.1)+Math.cos(y*0.1))*3) return { r: 240+noise|0, g: 245+noise|0, b: 255+noise|0 };
+        // High altitude snow caps
+        if (z > 72 + (Math.sin(x*0.1)+Math.cos(y*0.1))*3) return { r: 240+noise|0, g: 245+noise|0, b: 255+noise|0 };
         
         let r, g, bColor;
         if (b < 0.20) { r = 220; g = 195; bColor = 130; } // Desert
@@ -130,12 +128,12 @@ function getVoxelColor(x, y, z) {
         return { r: Math.max(0, Math.min(255, r + noise)) | 0, g: Math.max(0, Math.min(255, g + noise)) | 0, b: Math.max(0, Math.min(255, bColor + noise)) | 0 };
     }
     
-    // Subsurface and Cave colors
-    if (z >= baseHInt - 3) {
-        if (baseHInt > 40) return {r: 105, g: 105, b: 110}; // Stone under snow
-        if (b < 0.20) return {r: 200, g: 175, b: 110}; // Packed sand dirt
-        if (b >= 0.65 && b < 0.80) return {r: 140, g: 70, b: 35}; // Red clay dirt
-        return {r: 95, g: 65, b: 35}; // Normal Brown Dirt Layer
+    // Subsurface and Cave wall colors
+    if (z >= baseHInt - 4) {
+        if (baseHInt > 72) return {r: 105, g: 105, b: 110}; // Stone under snow
+        if (b < 0.20) return {r: 200, g: 175, b: 110}; // Sandstone
+        if (b >= 0.65 && b < 0.80) return {r: 140, g: 70, b: 35}; // Red clay rock
+        return {r: 95, g: 65, b: 35}; // Dirt Layer
     }
     
     // Deep Cave Stone Layer
@@ -165,14 +163,14 @@ function getSmoothVertex(cx, cy, cz) {
     let w = 0.65;
     let nx = cx + (sumX/solidCount - cx)*w, ny = cy + (sumY/solidCount - cy)*w, nz = cz + (sumZ/solidCount - cz)*w;
 
-    // Advanced 3D Snapping: Creates Minecraft/7DTD style perfectly flat grounds and 90-degree cliff edges
+    // Hybrid Smoothing: Keep plains buttery smooth, but allow rugged 90-degree caves and cliffs
     if (!hasMod) {
         if (solidsBelow === 4 && solidsAbove === 0) {
-            nz = cz; // Snap to perfectly flat floor (Plains/Plateaus)
+            nz = cz; // Flat Floor (Plateaus/Plains)
         } else if (solidsBelow === 0 && solidsAbove === 4) {
-            nz = cz; // Snap perfectly flat ceiling (Overhangs/Caves)
+            nz = cz; // Flat Ceiling (Overhangs)
         } else if (solidsBelow > 0 && solidsAbove === 0) {
-            // Smooth surface curving based on 2D heightmap for top layers
+            // Re-enabling the float heightmap snap for the top layer ONLY
             let baseFloat = getGridBaseHeightFloat(nx, ny);
             if (Math.abs(cz - baseFloat) < 2.0) {
                 nz = Math.max(cz - 1, Math.min(cz, baseFloat));
@@ -194,7 +192,7 @@ function buildChunkMesh(cx, cy) {
 
     for (let x = cx * CHUNK_SIZE; x < (cx + 1) * CHUNK_SIZE; x++) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
-            for (let z = 0; z <= 63; z++) { // Process full 64 height column
+            for (let z = 0; z < MAX_Z; z++) { // Traverse full expanded height
                 if (getSolidFast(x, y, z)) {
                     let col = getVoxelColor(x, y, z);
                     if (!getSolidFast(x, y, z+1)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col);
@@ -221,7 +219,7 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
     for(let x = Math.floor(cx-radius); x <= Math.ceil(cx+radius); x++) {
         for(let y = Math.floor(cy-radius); y <= Math.ceil(cy+radius); y++) {
             for(let z = Math.floor(cz-radius); z <= Math.ceil(cz+radius); z++) {
-                if (Math.hypot(x-cx, y-cy, z-cz) <= radius && z >= 0 && z < 64) {
+                if (Math.hypot(x-cx, y-cy, z-cz) <= radius && z >= 0 && z < MAX_Z) {
                     voxelMods.set(`${x},${y},${z}`, amount);
                     modifiedChunks.add(`${Math.floor(x/CHUNK_SIZE)},${Math.floor(y/CHUNK_SIZE)}`);
                 }
@@ -236,13 +234,13 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
     });
 }
 
-// Raycast downwards to guarantee safe spawn
-let startZ = 63;
+// Raycast downwards from max height to guarantee safe spawn floor
+let startZ = MAX_Z - 1;
 while (startZ > 0 && !getSolid(0, 0, startZ)) startZ--;
 player.x = 0; player.y = 0; player.z = startZ + 1.5;
 
 function getEntityAt(gx, gy) {
-    if (Math.sqrt(gx*gx + gy*gy) < 15) return null; // Safe Zone Clearance
+    if (Math.sqrt(gx*gx + gy*gy) < 20) return null; // Safe Zone Clearance
 
     let biome = getBiome(gx, gy), cluster = Math.sin(gx * 0.1) * Math.cos(gy * 0.12) + Math.sin((gx - gy) * 0.08), h = getHash(gx, gy, 0);
     
@@ -285,9 +283,9 @@ function getMapChunk(cx, cy) {
             if (info && !destroyedEntities.has(entKey)) {
                 
                 // Raycast downwards from the sky to find the true 3D surface floor for the entity
-                let floorIntZ = 63;
+                let floorIntZ = MAX_Z - 1;
                 while(floorIntZ >= 0 && !getSolidFast(Math.floor(x + 0.5), Math.floor(y + 0.5), floorIntZ)) floorIntZ--;
-                if (floorIntZ < 0) continue; // Out of bounds, don't spawn
+                if (floorIntZ < 0) continue; 
                 
                 chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: (floorIntZ + 1.0) - info.plantOffset, hp: 4, entKey: entKey }); 
             }
@@ -296,7 +294,7 @@ function getMapChunk(cx, cy) {
     
     // Chests & Animals drop into world cleanly via raycast
     let chunkHash = getHash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
-    let bZInt = 63;
+    let bZInt = MAX_Z - 1;
     while (bZInt >= 0 && !getSolidFast(Math.floor(cx_offset), Math.floor(cy_offset), bZInt)) bZInt--;
     let bZ = bZInt + 1.0;
 
