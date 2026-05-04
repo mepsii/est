@@ -68,13 +68,24 @@ function update() {
     if (keys['KeyW']) mv += player.speed * curSpeedMult; if (keys['KeyS']) mv -= player.speed * curSpeedMult;
     if (keys['KeyA']) st -= player.speed * curSpeedMult; if (keys['KeyD']) st += player.speed * curSpeedMult;
     
-    // True 3D Collision Movement with Wall Sliding
+    // True 3D Collision Movement with Wall Sliding and Auto-Stepping
     if (gameState === 'overworld') {
         let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
         let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
         
-        if (!checkCollision(nx, player.y, player.z)) player.x = nx;
-        if (!checkCollision(player.x, ny, player.z)) player.y = ny;
+        let stepH = 1.1; // Maximum height the player can automatically step up without jumping
+
+        if (!checkCollision(nx, player.y, player.z)) {
+            player.x = nx;
+        } else if (!checkCollision(nx, player.y, player.z + stepH)) {
+            player.x = nx; player.z += stepH; 
+        }
+
+        if (!checkCollision(player.x, ny, player.z)) {
+            player.y = ny;
+        } else if (!checkCollision(player.x, ny, player.z + stepH)) {
+            player.y = ny; player.z += stepH;
+        }
 
         if (flightMode) { 
             player.vz = 0; 
@@ -109,7 +120,6 @@ function update() {
 
     if (gameState === 'overworld') {
         let pxC = Math.floor(player.x / CHUNK_SIZE), pyC = Math.floor(player.y / CHUNK_SIZE);
-        // Expanded chunk updating block to match VIEW_DIST
         let updateRad = Math.ceil(VIEW_DIST / CHUNK_SIZE);
         for(let x = pxC - updateRad; x <= pxC + updateRad; x++) for(let y = pyC - updateRad; y <= pyC + updateRad; y++) getMapChunk(x, y);
 
@@ -128,9 +138,16 @@ function update() {
             let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); 
             if (e.flash && e.flash > 0) e.flash--; if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
             if (d < 40) { 
-                if (d > 0.8) { e.x += (player.x-e.x)/d * 0.02; e.y += (player.y-e.y)/d * 0.02; } 
+                if (d > 0.8) { 
+                    let nx = e.x + (player.x-e.x)/d * 0.02, ny = e.y + (player.y-e.y)/d * 0.02;
+                    if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) e.x = nx;
+                    else if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + 1.1))) { e.x = nx; e.z += 1.1; }
+
+                    if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z))) e.y = ny;
+                    else if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z + 1.1))) { e.y = ny; e.z += 1.1; }
+                } 
                 if (!getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z - 0.1))) e.z -= 0.1;
-                else if (getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))) e.z += 1.0; 
+                else if (getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))) e.z += 0.5; 
                 
                 if (e.type === 'zombie') {
                     if (d < 1.5) { if (--e.cooldown <= 0) { takeDamage(5); e.cooldown = 60; } } else e.cooldown = Math.max(0, e.cooldown - 1);
@@ -145,8 +162,15 @@ function update() {
             if (!a.dead) { 
                 a.moveTimer--; if (a.moveTimer <= 0) { a.moveAngle = Math.random() * Math.PI * 2; a.moveTimer = 50 + Math.random() * 100; } 
                 let anx = a.x + Math.cos(a.moveAngle) * a.speed, any = a.y + Math.sin(a.moveAngle) * a.speed; 
-                if (!getSolid(Math.floor(anx), Math.floor(any), Math.floor(a.z))) { a.x = anx; a.y = any; } 
-                if (!getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z - 0.1))) a.z -= 0.1; else if (getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z))) a.z += 1.0; 
+
+                if (!getSolid(Math.floor(anx), Math.floor(a.y), Math.floor(a.z))) a.x = anx; 
+                else if (!getSolid(Math.floor(anx), Math.floor(a.y), Math.floor(a.z + 1.1))) { a.x = anx; a.z += 1.1; }
+
+                if (!getSolid(Math.floor(a.x), Math.floor(any), Math.floor(a.z))) a.y = any; 
+                else if (!getSolid(Math.floor(a.x), Math.floor(any), Math.floor(a.z + 1.1))) { a.y = any; a.z += 1.1; }
+
+                if (!getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z - 0.1))) a.z -= 0.1; 
+                else if (getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z))) a.z += 0.5; 
             }
         }
     }
@@ -203,7 +227,6 @@ function update() {
                     if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
                 }
             } else if ((w.toolType === 'shovel' || w.toolType === 'place') && gameState === 'overworld') {
-                // True 3D Voxel Raycast (Spherical Shovel Scoop)
                 let step = 0.2;
                 for (let i = 0; i <= w.range / step; i++) {
                     let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
@@ -219,7 +242,7 @@ function update() {
                         modifyTerrain(targetX, targetY, targetZ, 1.4, amt);
                         
                         let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
-                        spawnBlood(targetX, targetY, targetZ, pCol, 8); // Dirt/Stone particles
+                        spawnBlood(targetX, targetY, targetZ, pCol, 8); 
                         break;
                     }
                 }
@@ -286,7 +309,7 @@ function render() {
     function project3D(px, py, pz) {
         let dx = px - player.x, dy = py - player.y, dz = pz - (player.z + player.baseHeight);
         let rotX = dx * cosA + dy * sinA;
-        if (rotX < 0.1) return null; // Sprite front plane cull
+        if (rotX < 0.1) return null; 
         let rotY = dx * -sinA + dy * cosA;
         let sx = canvas.width/2 + (rotY / rotX) * fov;
         let sy = hY - (dz / rotX) * fov;
@@ -297,11 +320,10 @@ function render() {
         let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
         let chunkRadius = Math.ceil(VIEW_DIST / CHUNK_SIZE);
         
-        // Render 3D Voxel Meshes & Entities
         for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
             for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
                 let dx = cx * CHUNK_SIZE + CHUNK_SIZE/2 - player.x, dy = cy * CHUNK_SIZE + CHUNK_SIZE/2 - player.y;
-                if (dx * cosA + dy * sinA < -CHUNK_SIZE*1.5) continue; // Behind camera
+                if (dx * cosA + dy * sinA < -CHUNK_SIZE*1.5) continue; 
                 
                 let faces = getChunkMesh(cx, cy);
                 for (let i = 0; i < faces.length; i++) {
@@ -309,10 +331,8 @@ function render() {
                     let dX = f.cx - player.x, dY = f.cy - player.y, dZ = f.cz - (player.z + player.baseHeight);
                     let rotX = dX * cosA + dY * sinA;
                     
-                    if (rotX > -2 && rotX < VIEW_DIST) { // Face might slightly cross near plane
-                        // Strict Backface Culling 
+                    if (rotX > -2 && rotX < VIEW_DIST) { 
                         if (dX * f.norm.x + dY * f.norm.y + dZ * f.norm.z > 0) continue;
-                        
                         let distSq = dX*dX + dY*dY + dZ*dZ;
                         if (distSq < VIEW_DIST*VIEW_DIST) {
                             let o = getRenderItem(); o.type = 'face'; o.face = f; o.depthSq = distSq;
@@ -356,10 +376,10 @@ function render() {
 
     activeRenderList.length = renderCount;
     for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
-    activeRenderList.sort((a,b) => b.depthSq - a.depthSq); // 3D Painter's Algorithm sorting
+    activeRenderList.sort((a,b) => b.depthSq - a.depthSq); 
 
     if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
-    ctx.lineJoin = 'round'; // Fixes tiny seams between voxel faces
+    ctx.lineJoin = 'round'; 
 
     for (let i = 0; i < activeRenderList.length; i++) {
         let o = activeRenderList[i];
@@ -368,7 +388,7 @@ function render() {
         let depth = Math.sqrt(o.depthSq);
         
         let isUnderground = o.type === 'face' ? (o.face.cz < getGridBaseHeight(Math.floor(o.face.cx), Math.floor(o.face.cy)) - 2) : false;
-        if (isUnderground) objLight = 0.05; // Plunge caves into darkness
+        if (isUnderground) objLight = 0.05; 
 
         if (objLight < 1.0 && o.type !== 'campfireBloom') {
             let lightIntensity = 0;
@@ -397,14 +417,13 @@ function render() {
         if (o.type === 'face' || o.type === 'wallPoly') {
             let f = o.type === 'face' ? o.face : o;
             
-            // True 3D Sutherland-Hodgman projection with near-plane clamping (z = 0.1)
             let camPts = [];
             for (let k = 0; k < 4; k++) {
                 let dx = f.pts[k].x - player.x, dy = f.pts[k].y - player.y, dz = f.pts[k].z - (player.z + player.baseHeight);
                 camPts.push({
                     cx: dx * -sinA + dy * cosA,
                     cy: dz,
-                    cz: dx * cosA + dy * sinA // distance along view axis
+                    cz: dx * cosA + dy * sinA 
                 });
             }
 
@@ -423,7 +442,7 @@ function render() {
                 }
             }
             
-            if (clipped.length < 3) continue; // Face entirely behind near plane
+            if (clipped.length < 3) continue; 
 
             if (o.type === 'face') {
                 let shade = f.shade * objLight;
@@ -438,7 +457,8 @@ function render() {
                 ctx.fillStyle = f.color; ctx.strokeStyle = '#000';
             }
             
-            ctx.lineWidth = 1.0;
+            // Increased to 1.5 to completely patch visual bleeding/tearing gaps between polygons
+            ctx.lineWidth = 1.5; 
             ctx.beginPath();
             for (let j = 0; j < clipped.length; j++) {
                 let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
