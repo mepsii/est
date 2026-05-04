@@ -12,13 +12,18 @@ function getBiome(x, y) {
     v = Math.max(0, Math.min(1, (n / 3) + 0.5)); biomeCache.set(key, v); return v;
 }
 
-function getGridBaseHeight(x, y) {
+// Separated into Float and Int versions for smooth organic surface matching
+function getGridBaseHeightFloat(x, y) {
     let biome = getBiome(x, y), nx = x * 0.03, ny = y * 0.03;
     let n1 = Math.sin(nx) + Math.cos(ny) + Math.sin(nx * 0.8 - ny * 1.2); 
     let stepped = Math.floor(n1), fract = n1 - stepped;
     let cliffs = (stepped + fract * fract * (3 - 2 * fract)) * 2.8; 
     let hills = (Math.sin(x * 0.08) + Math.cos(y * 0.09 + Math.sin(x * 0.05))) * 1.2;
-    return Math.floor(12 + (cliffs + hills) * (1.0 - biome * 0.85)); 
+    return 12 + (cliffs + hills) * (1.0 - biome * 0.85); 
+}
+
+function getGridBaseHeight(x, y) {
+    return Math.floor(getGridBaseHeightFloat(x, y));
 }
 
 function getGridBaseHeightInt(x, y) {
@@ -48,33 +53,85 @@ function getSolidFast(x, y, z) {
 }
 
 function getVoxelColor(x, y, z) {
-    let baseH = getGridBaseHeight(x, y);
-    if (z >= baseH) {
+    let baseHInt = getGridBaseHeightInt(x, y);
+    if (z >= baseHInt) {
         let b = getBiome(x, y);
-        let r = 40 * (1 - b) + 110 * b, g = 120 * (1 - b) + 140 * b, bColor = 30 * (1 - b) + 50 * b;
-        return {r: r|0, g: g|0, b: bColor|0}; // Grass Layer
+        let r, g, bColor;
+        
+        // Fixed biomes! Proper interpolation from Deep Forest -> Plains -> Sand Desert
+        if (b < 0.35) {
+            // Forest: Deep Green
+            let t = b / 0.35;
+            r = 30 + 30 * t; g = 100 + 40 * t; bColor = 20 + 20 * t;
+        } else if (b < 0.65) {
+            // Plains: Lighter, yellower green
+            let t = (b - 0.35) / 0.30;
+            r = 60 + 70 * t; g = 140 + 20 * t; bColor = 40 + 20 * t;
+        } else {
+            // Desert: Sand
+            let t = Math.min(1.0, (b - 0.65) / 0.35);
+            r = 130 + 90 * t; g = 160 + 40 * t; bColor = 60 + 60 * t;
+        }
+        
+        // Add tiny noise based on coordinates for texture
+        let noise = (Math.sin(x * 12.3) + Math.cos(y * 15.2)) * 5;
+        return {
+            r: Math.max(0, Math.min(255, r + noise)) | 0, 
+            g: Math.max(0, Math.min(255, g + noise)) | 0, 
+            b: Math.max(0, Math.min(255, bColor + noise)) | 0
+        };
     }
-    if (z >= baseH - 3) return {r: 101, g: 67, b: 33}; // Dirt Layer
+    if (z >= baseHInt - 3) return {r: 101, g: 67, b: 33}; // Dirt Layer
     let v = 90 + (Math.sin(x)*Math.cos(y) + Math.sin(z))*15; 
     return {r: v|0, g: v|0, b: v|0}; // Stone Layer
 }
 
 // 7 Days to Die - Vertex Averaging Algorithm for Smooth Meshes
-// Optimized with caching so it doesn't freeze the browser!
+// Heavily Improved to support natural rolling hills and perfectly smooth caves!
 function getSmoothVertex(cx, cy, cz) {
     let solidCount = 0, sumX = 0, sumY = 0, sumZ = 0;
+    let hasMod = false;
+    let solidsBelow = 0, solidsAbove = 0;
+
     for(let dx=-1; dx<=0; dx++) {
         for(let dy=-1; dy<=0; dy++) {
             for(let dz=-1; dz<=0; dz++) {
-                if (getSolidFast(cx+dx, cy+dy, cz+dz)) {
+                let isSolid = false;
+                let mod = voxelMods.get(`${cx+dx},${cy+dy},${cz+dz}`);
+                if (mod !== undefined) {
+                    isSolid = mod === 1;
+                    hasMod = true;
+                } else {
+                    isSolid = (cz+dz <= getGridBaseHeightInt(cx+dx, cy+dy));
+                }
+                
+                if (isSolid) {
                     solidCount++;
                     sumX += (cx+dx+0.5); sumY += (cy+dy+0.5); sumZ += (cz+dz+0.5);
+                    if (dz === -1) solidsBelow++;
+                    if (dz === 0) solidsAbove++;
                 }
             }
         }
     }
-    if (solidCount === 0 || solidCount === 8) return {x: cx, y: cy, z: cz}; // Standard corners
-    return { x: cx + (sumX/solidCount - cx)*0.5, y: cy + (sumY/solidCount - cy)*0.5, z: cz + (sumZ/solidCount - cz)*0.5 };
+    if (solidCount === 0 || solidCount === 8) return {x: cx, y: cy, z: cz};
+    
+    // A higher weight (0.65 instead of 0.5) pulls the mesh tighter around the volume
+    // for a much rounder, organic "marching cubes" look inside caves and dug holes!
+    let w = 0.65;
+    let nx = cx + (sumX/solidCount - cx)*w;
+    let ny = cy + (sumY/solidCount - cy)*w;
+    let nz = cz + (sumZ/solidCount - cz)*w;
+
+    // Magic Trick: If this vertex is on the natural untouched surface, snap its Z
+    // perfectly to the continuous procedural float heightmap for rolling hills!
+    if (!hasMod && solidsAbove === 0 && solidsBelow > 0) {
+        let sZ = getGridBaseHeightFloat(cx, cy);
+        // Clamp to prevent visual tearing on steep terrain
+        nz = Math.max(cz - 1, Math.min(cz, sZ));
+    }
+
+    return { x: nx, y: ny, z: nz };
 }
 
 function buildChunkMesh(cx, cy) {
