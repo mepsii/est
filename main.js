@@ -68,24 +68,39 @@ function update() {
     if (keys['KeyW']) mv += player.speed * curSpeedMult; if (keys['KeyS']) mv -= player.speed * curSpeedMult;
     if (keys['KeyA']) st -= player.speed * curSpeedMult; if (keys['KeyD']) st += player.speed * curSpeedMult;
     
-    // True 3D Collision Movement with Wall Sliding and Auto-Stepping
+    // Smooth Camera Stepping Initialization
+    player.zOffset = player.zOffset || 0;
+
+    // True 3D Collision Movement with Smooth Auto-Stepping
     if (gameState === 'overworld') {
         let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
         let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
         
-        let stepH = 1.1; // Maximum height the player can automatically step up without jumping
+        let stepH = 1.1; 
+        let steppedZ = 0;
 
         if (!checkCollision(nx, player.y, player.z)) {
             player.x = nx;
-        } else if (!checkCollision(nx, player.y, player.z + stepH)) {
-            player.x = nx; player.z += stepH; 
+        } else {
+            for (let s = 0.2; s <= stepH; s += 0.2) {
+                if (!checkCollision(nx, player.y, player.z + s)) {
+                    player.x = nx; player.z += s; steppedZ += s; break;
+                }
+            }
         }
 
         if (!checkCollision(player.x, ny, player.z)) {
             player.y = ny;
-        } else if (!checkCollision(player.x, ny, player.z + stepH)) {
-            player.y = ny; player.z += stepH;
+        } else {
+            for (let s = 0.2; s <= stepH; s += 0.2) {
+                if (!checkCollision(player.x, ny, player.z + s)) {
+                    player.y = ny; player.z += s; steppedZ += s; break;
+                }
+            }
         }
+
+        // Apply smooth visual transition to negate the physical POP
+        if (steppedZ > 0) player.zOffset -= steppedZ;
 
         if (flightMode) { 
             player.vz = 0; 
@@ -110,6 +125,10 @@ function update() {
         if (!isSolid(nx, player.y)) player.x = nx;
         if (!isSolid(player.x, ny)) player.y = ny;
     }
+
+    // Decay the visual smoothing offset
+    player.zOffset *= 0.7;
+    if (Math.abs(player.zOffset) < 0.01) player.zOffset = 0;
 
     for(let i = damageTexts.length - 1; i >= 0; i--) { damageTexts[i].z += 0.02; damageTexts[i].life--; if(damageTexts[i].life <= 0) damageTexts.splice(i, 1); }
     for(let i = bloodParticles.length - 1; i >= 0; i--) { 
@@ -293,6 +312,9 @@ function update() {
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
+    // Apply the smoothed camera Z immediately
+    let camZ = player.z + player.baseHeight + (player.zOffset || 0);
+
     const fov = canvas.width * currentZoom, hY = canvas.height/2 + player.pitch;
     const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
     const pitchAngle = Math.atan2(player.pitch, fov);
@@ -307,7 +329,7 @@ function render() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     function project3D(px, py, pz) {
-        let dx = px - player.x, dy = py - player.y, dz = pz - (player.z + player.baseHeight);
+        let dx = px - player.x, dy = py - player.y, dz = pz - camZ;
         let rotX = dx * cosA + dy * sinA;
         if (rotX < 0.1) return null; 
         let rotY = dx * -sinA + dy * cosA;
@@ -328,14 +350,28 @@ function render() {
                 let faces = getChunkMesh(cx, cy);
                 for (let i = 0; i < faces.length; i++) {
                     let f = faces[i];
-                    let dX = f.cx - player.x, dY = f.cy - player.y, dZ = f.cz - (player.z + player.baseHeight);
+
+                    // Determine TRUE smoothed centroid instead of flat grid block centers
+                    let cX = (f.pts[0].x + f.pts[1].x + f.pts[2].x + f.pts[3].x) / 4;
+                    let cY = (f.pts[0].y + f.pts[1].y + f.pts[2].y + f.pts[3].y) / 4;
+                    let cZ = (f.pts[0].z + f.pts[1].z + f.pts[2].z + f.pts[3].z) / 4;
+
+                    let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
                     let rotX = dX * cosA + dY * sinA;
                     
                     if (rotX > -2 && rotX < VIEW_DIST) { 
-                        if (dX * f.norm.x + dY * f.norm.y + dZ * f.norm.z > 0) continue;
-                        let distSq = dX*dX + dY*dY + dZ*dZ;
+                        // Compute exact polygon face normal via Cross-Product to prevent warped culling
+                        let ux = f.pts[1].x - f.pts[0].x, uy = f.pts[1].y - f.pts[0].y, uz = f.pts[1].z - f.pts[0].z;
+                        let wx = f.pts[2].x - f.pts[0].x, wy = f.pts[2].y - f.pts[0].y, wz = f.pts[2].z - f.pts[0].z;
+                        let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+
+                        // Precise Backface Culling
+                        if (dX * nx + dY * ny + dZ * nz > 0) continue;
+                        
+                        let distSq = dX*dX + dY*dY + dZ*dZ; // Exact distance sorting fixes Z-fighting
                         if (distSq < VIEW_DIST*VIEW_DIST) {
                             let o = getRenderItem(); o.type = 'face'; o.face = f; o.depthSq = distSq;
+                            o.wX = cX; o.wY = cY; o.h = cZ; // Save exact point for lighting
                         }
                     }
                 }
@@ -387,17 +423,18 @@ function render() {
         let objLight = gameState === 'overworld' ? ambient : 1.0;
         let depth = Math.sqrt(o.depthSq);
         
-        let isUnderground = o.type === 'face' ? (o.face.cz < getGridBaseHeight(Math.floor(o.face.cx), Math.floor(o.face.cy)) - 2) : false;
+        // Use true exact height calculated for caves shading
+        let isUnderground = o.type === 'face' ? (o.h < getGridBaseHeight(Math.floor(o.wX), Math.floor(o.wY)) - 2) : false;
         if (isUnderground) objLight = 0.05; 
 
         if (objLight < 1.0 && o.type !== 'campfireBloom') {
             let lightIntensity = 0;
-            let cx = o.type === 'face' ? o.face.cx : o.wX;
-            let cy = o.type === 'face' ? o.face.cy : o.wY;
-            let cz = o.type === 'face' ? o.face.cz : o.h + (o.size?o.size/2:0);
+            let cx = o.wX;
+            let cy = o.wY;
+            let cz = o.type === 'face' ? o.h : o.h + (o.size?o.size/2:0);
             
             if (isFlashlightOn) {
-                let dx = cx - player.x, dy = cy - player.y, dz = cz - (player.z + player.baseHeight); 
+                let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ; 
                 let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
                 if (dist > 0.1 && dist < 45) {
                     let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ; 
@@ -419,7 +456,7 @@ function render() {
             
             let camPts = [];
             for (let k = 0; k < 4; k++) {
-                let dx = f.pts[k].x - player.x, dy = f.pts[k].y - player.y, dz = f.pts[k].z - (player.z + player.baseHeight);
+                let dx = f.pts[k].x - player.x, dy = f.pts[k].y - player.y, dz = f.pts[k].z - camZ;
                 camPts.push({
                     cx: dx * -sinA + dy * cosA,
                     cy: dz,
@@ -457,8 +494,8 @@ function render() {
                 ctx.fillStyle = f.color; ctx.strokeStyle = '#000';
             }
             
-            // Increased to 1.5 to completely patch visual bleeding/tearing gaps between polygons
-            ctx.lineWidth = 1.5; 
+            // Eliminates sky-blue lines tearing between faces entirely!
+            ctx.lineWidth = 2.0; 
             ctx.beginPath();
             for (let j = 0; j < clipped.length; j++) {
                 let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
@@ -521,6 +558,18 @@ function render() {
     ctx.moveTo(canvas.width/2-cs, hY-player.pitch); ctx.lineTo(canvas.width/2+cs, hY-player.pitch);
     ctx.moveTo(canvas.width/2, hY-player.pitch-cs); ctx.lineTo(canvas.width/2, hY-player.pitch+cs); ctx.stroke();
 }
+
+// Add the mouse move event hook here at the bottom of main for the new aiming constraints
+document.addEventListener('mousemove', (e) => { 
+    if (!isPaused) { 
+        player.angle += e.movementX * (isZooming ? 0.001 : 0.003); 
+        
+        // Extended pitch bounds allows almost completely straight down aiming
+        let maxPitch = canvas.height * 2.5; 
+        player.pitch -= e.movementY * (isZooming ? 0.5 : 1.5); 
+        player.pitch = Math.max(-maxPitch, Math.min(maxPitch, player.pitch)); 
+    } 
+});
 
 function loop() { update(); render(); requestAnimationFrame(loop); }
 loop();
