@@ -84,12 +84,44 @@ invScreen.addEventListener('mousedown', (e) => {
                 inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             }
             else if (item.type === 'building' || item.type === 'campfire') {
-                let sx = player.x + Math.cos(player.angle) * 4.0, sy = player.y + Math.sin(player.angle) * 4.0, sz = getGridBaseHeight(Math.floor(sx), Math.floor(sy)) + 1;
+                // FIXED: True 3D Raycast to drop items perfectly into caves or hills
+                const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+                let hitX = player.x + Math.cos(player.angle) * 4.0;
+                let hitY = player.y + Math.sin(player.angle) * 4.0;
+                let hitZ = player.z; 
+
+                let foundSolid = false;
+                let step = 0.2;
+                for (let i = 0; i <= 6.0 / step; i++) {
+                    let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
+                    let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
+                    let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step);
+                    
+                    if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
+                        hitX = rx; hitY = ry; 
+                        // Target hit! Drop exactly down to find the floor block
+                        for(let z = Math.floor(rz); z >= 0; z--) {
+                            if (getSolid(Math.floor(rx), Math.floor(ry), z)) {
+                                hitZ = z + 1.0; 
+                                foundSolid = true; break;
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                if (!foundSolid) {
+                    // Fallback: Drop straight down from where the player was looking 4 units ahead
+                    for(let z = Math.floor(player.z + player.baseHeight + 2); z >= 0; z--) {
+                        if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) { hitZ = z + 1.0; break; }
+                    }
+                }
+
                 if (item.type === 'campfire') {
-                    campfires.push({ x: sx, y: sy, z: sz, emoji: '🔥', size: 1.2, flicker: 1.0 });
+                    campfires.push({ x: hitX, y: hitY, z: hitZ, emoji: '🔥', size: 1.2, flicker: 1.0 });
                 } else {
                     let isTent = item.emoji === '⛺';
-                    buildings.push({ x: sx, y: sy, z: sz, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
+                    buildings.push({ x: hitX, y: hitY, z: hitZ, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
                 }
                 item.count--; if (item.count <= 0) inventory[index] = null; updateInventories();
             }
@@ -125,7 +157,6 @@ document.addEventListener('pointerlockchange', () => {
 
 window.addEventListener('mousedown', e => { if (isPaused) return; if (e.button === 0) isMouseDown = true; if (e.button === 2) { isZooming = true; adsEl.innerText = "ON"; } });
 window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = false; if (e.button === 2) { isZooming = false; adsEl.innerText = "OFF"; } });
-document.addEventListener('mousemove', (e) => { if (!isPaused) { player.angle += e.movementX * (isZooming ? 0.001 : 0.003); player.pitch -= e.movementY * (isZooming ? 0.5 : 1.5); player.pitch = Math.max(-canvas.height, Math.min(canvas.height, player.pitch)); } });
 
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
@@ -162,11 +193,22 @@ document.getElementById('btn-stair-up').onclick = () => { changeFloor(1); closeS
 document.getElementById('btn-stair-down').onclick = () => { changeFloor(-1); closeStairMenu(); };
 document.getElementById('btn-stair-cancel').onclick = closeStairMenu;
 
-// Handlers specific for debug spawn button commands inside index.html
+// Cave-Safe Floor Finder for Spawners
+function getSafeFloorZ(x, y, startZ) {
+    for(let z = Math.floor(startZ + 2); z >= 0; z--) {
+        if (getSolid(Math.floor(x), Math.floor(y), z)) return z + 1.0;
+    }
+    return player.z;
+}
+
 window.killAll = () => enemies.length = 0;
-window.spawnBuilding = () => { let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1, floors = parseInt(document.getElementById('dbg-b-floors').value) || 1; let cx = player.x + Math.cos(player.angle) * 8, cy = player.y + Math.sin(player.angle) * 8; buildings.push({ x: cx, y: cy, z: getGridBaseHeight(Math.floor(cx), Math.floor(cy))+1, emoji: '🏚️', rooms: rooms, floors: floors, roomW: 10, roomH: 10, wallH: 3.5 }); };
+window.spawnBuilding = () => { 
+    let rooms = parseInt(document.getElementById('dbg-b-rooms').value) || 1, floors = parseInt(document.getElementById('dbg-b-floors').value) || 1; 
+    let cx = player.x + Math.cos(player.angle) * 8, cy = player.y + Math.sin(player.angle) * 8; 
+    buildings.push({ x: cx, y: cy, z: getSafeFloorZ(cx, cy, player.z), emoji: '🏚️', rooms: rooms, floors: floors, roomW: 10, roomH: 10, wallH: 3.5 }); 
+};
 window.spawnEnemy = (type) => {
-    let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5, ez = getGridBaseHeight(Math.floor(ex), Math.floor(ey)) + 1;
+    let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5, ez = getSafeFloorZ(ex, ey, player.z);
     if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez))) {
         if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
         else if (type === 'zombie') enemies.push({ type: 'zombie', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
@@ -174,7 +216,7 @@ window.spawnEnemy = (type) => {
     }
 };
 window.spawnDebug = (em) => { 
-    let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getGridBaseHeight(Math.floor(cx), Math.floor(cy)) + 1; 
+    let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getSafeFloorZ(cx, cy, player.z); 
     if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
     else if (em === '🔥') campfires.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.2, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 

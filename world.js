@@ -58,101 +58,64 @@ function getVoxelColor(x, y, z) {
         let b = getBiome(x, y);
         let r, g, bColor;
         
-        // Fixed biomes! Proper interpolation from Deep Forest -> Plains -> Sand Desert
         if (b < 0.35) {
-            // Forest: Deep Green
             let t = b / 0.35;
             r = 30 + 30 * t; g = 100 + 40 * t; bColor = 20 + 20 * t;
         } else if (b < 0.65) {
-            // Plains: Lighter, yellower green
             let t = (b - 0.35) / 0.30;
             r = 60 + 70 * t; g = 140 + 20 * t; bColor = 40 + 20 * t;
         } else {
-            // Desert: Sand
             let t = Math.min(1.0, (b - 0.65) / 0.35);
             r = 130 + 90 * t; g = 160 + 40 * t; bColor = 60 + 60 * t;
         }
         
-        // Add tiny noise based on coordinates for texture
         let noise = (Math.sin(x * 12.3) + Math.cos(y * 15.2)) * 5;
-        return {
-            r: Math.max(0, Math.min(255, r + noise)) | 0, 
-            g: Math.max(0, Math.min(255, g + noise)) | 0, 
-            b: Math.max(0, Math.min(255, bColor + noise)) | 0
-        };
+        return { r: Math.max(0, Math.min(255, r + noise)) | 0, g: Math.max(0, Math.min(255, g + noise)) | 0, b: Math.max(0, Math.min(255, bColor + noise)) | 0 };
     }
     if (z >= baseHInt - 3) return {r: 101, g: 67, b: 33}; // Dirt Layer
     let v = 90 + (Math.sin(x)*Math.cos(y) + Math.sin(z))*15; 
     return {r: v|0, g: v|0, b: v|0}; // Stone Layer
 }
 
-// 7 Days to Die - Vertex Averaging Algorithm for Smooth Meshes
-// Heavily Improved to support natural rolling hills and perfectly smooth caves!
 function getSmoothVertex(cx, cy, cz) {
-    let solidCount = 0, sumX = 0, sumY = 0, sumZ = 0;
-    let hasMod = false;
-    let solidsBelow = 0, solidsAbove = 0;
-
+    let solidCount = 0, sumX = 0, sumY = 0, sumZ = 0, hasMod = false, solidsBelow = 0, solidsAbove = 0;
     for(let dx=-1; dx<=0; dx++) {
         for(let dy=-1; dy<=0; dy++) {
             for(let dz=-1; dz<=0; dz++) {
-                let isSolid = false;
-                let mod = voxelMods.get(`${cx+dx},${cy+dy},${cz+dz}`);
-                if (mod !== undefined) {
-                    isSolid = mod === 1;
-                    hasMod = true;
-                } else {
-                    isSolid = (cz+dz <= getGridBaseHeightInt(cx+dx, cy+dy));
-                }
+                let isSolid = false, mod = voxelMods.get(`${cx+dx},${cy+dy},${cz+dz}`);
+                if (mod !== undefined) { isSolid = mod === 1; hasMod = true; } 
+                else { isSolid = (cz+dz <= getGridBaseHeightInt(cx+dx, cy+dy)); }
                 
                 if (isSolid) {
-                    solidCount++;
-                    sumX += (cx+dx+0.5); sumY += (cy+dy+0.5); sumZ += (cz+dz+0.5);
-                    if (dz === -1) solidsBelow++;
-                    if (dz === 0) solidsAbove++;
+                    solidCount++; sumX += (cx+dx+0.5); sumY += (cy+dy+0.5); sumZ += (cz+dz+0.5);
+                    if (dz === -1) solidsBelow++; if (dz === 0) solidsAbove++;
                 }
             }
         }
     }
     if (solidCount === 0 || solidCount === 8) return {x: cx, y: cy, z: cz};
     
-    // A higher weight (0.65 instead of 0.5) pulls the mesh tighter around the volume
-    // for a much rounder, organic "marching cubes" look inside caves and dug holes!
     let w = 0.65;
-    let nx = cx + (sumX/solidCount - cx)*w;
-    let ny = cy + (sumY/solidCount - cy)*w;
-    let nz = cz + (sumZ/solidCount - cz)*w;
+    let nx = cx + (sumX/solidCount - cx)*w, ny = cy + (sumY/solidCount - cy)*w, nz = cz + (sumZ/solidCount - cz)*w;
 
-    // Magic Trick: If this vertex is on the natural untouched surface, snap its Z
-    // perfectly to the continuous procedural float heightmap for rolling hills!
     if (!hasMod && solidsAbove === 0 && solidsBelow > 0) {
         let sZ = getGridBaseHeightFloat(cx, cy);
-        // Clamp to prevent visual tearing on steep terrain
         nz = Math.max(cz - 1, Math.min(cz, sZ));
     }
-
     return { x: nx, y: ny, z: nz };
 }
 
 function buildChunkMesh(cx, cy) {
     let faces = [];
-    
     function addFace(x, y, z, p1, p2, p3, p4, nx, ny, nz, shade, col) {
         faces.push({ 
-            pts: [
-                getSmoothVertex(p1[0], p1[1], p1[2]), 
-                getSmoothVertex(p2[0], p2[1], p2[2]), 
-                getSmoothVertex(p3[0], p3[1], p3[2]), 
-                getSmoothVertex(p4[0], p4[1], p4[2])
-            ], 
-            cx: x+0.5+nx*0.5, cy: y+0.5+ny*0.5, cz: z+0.5+nz*0.5, 
-            norm: {x:nx, y:ny, z:nz}, col: col, shade: shade 
+            pts: [ getSmoothVertex(p1[0], p1[1], p1[2]), getSmoothVertex(p2[0], p2[1], p2[2]), getSmoothVertex(p3[0], p3[1], p3[2]), getSmoothVertex(p4[0], p4[1], p4[2]) ], 
+            cx: x+0.5+nx*0.5, cy: y+0.5+ny*0.5, cz: z+0.5+nz*0.5, norm: {x:nx, y:ny, z:nz}, col: col, shade: shade 
         });
     }
 
     for (let x = cx * CHUNK_SIZE; x < (cx + 1) * CHUNK_SIZE; x++) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
-            // Check upwards bound optimizations
             let maxZ = Math.min(31, getGridBaseHeight(x, y) + 5); 
             for (let z = 0; z <= maxZ; z++) {
                 if (getSolidFast(x, y, z)) {
@@ -181,28 +144,23 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
     for(let x = Math.floor(cx-radius); x <= Math.ceil(cx+radius); x++) {
         for(let y = Math.floor(cy-radius); y <= Math.ceil(cy+radius); y++) {
             for(let z = Math.floor(cz-radius); z <= Math.ceil(cz+radius); z++) {
-                if (Math.hypot(x-cx, y-cy, z-cz) <= radius) {
-                    if (z >= 0 && z < 32) {
-                        voxelMods.set(`${x},${y},${z}`, amount);
-                        modifiedChunks.add(`${Math.floor(x/CHUNK_SIZE)},${Math.floor(y/CHUNK_SIZE)}`);
-                    }
+                if (Math.hypot(x-cx, y-cy, z-cz) <= radius && z >= 0 && z < 32) {
+                    voxelMods.set(`${x},${y},${z}`, amount);
+                    modifiedChunks.add(`${Math.floor(x/CHUNK_SIZE)},${Math.floor(y/CHUNK_SIZE)}`);
                 }
             }
         }
     }
     modifiedChunks.forEach(key => {
         let [mcx, mcy] = key.split(',').map(Number);
-        // Force rebuild of chunk and all neighbors so mesh edges connect perfectly
         chunkMeshes.delete(`${mcx},${mcy}`);
         chunkMeshes.delete(`${mcx+1},${mcy}`); chunkMeshes.delete(`${mcx-1},${mcy}`);
         chunkMeshes.delete(`${mcx},${mcy+1}`); chunkMeshes.delete(`${mcx},${mcy-1}`);
     });
 }
 
-// Initial player height
 player.z = getGridBaseHeight(0, 0) + 1.0;
 
-// --- Entities Generation ---
 function getEntityAt(gx, gy) {
     let biome = getBiome(gx, gy), cluster = Math.sin(gx * 0.1) * Math.cos(gy * 0.12) + Math.sin((gx - gy) * 0.08), h = getHash(gx, gy, 0);
     if (biome < 0.35) { if (cluster > 0.4) { if (h < 0.08) return '🌲'; if (h < 0.14) return '🌳'; if (h < 0.18) return '🪨'; } else { if (h < 0.01) return '🌳'; if (h < 0.03) return '🪨'; if (h < 0.06) return '🌻'; if (h < 0.08) return '🌷'; } } 
@@ -228,11 +186,15 @@ function getMapChunk(cx, cy) {
     for (let x = cx * CHUNK_SIZE; x < (cx + 1) * CHUNK_SIZE; x++) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
             let info = getEntityBaseInfo(x, y); let entKey = `${x},${y}`;
-            if (info && !destroyedEntities.has(entKey)) chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: getGridBaseHeight(x, y) + 1.0 - info.plantOffset, hp: 4, entKey: entKey }); 
+            if (info && !destroyedEntities.has(entKey)) {
+                // FIXED: Snap precisely to the procedural floating-point curve!
+                let exactZ = getGridBaseHeightFloat(x + 0.5, y + 0.5);
+                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: exactZ - info.plantOffset, hp: 4, entKey: entKey }); 
+            }
         }
     }
     let chunkHash = getHash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
-    let bZ = getGridBaseHeight(Math.floor(cx_offset), Math.floor(cy_offset)) + 1.0;
+    let bZ = getGridBaseHeightFloat(cx_offset, cy_offset);
     if (chunkHash > 0.94 && getSolid(Math.floor(cx_offset), Math.floor(cy_offset), Math.floor(bZ - 1))) {
         let items = new Array(10).fill(null); for(let k = 0; k < Math.floor(getHash(cx, cy, 7) * 4); k++) items[Math.floor(Math.random() * 10)] = { type: 'heal', emoji: '🩹', amount: 25 };
         containers.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: ['🧳', '🎒', '📦'][Math.floor(chunkHash * 1000) % 3], size: 0.9, items: items });
@@ -276,7 +238,6 @@ function isSolid(x, y) {
     return checkCollision(x, y, player.z);
 }
 
-// Buildings Logic
 function enterBuilding(b) { savedOverworld = { x: player.x, y: player.y, z: player.z, angle: player.angle, pitch: player.pitch }; activeBuilding = b; activeFloor = 0; gameState = 'interior'; projectiles.length = 0; if (b.emoji === '⛺') { player.x = 2.0; player.y = b.roomH / 2; player.z = player.baseHeight; player.angle = 0; } else { player.x = b.roomW / 2; player.y = 2.5; player.z = player.baseHeight; player.angle = Math.PI / 2; } player.pitch = 0; player.vz = 0; }
 function exitBuilding() { player.x = savedOverworld.x; player.y = savedOverworld.y; player.z = savedOverworld.z; player.angle = savedOverworld.angle; player.pitch = savedOverworld.pitch; player.vz = 0; gameState = 'overworld'; activeBuilding = null; projectiles.length = 0; }
 function changeFloor(dir) { activeFloor += dir; player.x = activeBuilding.rooms * activeBuilding.roomW - 1.5; player.y = activeBuilding.roomH - 3.5; player.angle = -Math.PI/2; }
