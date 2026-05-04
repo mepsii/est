@@ -1,25 +1,68 @@
 // --- World Generation & Voxel Storage ---
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
 const chunkMeshes = new Map(), voxelMods = new Map();
-const heightCache = new Map(); // Optimization to allow smooth voxel processing
+const heightCache = new Map(); 
 const BIOME_PREC = 2, BIOME_MUL = 20011, ENTITY_MUL = 10007, CHUNK_MUL = 2003;
 
 function getHash(x, y, seed = 1) { let h = Math.sin(x * 12.9898 + y * 78.233 + seed) * 43758.5453; return h - Math.floor(h); }
+
 function getBiome(x, y) {
     const key = ((x * BIOME_PREC) | 0) * BIOME_MUL + ((y * BIOME_PREC) | 0);
     let v = biomeCache.get(key); if (v !== undefined) return v;
-    let n = Math.sin(x * 0.01) + Math.cos(y * 0.012) + Math.sin((x - y) * 0.008);
+    let n = Math.sin(x * 0.012) + Math.cos(y * 0.015) + Math.sin((x - y) * 0.008);
     v = Math.max(0, Math.min(1, (n / 3) + 0.5)); biomeCache.set(key, v); return v;
 }
 
-// Separated into Float and Int versions for smooth organic surface matching
+// Ultra-smooth differentiable height generation for organic voxel surfaces
 function getGridBaseHeightFloat(x, y) {
-    let biome = getBiome(x, y), nx = x * 0.03, ny = y * 0.03;
-    let n1 = Math.sin(nx) + Math.cos(ny) + Math.sin(nx * 0.8 - ny * 1.2); 
-    let stepped = Math.floor(n1), fract = n1 - stepped;
-    let cliffs = (stepped + fract * fract * (3 - 2 * fract)) * 2.8; 
-    let hills = (Math.sin(x * 0.08) + Math.cos(y * 0.09 + Math.sin(x * 0.05))) * 1.2;
-    return 12 + (cliffs + hills) * (1.0 - biome * 0.85); 
+    // 1. Guaranteed Safe Spawn Area at (0,0)
+    let dist = Math.sqrt(x*x + y*y);
+    let safeWeight = Math.max(0, 1.0 - (dist / 35.0)); // 1.0 at center, fades to 0 at distance 35
+    safeWeight = safeWeight * safeWeight * (3 - 2 * safeWeight); // Smoothstep blending
+    
+    let b = getBiome(x, y); 
+    let h = 18; // Global baseline
+    
+    // Plains - Low frequency, gentle rolling
+    let plains = (Math.sin(x * 0.03) + Math.cos(y * 0.03)) * 1.5;
+    
+    // Hills - Medium frequency, organic overlap
+    let hills = (Math.sin(x * 0.02) + Math.cos(y * 0.02 + Math.sin(x * 0.015))) * 6;
+    
+    // Mountains - Smoothed peaks using squared positive noise
+    let mx = x * 0.015, my = y * 0.015;
+    let mNoise = Math.sin(mx) + Math.cos(my) + Math.sin(mx*2.1 - my*1.3)*0.5;
+    let mountains = Math.pow(Math.max(0, mNoise), 2.0) * 7.0;
+    
+    // Mesas/Terraces - Smooth stepping sine wave
+    let cx = x * 0.012, cy = y * 0.012;
+    let cNoise = (Math.sin(cx) + Math.cos(cy)) * 4.0;
+    let terraces = (cNoise - Math.sin(cNoise * Math.PI) * 0.25) * 4.0;
+
+    // Smooth Biome Blending Matrix
+    if (b < 0.3) {
+        h += plains;
+    } else if (b < 0.5) {
+        let t = (b - 0.3) / 0.2; t = t * t * (3 - 2 * t);
+        h += plains * (1 - t) + hills * t;
+    } else if (b < 0.7) {
+        let t = (b - 0.5) / 0.2; t = t * t * (3 - 2 * t);
+        h += hills * (1 - t) + terraces * t;
+    } else {
+        let t = Math.min(1.0, (b - 0.7) / 0.3); t = t * t * (3 - 2 * t);
+        h += terraces * (1 - t) + mountains * t;
+    }
+
+    // Natural River/Trench Carving (Smooth valleys)
+    let rx = x * 0.008, ry = y * 0.008;
+    let riverNoise = Math.sin(rx) + Math.cos(ry);
+    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 3.5);
+    h -= Math.pow(riverDepth, 2.0) * 12.0;
+
+    // Apply the flattened safe spawn zone overriding all generation near (0,0)
+    h = (20 * safeWeight) + (h * (1 - safeWeight));
+
+    return Math.max(2, h); // Keep above bedrock
 }
 
 function getGridBaseHeight(x, y) {
@@ -37,44 +80,62 @@ function getGridBaseHeightInt(x, y) {
 
 function getSolid(x, y, z) {
     if (z < 0) return true; // Bedrock
-    if (z >= 32) return false; // Sky limit
+    if (z >= 64) return false; // Max height expansion
     let mod = voxelMods.get(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
     if (mod !== undefined) return mod === 1;
-    return z <= getGridBaseHeight(x, y);
+    
+    let baseH = getGridBaseHeightInt(x, y);
+    if (z > baseH) return false;
+
+    // Organic Cave Systems
+    let depthFromSurface = baseH - z;
+    if (depthFromSurface > 4) { // Only form caves 4 blocks deep to prevent surface tearing
+        let caveNoise = Math.sin(x * 0.08) * Math.cos(y * 0.08) + Math.sin(z * 0.12);
+        if (caveNoise > 0.6) return false; // Hollow out
+    }
+
+    return true;
 }
 
-// Optimized solid check for vertex smoothing
-function getSolidFast(x, y, z) {
-    if (z < 0) return true;
-    if (z >= 32) return false;
-    let mod = voxelMods.get(`${x},${y},${z}`);
-    if (mod !== undefined) return mod === 1;
-    return z <= getGridBaseHeightInt(x, y);
-}
+// Fast mirror for mesher
+function getSolidFast(x, y, z) { return getSolid(x, y, z); }
 
 function getVoxelColor(x, y, z) {
     let baseHInt = getGridBaseHeightInt(x, y);
+    let noise = (Math.sin(x * 12.3) + Math.cos(y * 15.2)) * 4;
+    
+    // Surface
     if (z >= baseHInt) {
+        // Snow caps on high mountains
+        if (z > 38 + (Math.sin(x*0.1)+Math.cos(y*0.1))*2) return { r: 240+noise|0, g: 245+noise|0, b: 255+noise|0 };
+
         let b = getBiome(x, y);
         let r, g, bColor;
         
-        if (b < 0.35) {
-            let t = b / 0.35;
-            r = 30 + 30 * t; g = 100 + 40 * t; bColor = 20 + 20 * t;
-        } else if (b < 0.65) {
-            let t = (b - 0.35) / 0.30;
-            r = 60 + 70 * t; g = 140 + 20 * t; bColor = 40 + 20 * t;
-        } else {
-            let t = Math.min(1.0, (b - 0.65) / 0.35);
-            r = 130 + 90 * t; g = 160 + 40 * t; bColor = 60 + 60 * t;
+        if (b < 0.3) { // Plains
+            r = 70; g = 150; bColor = 50;
+        } else if (b < 0.5) { // Hills / Forest
+            r = 50; g = 120; bColor = 40;
+        } else if (b < 0.7) { // Mesas (Terracotta/Red Dirt)
+            r = 180; g = 100; bColor = 50;
+        } else { // Mountains (Rock)
+            r = 110; g = 115; bColor = 120;
         }
         
-        let noise = (Math.sin(x * 12.3) + Math.cos(y * 15.2)) * 5;
         return { r: Math.max(0, Math.min(255, r + noise)) | 0, g: Math.max(0, Math.min(255, g + noise)) | 0, b: Math.max(0, Math.min(255, bColor + noise)) | 0 };
     }
-    if (z >= baseHInt - 3) return {r: 101, g: 67, b: 33}; // Dirt Layer
-    let v = 90 + (Math.sin(x)*Math.cos(y) + Math.sin(z))*15; 
-    return {r: v|0, g: v|0, b: v|0}; // Stone Layer
+    
+    // Sub-surface Dirt Layer
+    if (z >= baseHInt - 3) {
+        if (baseHInt > 38) return {r: 100, g: 100, b: 105}; // Stone under snow
+        let b = getBiome(x, y);
+        if (b >= 0.5 && b < 0.7) return {r: 150, g: 80, b: 40}; // Red dirt under mesa
+        return {r: 90, g: 60, b: 30}; // Normal Dirt Layer
+    }
+    
+    // Deep Stone Layer (Caves)
+    let v = 90 + (Math.sin(x*0.5)*Math.cos(y*0.5) + Math.sin(z*0.5))*8; 
+    return {r: v|0, g: (v*0.95)|0, b: (v*0.9)|0}; 
 }
 
 function getSmoothVertex(cx, cy, cz) {
@@ -84,7 +145,7 @@ function getSmoothVertex(cx, cy, cz) {
             for(let dz=-1; dz<=0; dz++) {
                 let isSolid = false, mod = voxelMods.get(`${cx+dx},${cy+dy},${cz+dz}`);
                 if (mod !== undefined) { isSolid = mod === 1; hasMod = true; } 
-                else { isSolid = (cz+dz <= getGridBaseHeightInt(cx+dx, cy+dy)); }
+                else { isSolid = getSolidFast(cx+dx, cy+dy, cz+dz); }
                 
                 if (isSolid) {
                     solidCount++; sumX += (cx+dx+0.5); sumY += (cy+dy+0.5); sumZ += (cz+dz+0.5);
@@ -98,9 +159,10 @@ function getSmoothVertex(cx, cy, cz) {
     let w = 0.65;
     let nx = cx + (sumX/solidCount - cx)*w, ny = cy + (sumY/solidCount - cy)*w, nz = cz + (sumZ/solidCount - cz)*w;
 
-    if (!hasMod && solidsAbove === 0 && solidsBelow > 0) {
-        let sZ = getGridBaseHeightFloat(cx, cy);
-        nz = Math.max(cz - 1, Math.min(cz, sZ));
+    // ONLY apply floating point snapping if this vertex is the actual top surface (prevents glitchy cave tearing)
+    let baseFloat = getGridBaseHeightFloat(cx, cy);
+    if (!hasMod && solidsAbove === 0 && solidsBelow > 0 && Math.abs(cz - baseFloat) < 1.5) {
+        nz = Math.max(cz - 1, Math.min(cz, baseFloat));
     }
     return { x: nx, y: ny, z: nz };
 }
@@ -116,8 +178,8 @@ function buildChunkMesh(cx, cy) {
 
     for (let x = cx * CHUNK_SIZE; x < (cx + 1) * CHUNK_SIZE; x++) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
-            let maxZ = Math.min(31, getGridBaseHeight(x, y) + 5); 
-            for (let z = 0; z <= maxZ; z++) {
+            // Process up to 63 to encompass the new massive mountains and structures
+            for (let z = 0; z <= 63; z++) {
                 if (getSolidFast(x, y, z)) {
                     let col = getVoxelColor(x, y, z);
                     if (!getSolidFast(x, y, z+1)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col);
@@ -144,7 +206,7 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
     for(let x = Math.floor(cx-radius); x <= Math.ceil(cx+radius); x++) {
         for(let y = Math.floor(cy-radius); y <= Math.ceil(cy+radius); y++) {
             for(let z = Math.floor(cz-radius); z <= Math.ceil(cz+radius); z++) {
-                if (Math.hypot(x-cx, y-cy, z-cz) <= radius && z >= 0 && z < 32) {
+                if (Math.hypot(x-cx, y-cy, z-cz) <= radius && z >= 0 && z < 64) {
                     voxelMods.set(`${x},${y},${z}`, amount);
                     modifiedChunks.add(`${Math.floor(x/CHUNK_SIZE)},${Math.floor(y/CHUNK_SIZE)}`);
                 }
@@ -159,12 +221,18 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
     });
 }
 
-player.z = getGridBaseHeight(0, 0) + 1.0;
+// Foolproof safe spawn configuration (Scanning Top-Down to find floor)
+let startZ = 63;
+while (startZ > 0 && !getSolid(0, 0, startZ)) startZ--;
+player.x = 0; player.y = 0; player.z = startZ + 1.5;
 
 function getEntityAt(gx, gy) {
+    // Entities don't spawn naturally inside the massive safe zone
+    if (Math.sqrt(gx*gx + gy*gy) < 20) return null;
+
     let biome = getBiome(gx, gy), cluster = Math.sin(gx * 0.1) * Math.cos(gy * 0.12) + Math.sin((gx - gy) * 0.08), h = getHash(gx, gy, 0);
-    if (biome < 0.35) { if (cluster > 0.4) { if (h < 0.08) return '🌲'; if (h < 0.14) return '🌳'; if (h < 0.18) return '🪨'; } else { if (h < 0.01) return '🌳'; if (h < 0.03) return '🪨'; if (h < 0.06) return '🌻'; if (h < 0.08) return '🌷'; } } 
-    else if (biome < 0.65) { if (h < 0.01) return '🌳'; if (h < 0.02) return '🪾'; if (h < 0.04) return '🪨'; if (h < 0.07) return '🌻'; if (h < 0.10) return '🌼'; if (h < 0.12) return '🌹'; } 
+    if (biome < 0.3) { if (cluster > 0.4) { if (h < 0.08) return '🌲'; if (h < 0.14) return '🌳'; if (h < 0.18) return '🪨'; } else { if (h < 0.01) return '🌳'; if (h < 0.03) return '🪨'; if (h < 0.06) return '🌻'; if (h < 0.08) return '🌷'; } } 
+    else if (biome < 0.7) { if (h < 0.01) return '🌳'; if (h < 0.02) return '🪾'; if (h < 0.04) return '🪨'; if (h < 0.07) return '🌻'; if (h < 0.10) return '🌼'; if (h < 0.12) return '🌹'; } 
     else { if (cluster > 0.6) { if (h < 0.015) return '🌵'; if (h < 0.03) return '🪾'; if (h < 0.05) return '🪨'; } else { if (h < 0.002) return '💀'; if (h < 0.006) return '🪨'; if (h < 0.009) return '🪾'; if (h < 0.015) return '🌵'; } } return null;
 }
 
@@ -187,14 +255,30 @@ function getMapChunk(cx, cy) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
             let info = getEntityBaseInfo(x, y); let entKey = `${x},${y}`;
             if (info && !destroyedEntities.has(entKey)) {
-                // FIXED: Snap precisely to the procedural floating-point curve!
-                let exactZ = getGridBaseHeightFloat(x + 0.5, y + 0.5);
-                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: exactZ - info.plantOffset, hp: 4, entKey: entKey }); 
+                let baseFZ = getGridBaseHeightFloat(x + 0.5, y + 0.5);
+                let floorIntZ = Math.floor(baseFZ);
+                
+                // Account for steep ravines dropping entities downwards perfectly
+                if (!getSolid(Math.floor(x + 0.5), Math.floor(y + 0.5), floorIntZ)) {
+                    while(floorIntZ >= 0 && !getSolid(Math.floor(x + 0.5), Math.floor(y + 0.5), floorIntZ)) floorIntZ--;
+                    if (floorIntZ < 0) continue; // Out of bounds, don't spawn
+                    baseFZ = floorIntZ + 1.0; 
+                }
+
+                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: baseFZ - info.plantOffset, hp: 4, entKey: entKey }); 
             }
         }
     }
+    
+    // Chests & Animals drop into world cleanly now
     let chunkHash = getHash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
     let bZ = getGridBaseHeightFloat(cx_offset, cy_offset);
+    let bZInt = Math.floor(bZ);
+    if (!getSolid(Math.floor(cx_offset), Math.floor(cy_offset), bZInt)) {
+        while (bZInt >= 0 && !getSolid(Math.floor(cx_offset), Math.floor(cy_offset), bZInt)) bZInt--;
+        bZ = bZInt + 1.0;
+    }
+
     if (chunkHash > 0.94 && getSolid(Math.floor(cx_offset), Math.floor(cy_offset), Math.floor(bZ - 1))) {
         let items = new Array(10).fill(null); for(let k = 0; k < Math.floor(getHash(cx, cy, 7) * 4); k++) items[Math.floor(Math.random() * 10)] = { type: 'heal', emoji: '🩹', amount: 25 };
         containers.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: ['🧳', '🎒', '📦'][Math.floor(chunkHash * 1000) % 3], size: 0.9, items: items });
