@@ -1,5 +1,6 @@
 // --- World Generation & Voxel Storage ---
 const WATER_LEVEL = 42; // Global Sea Level
+const WATER_HEIGHT = WATER_LEVEL + 0.35; // Lowered to naturally sit below land surface
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
 const chunkMeshes = new Map(), voxelMods = new Map();
 const heightCache = new Map(); 
@@ -44,8 +45,8 @@ function getGridBaseHeightFloat(x, y) {
     // Natural River/Trench Carving
     let rx = x * 0.005, ry = y * 0.005;
     let riverNoise = Math.sin(rx) + Math.cos(ry);
-    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 3.0); // Made slightly wider
-    h -= Math.pow(riverDepth, 2.0) * 14.0; // Made deeper to cross sea level
+    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 3.0);
+    h -= Math.pow(riverDepth, 2.0) * 14.0;
     
     // Lakes and Oceans
     let wx = x * 0.004, wy = y * 0.004;
@@ -59,7 +60,6 @@ function getGridBaseHeightFloat(x, y) {
     return Math.max(2, h); // Protect bedrock layer
 }
 
-// Ensure global hooks exist for main.js physics logic
 function getGridBaseHeight(x, y) { return Math.floor(getGridBaseHeightFloat(x, y)); }
 function getGridBaseHeightInt(x, y) {
     const key = (x | 0) * 10000 + (y | 0);
@@ -72,15 +72,13 @@ function getDensity(x, y, z) {
     if (z < 0) return 100.0; // Bedrock
     if (z >= MAX_Z) return -100.0; // Sky limit
 
-    // Hardcode user modifications into the mathematical density field
     let mod = voxelMods.get(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
     if (mod !== undefined) return mod === 1 ? 100.0 : -100.0; 
 
     let baseH = getGridBaseHeightFloat(x, y);
-    let density = baseH - z; // Initial solid geometry distance
+    let density = baseH - z; 
     let depthFromSurface = baseH - z;
 
-    // Guaranteed Flat Safe Spawn Zone (Overrides 3D Noise)
     let dist2D = x*x + y*y;
     let safeWeight = Math.max(0, 1.0 - (dist2D / 2500.0));
     safeWeight = safeWeight * safeWeight * (3 - 2 * safeWeight);
@@ -89,26 +87,22 @@ function getDensity(x, y, z) {
 
     if (safeWeight < 1.0) {
         let b = getBiome(x, y);
-
-        // Majestic 3D Overhangs (Mainly applied to Mountains and Mesas)
         let warpAmp = (b > 0.65) ? 6.0 : 1.5; 
         let warp3D = Math.sin(x*0.02 + y*0.015) + Math.cos(y*0.02 + z*0.015) + Math.sin(x*0.015 - z*0.02);
         density += warp3D * warpAmp * (1 - safeWeight);
 
-        // Rare, deep, twisting cave systems (Only forms far beneath the crust)
         if (depthFromSurface > 12 && dist2D > 1000.0) { 
             let cx = x * 0.04, cy = y * 0.04, cz = z * 0.04;
             let c1 = Math.sin(cx) + Math.cos(cy) + Math.sin(cz);
             let c2 = Math.cos(cx*1.2 - cy) + Math.sin(cy*1.2 + cz) + Math.cos(cz*1.2);
             let tube = Math.abs(c1 * c2);
             
-            if (tube < 0.05) { // Narrower, rarer tubes
-                let caveHollow = Math.pow((0.05 - tube) * 20.0, 2.0); // Smooth falloff into the cave center
+            if (tube < 0.05) { 
+                let caveHollow = Math.pow((0.05 - tube) * 20.0, 2.0); 
                 density -= caveHollow; 
             }
         }
     }
-
     return density;
 }
 
@@ -122,32 +116,28 @@ function getVoxelColor(x, y, z) {
     let isAirAbove = !getSolidFast(x, y, z + 1);
     let depthFromMacro = getGridBaseHeightFloat(x, y) - z;
 
-    // Grass / Sand is only applied to blocks with open air directly above them that aren't deep underground caves
     if (isAirAbove && depthFromMacro < 6.0) {
-        // High altitude snow caps
         if (z > 72 + (Math.sin(x*0.1)+Math.cos(y*0.1))*3) return { r: 240+noise|0, g: 245+noise|0, b: 255+noise|0 };
         // Beaches near water level
-        if (z <= WATER_LEVEL + 1.5) return { r: 210+noise|0, g: 200+noise|0, b: 150+noise|0 };
+        if (z <= WATER_HEIGHT + 1.5) return { r: 210+noise|0, g: 200+noise|0, b: 150+noise|0 };
         
         let r, g, bColor;
-        if (b < 0.20) { r = 220; g = 195; bColor = 130; } // Desert
-        else if (b < 0.45) { r = 85; g = 150; bColor = 65; } // Plains
-        else if (b < 0.65) { r = 55; g = 120; bColor = 45; } // Forest
-        else if (b < 0.80) { r = 175; g = 85; bColor = 50; } // Mesa
-        else { r = 115; g = 115; bColor = 120; } // Mountain Rock
+        if (b < 0.20) { r = 220; g = 195; bColor = 130; } 
+        else if (b < 0.45) { r = 85; g = 150; bColor = 65; } 
+        else if (b < 0.65) { r = 55; g = 120; bColor = 45; } 
+        else if (b < 0.80) { r = 175; g = 85; bColor = 50; } 
+        else { r = 115; g = 115; bColor = 120; } 
         
         return { r: Math.max(0, Math.min(255, r + noise)) | 0, g: Math.max(0, Math.min(255, g + noise)) | 0, b: Math.max(0, Math.min(255, bColor + noise)) | 0 };
     }
     
-    // Subsurface and Sheer Cliff Wall colors
     if (depthFromMacro < 12.0) {
-        if (getGridBaseHeightInt(x, y) > 72) return {r: 105, g: 105, b: 110}; // Stone under snow
-        if (b < 0.20) return {r: 200, g: 175, b: 110}; // Sandstone
-        if (b >= 0.65 && b < 0.80) return {r: 140, g: 70, b: 35}; // Red clay rock
-        return {r: 95, g: 65, b: 35}; // Dirt Layer
+        if (getGridBaseHeightInt(x, y) > 72) return {r: 105, g: 105, b: 110}; 
+        if (b < 0.20) return {r: 200, g: 175, b: 110}; 
+        if (b >= 0.65 && b < 0.80) return {r: 140, g: 70, b: 35}; 
+        return {r: 95, g: 65, b: 35}; 
     }
     
-    // Deep Cave Stone Layer
     let v = 90 + (Math.sin(x*0.5)*Math.cos(y*0.5) + Math.sin(z*0.5))*8; 
     return {r: v|0, g: (v*0.95)|0, b: (v*0.9)|0}; 
 }
@@ -173,50 +163,64 @@ function getSmoothVertex(cx, cy, cz) {
     }
     if (solidCount === 0 || solidCount === 8) return {x: cx, y: cy, z: cz};
     
-    // If a block was placed or destroyed here, fallback to rigid box corners
     if (hasMod) {
         let w = 0.65;
         return { x: cx + (sumX/solidCount - cx)*w, y: cy + (sumY/solidCount - cy)*w, z: cz + (sumZ/solidCount - cz)*w };
     }
 
-    // --- True Mathematical Surface Interpolation ---
     let d0 = getDensity(cx, cy, cz);
-    
-    // Calculate the slope (gradient) of the density field at this corner
     let gx = (getDensity(cx + 1, cy, cz) - getDensity(cx - 1, cy, cz)) * 0.5;
     let gy = (getDensity(cx, cy + 1, cz) - getDensity(cx, cy - 1, cz)) * 0.5;
     let gz = (getDensity(cx, cy, cz + 1) - getDensity(cx, cy, cz - 1)) * 0.5;
     
     let magSq = gx*gx + gy*gy + gz*gz;
-    
     if (magSq > 0.001) {
         let t = d0 / magSq;
-        // Push the vertex along the gradient perfectly to the surface
         let ox = -t * gx, oy = -t * gy, oz = -t * gz;
-        
-        // Constrain offset to local voxel bounds to prevent crazy geometry tearing
         let maxOffset = 0.55;
         ox = Math.max(-maxOffset, Math.min(maxOffset, ox));
         oy = Math.max(-maxOffset, Math.min(maxOffset, oy));
         oz = Math.max(-maxOffset, Math.min(maxOffset, oz));
-        
         return { x: cx + ox, y: cy + oy, z: cz + oz };
     }
 
-    // Fallback if gradient is completely flat
     let w = 0.65;
     return { x: cx + (sumX/solidCount - cx)*w, y: cy + (sumY/solidCount - cy)*w, z: cz + (sumZ/solidCount - cz)*w };
 }
 
 function buildChunkMesh(cx, cy) {
     let faces =[];
+
+    // Geometrically stitches the flat water plane onto the sloped beach polygons perfectly 
+    function getWaterVertex(px, py, h) {
+        // Search vertical column to find exact intersection with terrain face
+        for (let cz = Math.floor(h) - 1; cz <= Math.floor(h) + 1; cz++) {
+            let svBot = getSmoothVertex(px, py, cz);
+            let svTop = getSmoothVertex(px, py, cz + 1);
+            
+            let dz = svTop.z - svBot.z;
+            if (dz > 0.0001) {
+                let t = (h - svBot.z) / dz;
+                if (t >= 0 && t <= 1) {
+                    return { 
+                        x: svBot.x + (svTop.x - svBot.x) * t, 
+                        y: svBot.y + (svTop.y - svBot.y) * t, 
+                        z: h // Enforce absolutely flat water
+                    };
+                }
+            }
+        }
+        // If terrain doesn't cross the water plane here, return perfectly flat grid coords
+        return { x: px, y: py, z: h };
+    }
+
     function addFace(x, y, z, p1, p2, p3, p4, nx, ny, nz, shade, col, isWater = false) {
         faces.push({ 
             pts: [ 
-                isWater ? {x:p1[0], y:p1[1], z:p1[2]} : getSmoothVertex(p1[0], p1[1], p1[2]), 
-                isWater ? {x:p2[0], y:p2[1], z:p2[2]} : getSmoothVertex(p2[0], p2[1], p2[2]), 
-                isWater ? {x:p3[0], y:p3[1], z:p3[2]} : getSmoothVertex(p3[0], p3[1], p3[2]), 
-                isWater ? {x:p4[0], y:p4[1], z:p4[2]} : getSmoothVertex(p4[0], p4[1], p4[2]) 
+                isWater ? getWaterVertex(p1[0], p1[1], p1[2]) : getSmoothVertex(p1[0], p1[1], p1[2]), 
+                isWater ? getWaterVertex(p2[0], p2[1], p2[2]) : getSmoothVertex(p2[0], p2[1], p2[2]), 
+                isWater ? getWaterVertex(p3[0], p3[1], p3[2]) : getSmoothVertex(p3[0], p3[1], p3[2]), 
+                isWater ? getWaterVertex(p4[0], p4[1], p4[2]) : getSmoothVertex(p4[0], p4[1], p4[2]) 
             ], 
             cx: x+0.5+nx*0.5, cy: y+0.5+ny*0.5, cz: z+0.5+nz*0.5, norm: {x:nx, y:ny, z:nz}, col: col, shade: shade, isWater: isWater
         });
@@ -236,12 +240,11 @@ function buildChunkMesh(cx, cy) {
                 }
             }
             
-            // Single plane of water per vertical column saves immense poly count 
-            if (!getSolidFast(x, y, WATER_LEVEL)) {
-                let wCol = {r: 30, g: 110, b: 200, a: 0.6}; // Blue with Alpha!
-                let h = WATER_LEVEL + 0.8; // Recessed slightly from top edge
-                addFace(x, y, WATER_LEVEL, [x, y, h], [x+1, y, h], [x+1, y+1, h], [x, y+1, h], 0, 0, 1, 1.0, wCol, true);
-                addFace(x, y, WATER_LEVEL, [x, y+1, h], [x+1, y+1, h], [x+1, y, h], [x, y, h], 0, 0, -1, 0.8, wCol, true);
+            // Single plane of water dynamically stitched to land contours 
+            if (getGridBaseHeightFloat(x + 0.5, y + 0.5) < WATER_HEIGHT + 0.6) {
+                let wCol = {r: 30, g: 110, b: 200, a: 0.6}; 
+                addFace(x, y, WATER_LEVEL, [x, y, WATER_HEIGHT], [x+1, y, WATER_HEIGHT], [x+1, y+1, WATER_HEIGHT], [x, y+1, WATER_HEIGHT], 0, 0, 1, 1.0, wCol, true);
+                addFace(x, y, WATER_LEVEL, [x, y+1, WATER_HEIGHT], [x+1, y+1, WATER_HEIGHT], [x+1, y, WATER_HEIGHT], [x, y, WATER_HEIGHT], 0, 0, -1, 0.8, wCol, true);
             }
         }
     }
@@ -281,22 +284,22 @@ player.x = 0; player.y = 0; player.z = startZ + 1.5;
 
 function getEntityAt(gx, gy) {
     if (Math.sqrt(gx*gx + gy*gy) < 20) return null; // Safe Zone Clearance
-    if (getGridBaseHeightFloat(gx, gy) <= WATER_LEVEL + 0.5) return null; // NO WATER ENTITIES
+    if (getGridBaseHeightFloat(gx, gy) <= WATER_HEIGHT + 0.5) return null; // NO WATER ENTITIES
 
     let biome = getBiome(gx, gy), cluster = Math.sin(gx * 0.1) * Math.cos(gy * 0.12) + Math.sin((gx - gy) * 0.08), h = getHash(gx, gy, 0);
     
-    if (biome < 0.20) { // Desert
+    if (biome < 0.20) { 
         if (h < 0.005) return '💀'; if (h < 0.015) return '🌵'; if (h < 0.03) return '🪨'; 
-    } else if (biome < 0.45) { // Plains
+    } else if (biome < 0.45) { 
         if (cluster > 0.4) { if (h < 0.02) return '🌳'; if (h < 0.04) return '🪨'; } 
         else { if (h < 0.08) return '🌻'; if (h < 0.12) return '🌷'; if (h < 0.15) return '🌼'; }
-    } else if (biome < 0.65) { // Forest
+    } else if (biome < 0.65) { 
         if (cluster > 0.2) { if (h < 0.12) return '🌲'; if (h < 0.20) return '🌳'; if (h < 0.23) return '🪨'; } 
         else { if (h < 0.02) return '🌳'; if (h < 0.05) return '🪨'; if (h < 0.08) return '🌹'; }
-    } else if (biome < 0.80) { // Mesas
+    } else if (biome < 0.80) { 
         if (cluster > 0.5) { if (h < 0.02) return '🪾'; if (h < 0.06) return '🪨'; if (h < 0.08) return '🌵'; } 
         else { if (h < 0.01) return '💀'; if (h < 0.04) return '🪨'; }
-    } else { // Mountains
+    } else { 
         if (cluster > 0.6) { if (h < 0.04) return '🌲'; if (h < 0.15) return '🪨'; } 
         else { if (h < 0.08) return '🪨'; if (h < 0.10) return '🪾'; }
     }
@@ -322,8 +325,6 @@ function getMapChunk(cx, cy) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
             let info = getEntityBaseInfo(x, y); let entKey = `${x},${y}`;
             if (info && !destroyedEntities.has(entKey)) {
-                
-                // Raycast downwards from the sky to find the true 3D surface floor for the entity
                 let floorIntZ = MAX_Z - 1;
                 while(floorIntZ >= 0 && !getSolidFast(Math.floor(x + 0.5), Math.floor(y + 0.5), floorIntZ)) floorIntZ--;
                 if (floorIntZ < 0) continue; 
@@ -333,16 +334,15 @@ function getMapChunk(cx, cy) {
         }
     }
     
-    // Chests & Animals drop into world cleanly via raycast
     let chunkHash = getHash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
     let bZInt = MAX_Z - 1;
     while (bZInt >= 0 && !getSolidFast(Math.floor(cx_offset), Math.floor(cy_offset), bZInt)) bZInt--;
     let bZ = bZInt + 1.0;
 
-    if (chunkHash > 0.94 && bZ > WATER_LEVEL + 1) {
+    if (chunkHash > 0.94 && bZ > WATER_HEIGHT + 1.0) {
         let items = new Array(10).fill(null); for(let k = 0; k < Math.floor(getHash(cx, cy, 7) * 4); k++) items[Math.floor(Math.random() * 10)] = { type: 'heal', emoji: '🩹', amount: 25 };
         containers.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: ['🧳', '🎒', '📦'][Math.floor(chunkHash * 1000) % 3], size: 0.9, items: items });
-    } else if (chunkHash > 0.88 && chunkHash <= 0.94 && bZ > WATER_LEVEL + 1) {
+    } else if (chunkHash > 0.88 && chunkHash <= 0.94 && bZ > WATER_HEIGHT + 1.0) {
         let def = ANIMAL_TYPES[Math.floor(chunkHash * 1000) % ANIMAL_TYPES.length];
         animals.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: def.emoji, size: def.size, hp: def.hp, speed: def.speed, dead: false, drop: def.drop, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 });
     }
