@@ -1,7 +1,7 @@
 // --- Globals & DOM ---
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
-const scoreEl = document.getElementById('score'), hpEl = document.getElementById('hp'), foodEl = document.getElementById('food'), staminaEl = document.getElementById('stamina');
+const scoreEl = document.getElementById('score'), hpEl = document.getElementById('hp'), foodEl = document.getElementById('food'), staminaEl = document.getElementById('stamina'), oxygenEl = document.getElementById('oxygen');
 const weaponEl = document.getElementById('weapon-name'), adsEl = document.getElementById('ads-status');
 const overlay = document.getElementById('overlay'), damageFlash = document.getElementById('damage-flash'), healFlash = document.getElementById('heal-flash');
 
@@ -15,7 +15,7 @@ const dbgTimeEl = document.getElementById('dbg-time'), dbgTimeValEl = document.g
 const dbgTimeSpeedEl = document.getElementById('dbg-time-speed');
 
 // --- Engine Variables ---
-let activeRenderList = [];
+let activeRenderList =[];
 let _lastAlign = '', _lastFont = '', _lastBaseline = '';
 
 // --- Performance Utilities ---
@@ -62,7 +62,7 @@ const SpriteCache = {
     }
 };
 
-const renderPool = [];
+const renderPool =[];
 let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
@@ -88,7 +88,7 @@ const patternArmyGreen = createNoisePattern('#4A5D23', 0.2, 0.05);
 const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
 
 // --- Game Data & Configs ---
-const RECIPES = [
+const RECIPES =[
     { name: "Tent", result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 }, req: { '🪵': 2, '🧶': 2 } },
     { name: "Campfire", result: { type: 'campfire', emoji: '🔥', count: 1 }, req: { '🪵': 2 } }
 ];
@@ -105,7 +105,7 @@ const WEAPONS = {
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };
 
-const ANIMAL_TYPES = [ 
+const ANIMAL_TYPES =[ 
     { emoji: '🐄', hp: 6, drop: { type: 'food', emoji: '🍔', amount: 30 }, size: 1.5, speed: 0.015 }, 
     { emoji: '🐖', hp: 4, drop: { type: 'food', emoji: '🥓', amount: 20 }, size: 1.2, speed: 0.025 }, 
     { emoji: '🐓', hp: 2, drop: { type: 'food', emoji: '🍗', amount: 15 }, size: 0.8, speed: 0.035 },
@@ -133,6 +133,6 @@ let gameState = 'overworld', activeBuilding = null, activeFloor = 0, savedOverwo
 const campfires = [];
 const destroyedEntities = new Set();
 const damageTexts = [];
-const bloodParticles = [];
-const projectiles = [], enemies = [], containers = [], animals = [], buildings = [];
-const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100 };
+const bloodParticles =[];
+const projectiles = [], enemies = [], containers = [], animals = [], buildings =[];
+const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100, oxygen: 100 };

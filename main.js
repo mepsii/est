@@ -64,6 +64,15 @@ function update() {
     player.inWater = gameState === 'overworld' && (player.z <= WATER_HEIGHT);
     player.isSubmerged = gameState === 'overworld' && (player.z + player.baseHeight <= WATER_HEIGHT);
 
+    // Oxygen Mechanics
+    if (player.isSubmerged) {
+        if (!godMode) player.oxygen = Math.max(0, player.oxygen - 0.15); // ~11 seconds of breath
+        if (player.oxygen <= 0 && tickCounter % 60 === 0) takeDamage(10); // Drowning damage
+    } else {
+        player.oxygen = Math.min(100, player.oxygen + 1.0); // Recover fast on surface
+    }
+    oxygenEl.innerText = Math.floor(player.oxygen);
+
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'], isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
     if (isSprinting) { if (!infiniteStamina && !godMode) player.stamina = Math.max(0, player.stamina - 0.5); } else { if (player.stamina < 100) player.stamina = Math.min(100, player.stamina + 0.3); }
     staminaEl.innerText = Math.floor(player.stamina);

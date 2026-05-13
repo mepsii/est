@@ -20,6 +20,7 @@ canvas { display: block; width: 100vw; height: 100vh; }
 .hud-item { font-size: 24px; margin-bottom: 5px; font-weight: bold; }
 #weapon-name { color: #ffff00; }
 #hp { color: #ff3333; }
+#oxygen { color: #00ffff; }
 #food { color: #ffaa00; }
 #stamina { color: #33ccff; }
 
