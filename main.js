@@ -60,11 +60,16 @@ function update() {
         c.flicker = 0.85 + wave1 + wave2 + wave3 + (Math.random() > 0.95 ? (Math.random() * 0.08) : 0);
     }
 
+    // Water Swim States
+    player.inWater = gameState === 'overworld' && (player.z <= WATER_LEVEL + 0.8);
+    player.isSubmerged = gameState === 'overworld' && (player.z + player.baseHeight <= WATER_LEVEL + 0.8);
+
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'], isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
     if (isSprinting) { if (!infiniteStamina && !godMode) player.stamina = Math.max(0, player.stamina - 0.5); } else { if (player.stamina < 100) player.stamina = Math.min(100, player.stamina + 0.3); }
     staminaEl.innerText = Math.floor(player.stamina);
 
-    let curSpeedMult = speedMult * (isSprinting ? sprintMult : 1.0), mv = 0, st = 0;
+    let curSpeedMult = speedMult * (isSprinting ? sprintMult : 1.0) * (player.inWater ? 0.5 : 1.0);
+    let mv = 0, st = 0;
     if (keys['KeyW']) mv += player.speed * curSpeedMult; if (keys['KeyS']) mv -= player.speed * curSpeedMult;
     if (keys['KeyA']) st -= player.speed * curSpeedMult; if (keys['KeyD']) st += player.speed * curSpeedMult;
     
@@ -107,16 +112,35 @@ function update() {
             if (keys['Space']) player.z += player.speed * speedMult * 1.5; 
             if (keys['ShiftLeft'] || keys['ControlLeft']) player.z -= player.speed * speedMult * 1.5; 
         } else {
-            if (!checkCollision(player.x, player.y, player.z - 0.05)) {
-                player.vz -= 0.015; // fall
+            if (player.inWater) {
+                player.vz -= 0.002; // Buoyant gravity (sink slowly)
+                if (keys['Space']) {
+                    if (player.z > WATER_LEVEL - 1.0) {
+                        player.vz = jumpPower * 0.7; // Dolphin Leap out of water
+                        keys['Space'] = false;
+                    } else {
+                        player.vz += 0.008; // Swim upwards
+                    }
+                }
+                player.vz *= 0.9; // Viscous water friction
+                
+                if (!checkCollision(player.x, player.y, player.z + player.vz)) {
+                    player.z += player.vz;
+                } else {
+                    player.vz = 0; // Hit floor/ceiling while swimming
+                }
             } else {
-                if (player.vz < 0) { player.vz = 0; player.z = Math.ceil(player.z - 0.05) + 0.01; } 
-                if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
-            }
-            player.z += player.vz;
-            if (player.vz > 0 && checkCollision(player.x, player.y, player.z)) {
-                player.z -= player.vz; // Hit roof
-                player.vz = 0;
+                if (!checkCollision(player.x, player.y, player.z - 0.05)) {
+                    player.vz -= 0.015; // fall
+                } else {
+                    if (player.vz < 0) { player.vz = 0; player.z = Math.ceil(player.z - 0.05) + 0.01; } 
+                    if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
+                }
+                player.z += player.vz;
+                if (player.vz > 0 && checkCollision(player.x, player.y, player.z)) {
+                    player.z -= player.vz; // Hit roof
+                    player.vz = 0;
+                }
             }
         }
     } else if (gameState === 'interior') {
@@ -146,10 +170,10 @@ function update() {
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
             let angle = Math.random() * Math.PI * 2, dist = 20 + Math.random() * 10, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
             let ez = getGridBaseHeight(Math.floor(ex), Math.floor(ey)) + 1;
-            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez))) {
+            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez)) && ez > WATER_LEVEL + 0.5) { // Prevent Underwater Spawns
                 let biome = getBiome(ex, ey), alienChance = biome >= 0.65 ? 0.05 : 0.01;
                 if (Math.random() < alienChance) { enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 }); } 
-                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getGridBaseHeight(Math.floor(zx),Math.floor(zy))+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
+                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getGridBaseHeight(Math.floor(zx),Math.floor(zy))+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && zez > WATER_LEVEL + 0.5 && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
             }
         }
 
@@ -312,8 +336,9 @@ function update() {
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
-    // Apply the smoothed camera Z immediately
-    let camZ = player.z + player.baseHeight + (player.zOffset || 0);
+    // Apply the smoothed camera Z immediately (and bob if submerged)
+    let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
+    let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
 
     const fov = canvas.width * currentZoom, hY = canvas.height/2 + player.pitch;
     const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
@@ -365,8 +390,8 @@ function render() {
                         let wx = f.pts[2].x - f.pts[0].x, wy = f.pts[2].y - f.pts[0].y, wz = f.pts[2].z - f.pts[0].z;
                         let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
 
-                        // Precise Backface Culling
-                        if (dX * nx + dY * ny + dZ * nz > 0) continue;
+                        // Precise Backface Culling (unless it is water surface from below)
+                        if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
                         
                         let distSq = dX*dX + dY*dY + dZ*dZ; // Exact distance sorting fixes Z-fighting
                         if (distSq < VIEW_DIST*VIEW_DIST) {
@@ -425,7 +450,7 @@ function render() {
         
         // Use true exact height calculated for caves shading
         let isUnderground = o.type === 'face' ? (o.h < getGridBaseHeight(Math.floor(o.wX), Math.floor(o.wY)) - 2) : false;
-        if (isUnderground) objLight = 0.05; 
+        if (isUnderground && !o.face.isWater) objLight = 0.05; 
 
         if (objLight < 1.0 && o.type !== 'campfireBloom') {
             let lightIntensity = 0;
@@ -454,7 +479,7 @@ function render() {
         if (o.type === 'face' || o.type === 'wallPoly') {
             let f = o.type === 'face' ? o.face : o;
             
-            let camPts = [];
+            let camPts =[];
             for (let k = 0; k < 4; k++) {
                 let dx = f.pts[k].x - player.x, dy = f.pts[k].y - player.y, dz = f.pts[k].z - camZ;
                 camPts.push({
@@ -464,7 +489,7 @@ function render() {
                 });
             }
 
-            let clipped = [];
+            let clipped =[];
             let zNear = 0.1;
             for(let j=0; j<camPts.length; j++) {
                 let p1 = camPts[j], p2 = camPts[(j+1)%camPts.length];
@@ -485,11 +510,27 @@ function render() {
                 let shade = f.shade * objLight;
                 let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
 
-                let fog = Math.min(1, depth / VIEW_DIST);
-                fr = fr * (1 - fog) + sky.r * fog; fg = fg * (1 - fog) + sky.g * fog; fb = fb * (1 - fog) + sky.b * fog;
+                // Underwater Dense Blue Fog Filter
+                if (player.isSubmerged) {
+                    let wFog = Math.min(1, depth / (VIEW_DIST * 0.6));
+                    fr = fr * (1 - wFog) + 15 * wFog | 0; 
+                    fg = fg * (1 - wFog) + 50 * wFog | 0; 
+                    fb = fb * (1 - wFog) + 120 * wFog | 0;
+                } else {
+                    let fog = Math.min(1, depth / VIEW_DIST);
+                    fr = fr * (1 - fog) + sky.r * fog | 0; 
+                    fg = fg * (1 - fog) + sky.g * fog | 0; 
+                    fb = fb * (1 - fog) + sky.b * fog | 0;
+                }
 
-                ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
-                ctx.strokeStyle = ctx.fillStyle; 
+                // Transparent faces support
+                if (f.col.a !== undefined) {
+                    ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${f.col.a})`;
+                    ctx.strokeStyle = ctx.fillStyle; // Prevent edge gaps on water
+                } else {
+                    ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
+                    ctx.strokeStyle = ctx.fillStyle; 
+                }
             } else {
                 ctx.fillStyle = f.color; ctx.strokeStyle = '#000';
             }
@@ -557,6 +598,12 @@ function render() {
     ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
     ctx.moveTo(canvas.width/2-cs, hY-player.pitch); ctx.lineTo(canvas.width/2+cs, hY-player.pitch);
     ctx.moveTo(canvas.width/2, hY-player.pitch-cs); ctx.lineTo(canvas.width/2, hY-player.pitch+cs); ctx.stroke();
+
+    // The Submerged Screen Tint
+    if (player.isSubmerged) {
+        ctx.fillStyle = 'rgba(10, 50, 130, 0.4)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 }
 
 // Add the mouse move event hook here at the bottom of main for the new aiming constraints

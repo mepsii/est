@@ -1,4 +1,5 @@
 // --- World Generation & Voxel Storage ---
+const WATER_LEVEL = 42; // Global Sea Level
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
 const chunkMeshes = new Map(), voxelMods = new Map();
 const heightCache = new Map(); 
@@ -43,8 +44,17 @@ function getGridBaseHeightFloat(x, y) {
     // Natural River/Trench Carving
     let rx = x * 0.005, ry = y * 0.005;
     let riverNoise = Math.sin(rx) + Math.cos(ry);
-    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 4.0);
-    h -= Math.pow(riverDepth, 2.0) * 12.0;
+    let riverDepth = Math.max(0, 1.0 - Math.abs(riverNoise) * 3.0); // Made slightly wider
+    h -= Math.pow(riverDepth, 2.0) * 14.0; // Made deeper to cross sea level
+    
+    // Lakes and Oceans
+    let wx = x * 0.004, wy = y * 0.004;
+    let waterNoise = Math.sin(wx) + Math.cos(wy) + Math.sin((wx - wy) * 0.003);
+    if (waterNoise > 1.2) {
+        h -= (waterNoise - 1.2) * 16.0; // Oceans
+    } else if (waterNoise > 0.7) {
+        h -= (waterNoise - 0.7) * 9.0; // Lakes
+    }
 
     return Math.max(2, h); // Protect bedrock layer
 }
@@ -116,6 +126,8 @@ function getVoxelColor(x, y, z) {
     if (isAirAbove && depthFromMacro < 6.0) {
         // High altitude snow caps
         if (z > 72 + (Math.sin(x*0.1)+Math.cos(y*0.1))*3) return { r: 240+noise|0, g: 245+noise|0, b: 255+noise|0 };
+        // Beaches near water level
+        if (z <= WATER_LEVEL + 1.5) return { r: 210+noise|0, g: 200+noise|0, b: 150+noise|0 };
         
         let r, g, bColor;
         if (b < 0.20) { r = 220; g = 195; bColor = 130; } // Desert
@@ -197,11 +209,16 @@ function getSmoothVertex(cx, cy, cz) {
 }
 
 function buildChunkMesh(cx, cy) {
-    let faces = [];
-    function addFace(x, y, z, p1, p2, p3, p4, nx, ny, nz, shade, col) {
+    let faces =[];
+    function addFace(x, y, z, p1, p2, p3, p4, nx, ny, nz, shade, col, isWater = false) {
         faces.push({ 
-            pts: [ getSmoothVertex(p1[0], p1[1], p1[2]), getSmoothVertex(p2[0], p2[1], p2[2]), getSmoothVertex(p3[0], p3[1], p3[2]), getSmoothVertex(p4[0], p4[1], p4[2]) ], 
-            cx: x+0.5+nx*0.5, cy: y+0.5+ny*0.5, cz: z+0.5+nz*0.5, norm: {x:nx, y:ny, z:nz}, col: col, shade: shade 
+            pts: [ 
+                isWater ? {x:p1[0], y:p1[1], z:p1[2]} : getSmoothVertex(p1[0], p1[1], p1[2]), 
+                isWater ? {x:p2[0], y:p2[1], z:p2[2]} : getSmoothVertex(p2[0], p2[1], p2[2]), 
+                isWater ? {x:p3[0], y:p3[1], z:p3[2]} : getSmoothVertex(p3[0], p3[1], p3[2]), 
+                isWater ? {x:p4[0], y:p4[1], z:p4[2]} : getSmoothVertex(p4[0], p4[1], p4[2]) 
+            ], 
+            cx: x+0.5+nx*0.5, cy: y+0.5+ny*0.5, cz: z+0.5+nz*0.5, norm: {x:nx, y:ny, z:nz}, col: col, shade: shade, isWater: isWater
         });
     }
 
@@ -217,6 +234,14 @@ function buildChunkMesh(cx, cy) {
                     if (!getSolidFast(x, y+1, z)) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col);
                     if (!getSolidFast(x, y-1, z)) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col);
                 }
+            }
+            
+            // Single plane of water per vertical column saves immense poly count 
+            if (!getSolidFast(x, y, WATER_LEVEL)) {
+                let wCol = {r: 30, g: 110, b: 200, a: 0.6}; // Blue with Alpha!
+                let h = WATER_LEVEL + 0.8; // Recessed slightly from top edge
+                addFace(x, y, WATER_LEVEL, [x, y, h], [x+1, y, h], [x+1, y+1, h], [x, y+1, h], 0, 0, 1, 1.0, wCol, true);
+                addFace(x, y, WATER_LEVEL, [x, y+1, h], [x+1, y+1, h], [x+1, y, h], [x, y, h], 0, 0, -1, 0.8, wCol, true);
             }
         }
     }
@@ -256,6 +281,7 @@ player.x = 0; player.y = 0; player.z = startZ + 1.5;
 
 function getEntityAt(gx, gy) {
     if (Math.sqrt(gx*gx + gy*gy) < 20) return null; // Safe Zone Clearance
+    if (getGridBaseHeightFloat(gx, gy) <= WATER_LEVEL + 0.5) return null; // NO WATER ENTITIES
 
     let biome = getBiome(gx, gy), cluster = Math.sin(gx * 0.1) * Math.cos(gy * 0.12) + Math.sin((gx - gy) * 0.08), h = getHash(gx, gy, 0);
     
@@ -291,7 +317,7 @@ function getEntityBaseInfo(x, y) {
 
 function getMapChunk(cx, cy) {
     const key = cx * CHUNK_MUL + cy; if (mapChunks.has(key)) return mapChunks.get(key);
-    let chunk = [];
+    let chunk =[];
     for (let x = cx * CHUNK_SIZE; x < (cx + 1) * CHUNK_SIZE; x++) {
         for (let y = cy * CHUNK_SIZE; y < (cy + 1) * CHUNK_SIZE; y++) {
             let info = getEntityBaseInfo(x, y); let entKey = `${x},${y}`;
@@ -313,10 +339,10 @@ function getMapChunk(cx, cy) {
     while (bZInt >= 0 && !getSolidFast(Math.floor(cx_offset), Math.floor(cy_offset), bZInt)) bZInt--;
     let bZ = bZInt + 1.0;
 
-    if (chunkHash > 0.94 && bZ > 1) {
+    if (chunkHash > 0.94 && bZ > WATER_LEVEL + 1) {
         let items = new Array(10).fill(null); for(let k = 0; k < Math.floor(getHash(cx, cy, 7) * 4); k++) items[Math.floor(Math.random() * 10)] = { type: 'heal', emoji: '🩹', amount: 25 };
         containers.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: ['🧳', '🎒', '📦'][Math.floor(chunkHash * 1000) % 3], size: 0.9, items: items });
-    } else if (chunkHash > 0.88 && chunkHash <= 0.94 && bZ > 1) {
+    } else if (chunkHash > 0.88 && chunkHash <= 0.94 && bZ > WATER_LEVEL + 1) {
         let def = ANIMAL_TYPES[Math.floor(chunkHash * 1000) % ANIMAL_TYPES.length];
         animals.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: def.emoji, size: def.size, hp: def.hp, speed: def.speed, dead: false, drop: def.drop, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 });
     }
@@ -361,14 +387,14 @@ function exitBuilding() { player.x = savedOverworld.x; player.y = savedOverworld
 function changeFloor(dir) { activeFloor += dir; player.x = activeBuilding.rooms * activeBuilding.roomW - 1.5; player.y = activeBuilding.roomH - 3.5; player.angle = -Math.PI/2; }
 
 function getInteriorEntities() {
-    let ents = [], b = activeBuilding, totalW = b.rooms * b.roomW;
+    let ents =[], b = activeBuilding, totalW = b.rooms * b.roomW;
     if (activeFloor === 0) ents.push({ emoji: '🚪', x: (b.emoji === '⛺' ? 0.5 : b.roomW / 2), y: (b.emoji === '⛺' ? b.roomH / 2 : 0.5), z: 0.1, size: (b.emoji === '⛺' ? 2.0 : 2.5), action: 'exit', label: (b.emoji === '⛺' ? 'Exit Tent' : 'Exit to Overworld') });
     if (b.floors > 1) ents.push({ emoji: '🪜', x: totalW - 1.5, y: b.roomH - 1.5, z: 0.1, size: 2.5, action: 'stairs', label: (activeFloor === 0 ? 'Go Upstairs' : (activeFloor === b.floors - 1 ? 'Go Downstairs' : 'Use Stairs')) });
     return ents;
 }
 
 function getInteriorWalls() {
-    let walls = [], b = activeBuilding, totalW = b.rooms * b.roomW, h = b.roomH;
+    let walls =[], b = activeBuilding, totalW = b.rooms * b.roomW, h = b.roomH;
     if (b.emoji === '⛺') {
         let steps = 6; 
         for(let i=0; i<steps; i++) { let x1 = (i/steps)*totalW, x2 = ((i+1)/steps)*totalW; walls.push({ pts: [ {x:x1, y:h/2, z:b.wallH}, {x:x2, y:h/2, z:b.wallH}, {x:x2, y:0, z:0}, {x:x1, y:0, z:0} ], color: patternArmyGreen }); walls.push({ pts: [ {x:x2, y:h/2, z:b.wallH}, {x:x1, y:h/2, z:b.wallH}, {x:x1, y:h, z:0}, {x:x2, y:h, z:0} ], color: patternArmyGreen }); }
