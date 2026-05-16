@@ -301,7 +301,7 @@ function update() {
 
         let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
         let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
-        let power = 0.016; 
+        let power = 0.010; // Lowered to balance coasting speed
         
         // Raycast Suspension Points
         let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
@@ -332,10 +332,10 @@ function update() {
             }
             
             v.speed -= slopeForce; 
-            v.speed *= 0.96; // Rolling drag
+            v.speed *= 0.985; // Massive drag reduction -> Coasts beautifully
             
             if (gas === 0) {
-                v.speed *= 0.92; // Engine braking
+                v.speed *= 0.985; // Very light friction when letting off gas
                 if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0; // Parking stop
             }
             
@@ -352,7 +352,6 @@ function update() {
             v.vz += compression * 0.15; // Spring push
             v.vz *= 0.80; // Heavy shock absorber damping
             
-            // Fixed Inverse Roll Logic (Left side higher = positive roll)
             let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
             let targetRoll = Math.atan2((zFL+zBL)/2 - (zFR+zBR)/2, wW * 2); 
             
@@ -407,9 +406,9 @@ function update() {
         v.camZ += (v.z - v.camZ) * 0.15;
 
         if (player.vehicleView === '3rd') {
-            player.x = v.camX - Math.cos(player.angle) * 14.0; // Further back
-            player.y = v.camY - Math.sin(player.angle) * 14.0;
-            player.z = v.camZ + 2.0; // Very low, dynamic action feel
+            player.x = v.camX - Math.cos(player.angle) * 9.5; // Closer!
+            player.y = v.camY - Math.sin(player.angle) * 9.5;
+            player.z = v.camZ + 1.0; // Lower!
             
             // Auto-center camera pitch on the truck so you don't lose it vertically over big jumps
             let pitchTarget = v.pitch * 300; 
@@ -512,7 +511,7 @@ function update() {
             if (v.z <= targetZ + 0.6) {
                 let slopeForce = Math.sin(v.pitch) * 0.008;
                 v.speed -= slopeForce;
-                v.speed *= 0.96;
+                v.speed *= 0.985;
                 if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.015) v.speed = 0; 
                 
                 v.x += Math.cos(v.angle) * v.speed;
@@ -803,6 +802,7 @@ function render() {
             }
         }
 
+        // Render World Model Vehicles (Truck)
         for (let v of vehicles) {
             let dx = v.x - player.x, dy = v.y - player.y;
             let rotX = dx * cosA + dy * sinA;
