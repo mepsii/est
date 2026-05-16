@@ -48,6 +48,10 @@ const WEAPON_MODEL_CONFIG = {
     'shotgun': { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 }
 };
 
+const VEHICLE_MODEL_CONFIG = {
+    'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: 0 } // Standardizes Y-up to Z-up. Scale to fit voxels.
+};
+
 async function loadObjModel(name) {
     try {
         const objRes = await fetch(`models/${name}.obj`);
@@ -117,6 +121,7 @@ async function loadObjModel(name) {
 loadObjModel('pistol');
 loadObjModel('shotgun');
 loadObjModel('smg');
+loadObjModel('truck');
 
 function rotate3D(x, y, z, rotX, rotY, rotZ) {
     let cx = Math.cos(rotX), sx = Math.sin(rotX);
@@ -247,21 +252,25 @@ function update() {
         c.flicker = 0.85 + wave1 + wave2 + wave3 + (Math.random() > 0.95 ? (Math.random() * 0.08) : 0);
     }
 
-    // Water Swim States
     player.inWater = gameState === 'overworld' && (player.z <= WATER_HEIGHT);
     player.isSubmerged = gameState === 'overworld' && (player.z + player.baseHeight <= WATER_HEIGHT);
 
-    // Oxygen Mechanics
     if (player.isSubmerged) {
-        if (!godMode) player.oxygen = Math.max(0, player.oxygen - 0.15); // ~11 seconds of breath
-        if (player.oxygen <= 0 && tickCounter % 60 === 0) takeDamage(10); // Drowning damage
+        if (!godMode) player.oxygen = Math.max(0, player.oxygen - 0.15);
+        if (player.oxygen <= 0 && tickCounter % 60 === 0) takeDamage(10);
     } else {
-        player.oxygen = Math.min(100, player.oxygen + 1.0); // Recover fast on surface
+        player.oxygen = Math.min(100, player.oxygen + 1.0);
     }
     oxygenEl.innerText = Math.floor(player.oxygen);
 
-    let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'], isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
-    if (isSprinting) { if (!infiniteStamina && !godMode) player.stamina = Math.max(0, player.stamina - 0.5); } else { if (player.stamina < 100) player.stamina = Math.min(100, player.stamina + 0.3); }
+    let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+    let isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
+    
+    if (isSprinting && !player.inVehicle) { 
+        if (!infiniteStamina && !godMode) player.stamina = Math.max(0, player.stamina - 0.5); 
+    } else { 
+        if (player.stamina < 100) player.stamina = Math.min(100, player.stamina + 0.3); 
+    }
     staminaEl.innerText = Math.floor(player.stamina);
 
     let curSpeedMult = speedMult * (isSprinting ? sprintMult : 1.0) * (player.inWater ? 0.5 : 1.0);
@@ -269,84 +278,139 @@ function update() {
     if (keys['KeyW']) mv += player.speed * curSpeedMult; if (keys['KeyS']) mv -= player.speed * curSpeedMult;
     if (keys['KeyA']) st -= player.speed * curSpeedMult; if (keys['KeyD']) st += player.speed * curSpeedMult;
     
-    // Smooth Camera Stepping Initialization
     player.zOffset = player.zOffset || 0;
 
-    // True 3D Collision Movement with Smooth Auto-Stepping
-    if (gameState === 'overworld') {
-        let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
-        let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
+    // Movement & Vehicle Physics Handling
+    if (player.inVehicle) {
+        let v = player.inVehicle;
+        let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
+        let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
         
-        let stepH = 1.1; 
-        let steppedZ = 0;
-
-        if (!checkCollision(nx, player.y, player.z)) {
-            player.x = nx;
-        } else {
-            for (let s = 0.2; s <= stepH; s += 0.2) {
-                if (!checkCollision(nx, player.y, player.z + s)) {
-                    player.x = nx; player.z += s; steppedZ += s; break;
-                }
-            }
+        let power = 0.012; 
+        if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
+            v.speed += gas * power;
         }
-
-        if (!checkCollision(player.x, ny, player.z)) {
-            player.y = ny;
+        v.speed *= 0.95; 
+        
+        let turnRate = steerInput * Math.min(Math.abs(v.speed)*0.4, 0.04); 
+        v.angle += (v.speed >= 0 ? turnRate : -turnRate);
+        
+        let nx = v.x + Math.cos(v.angle) * v.speed;
+        let ny = v.y + Math.sin(v.angle) * v.speed;
+        
+        if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
+            v.speed *= -0.4; 
         } else {
-            for (let s = 0.2; s <= stepH; s += 0.2) {
-                if (!checkCollision(player.x, ny, player.z + s)) {
-                    player.y = ny; player.z += s; steppedZ += s; break;
-                }
-            }
+            v.x = nx;
+            v.y = ny;
         }
+        
+        let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
+        let wL = 2.0, wW = 1.2; 
+        let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 2);
+        let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 2);
+        let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 2);
+        let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 2);
+        
+        v.z += (((zFL+zFR+zBL+zBR)/4) + 0.8 - v.z) * 0.2; 
+        v.pitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
+        v.roll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
 
-        // Apply smooth visual transition to negate the physical POP
-        if (steppedZ > 0) player.zOffset -= steppedZ;
-
-        if (flightMode) { 
-            player.vz = 0; 
-            if (keys['Space']) player.z += player.speed * speedMult * 1.5; 
-            if (keys['ShiftLeft'] || keys['ControlLeft']) player.z -= player.speed * speedMult * 1.5; 
+        if (player.vehicleView === '3rd') {
+            player.x = v.x - Math.cos(v.angle) * 7;
+            player.y = v.y - Math.sin(v.angle) * 7;
+            player.z = v.z + 4; 
         } else {
-            if (player.inWater) {
-                player.vz -= 0.002; // Buoyant gravity (sink slowly)
-                if (keys['Space']) {
-                    if (player.z > WATER_HEIGHT - 1.0) {
-                        player.vz = jumpPower * 0.7; // Dolphin Leap out of water
-                        keys['Space'] = false;
-                    } else {
-                        player.vz += 0.008; // Swim upwards
+            player.x = v.x + Math.cos(v.angle) * 0.5 - Math.sin(v.angle) * 0.8; 
+            player.y = v.y + Math.sin(v.angle) * 0.5 + Math.cos(v.angle) * 0.8;
+            player.z = v.z + 2.2; 
+        }
+        player.vz = 0;
+
+    } else {
+        if (gameState === 'overworld') {
+            let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
+            let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
+            
+            let stepH = 1.1; 
+            let steppedZ = 0;
+
+            if (!checkCollision(nx, player.y, player.z)) {
+                player.x = nx;
+            } else {
+                for (let s = 0.2; s <= stepH; s += 0.2) {
+                    if (!checkCollision(nx, player.y, player.z + s)) {
+                        player.x = nx; player.z += s; steppedZ += s; break;
                     }
                 }
-                player.vz *= 0.9; // Viscous water friction
-                
-                if (!checkCollision(player.x, player.y, player.z + player.vz)) {
-                    player.z += player.vz;
-                } else {
-                    player.vz = 0; // Hit floor/ceiling while swimming
-                }
+            }
+
+            if (!checkCollision(player.x, ny, player.z)) {
+                player.y = ny;
             } else {
-                if (!checkCollision(player.x, player.y, player.z - 0.05)) {
-                    player.vz -= 0.015; // fall
-                } else {
-                    if (player.vz < 0) { player.vz = 0; player.z = Math.ceil(player.z - 0.05) + 0.01; } 
-                    if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
-                }
-                player.z += player.vz;
-                if (player.vz > 0 && checkCollision(player.x, player.y, player.z)) {
-                    player.z -= player.vz; // Hit roof
-                    player.vz = 0;
+                for (let s = 0.2; s <= stepH; s += 0.2) {
+                    if (!checkCollision(player.x, ny, player.z + s)) {
+                        player.y = ny; player.z += s; steppedZ += s; break;
+                    }
                 }
             }
+
+            if (steppedZ > 0) player.zOffset -= steppedZ;
+
+            if (flightMode) { 
+                player.vz = 0; 
+                if (keys['Space']) player.z += player.speed * speedMult * 1.5; 
+                if (keys['ShiftLeft'] || keys['ControlLeft']) player.z -= player.speed * speedMult * 1.5; 
+            } else {
+                if (player.inWater) {
+                    player.vz -= 0.002; 
+                    if (keys['Space']) {
+                        if (player.z > WATER_HEIGHT - 1.0) {
+                            player.vz = jumpPower * 0.7; 
+                            keys['Space'] = false;
+                        } else {
+                            player.vz += 0.008; 
+                        }
+                    }
+                    player.vz *= 0.9; 
+                    
+                    if (!checkCollision(player.x, player.y, player.z + player.vz)) {
+                        player.z += player.vz;
+                    } else {
+                        player.vz = 0; 
+                    }
+                } else {
+                    if (!checkCollision(player.x, player.y, player.z - 0.05)) {
+                        player.vz -= 0.015; 
+                    } else {
+                        if (player.vz < 0) { player.vz = 0; player.z = Math.ceil(player.z - 0.05) + 0.01; } 
+                        if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
+                    }
+                    player.z += player.vz;
+                    if (player.vz > 0 && checkCollision(player.x, player.y, player.z)) {
+                        player.z -= player.vz; 
+                        player.vz = 0;
+                    }
+                }
+            }
+        } else if (gameState === 'interior') {
+            let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
+            let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
+            if (!isSolid(nx, player.y)) player.x = nx;
+            if (!isSolid(player.x, ny)) player.y = ny;
         }
-    } else if (gameState === 'interior') {
-        let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
-        let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;
-        if (!isSolid(nx, player.y)) player.x = nx;
-        if (!isSolid(player.x, ny)) player.y = ny;
     }
 
-    // Decay the visual smoothing offset
+    for (let v of vehicles) {
+        if (v !== player.inVehicle) {
+            v.speed *= 0.90;
+            v.x += Math.cos(v.angle) * v.speed;
+            v.y += Math.sin(v.angle) * v.speed;
+            v.z += (getSafeFloorZ(v.x, v.y, v.z + 2) + 0.8 - v.z) * 0.2;
+            v.pitch *= 0.9; v.roll *= 0.9;
+        }
+    }
+
     player.zOffset *= 0.7;
     if (Math.abs(player.zOffset) < 0.01) player.zOffset = 0;
 
@@ -366,7 +430,7 @@ function update() {
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
             let angle = Math.random() * Math.PI * 2, dist = 20 + Math.random() * 10, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
             let ez = getGridBaseHeight(Math.floor(ex), Math.floor(ey)) + 1;
-            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez)) && ez > WATER_HEIGHT + 0.5) { // Prevent Underwater Spawns
+            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez)) && ez > WATER_HEIGHT + 0.5) { 
                 let biome = getBiome(ex, ey), alienChance = biome >= 0.65 ? 0.05 : 0.01;
                 if (Math.random() < alienChance) { enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 }); } 
                 else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getGridBaseHeight(Math.floor(zx),Math.floor(zy))+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && zez > WATER_HEIGHT + 0.5 && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
@@ -423,16 +487,24 @@ function update() {
         }
     }
 
-    if (gameState === 'overworld') { for (let c of containers) checkTarget(c, 3.0); for (let a of animals) if (a.dead) checkTarget(a, 3.0); for (let b of buildings) checkTarget(b, 4.0); } 
+    if (gameState === 'overworld') { 
+        for (let c of containers) checkTarget(c, 3.0); 
+        for (let a of animals) if (a.dead) checkTarget(a, 3.0); 
+        for (let b of buildings) checkTarget(b, 4.0); 
+        for (let v of vehicles) checkTarget(v, 4.0); 
+    } 
     else { for (let e of getInteriorEntities()) checkTarget(e, 3.0); }
 
     if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
-        if (interactTarget.rooms) interactTooltip.innerText = "[E] Enter " + interactTarget.emoji; else if (interactTarget.label) interactTooltip.innerText = "[E] " + interactTarget.label; else interactTooltip.innerText = "[E] Loot";
+        if (vehicles.includes(interactTarget)) interactTooltip.innerText = "[E] Drive Truck";
+        else if (interactTarget.rooms) interactTooltip.innerText = "[E] Enter " + interactTarget.emoji; 
+        else if (interactTarget.label) interactTooltip.innerText = "[E] " + interactTarget.label; 
+        else interactTooltip.innerText = "[E] Loot";
         interactTooltip.style.display = 'block';
     } else interactTooltip.style.display = 'none';
 
     if (fireCooldown > 0) fireCooldown--;
-    if (isMouseDown && fireCooldown <= 0) {
+    if (isMouseDown && fireCooldown <= 0 && (!player.inVehicle || player.vehicleView === '1st')) {
         const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom), w = WEAPONS[currentWeapon];
         if (w.isMelee) {
             let hitTarget = null; let cDist = w.range;
@@ -532,7 +604,6 @@ function update() {
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
-    // Apply the smoothed camera Z immediately (and bob if submerged)
     let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
     let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
 
@@ -572,7 +643,6 @@ function render() {
                 for (let i = 0; i < faces.length; i++) {
                     let f = faces[i];
 
-                    // Determine TRUE smoothed centroid instead of flat grid block centers
                     let cX = (f.pts[0].x + f.pts[1].x + f.pts[2].x + f.pts[3].x) / 4;
                     let cY = (f.pts[0].y + f.pts[1].y + f.pts[2].y + f.pts[3].y) / 4;
                     let cZ = (f.pts[0].z + f.pts[1].z + f.pts[2].z + f.pts[3].z) / 4;
@@ -581,18 +651,16 @@ function render() {
                     let rotX = dX * cosA + dY * sinA;
                     
                     if (rotX > -2 && rotX < VIEW_DIST) { 
-                        // Compute exact polygon face normal via Cross-Product to prevent warped culling
                         let ux = f.pts[1].x - f.pts[0].x, uy = f.pts[1].y - f.pts[0].y, uz = f.pts[1].z - f.pts[0].z;
                         let wx = f.pts[2].x - f.pts[0].x, wy = f.pts[2].y - f.pts[0].y, wz = f.pts[2].z - f.pts[0].z;
                         let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
 
-                        // Precise Backface Culling (unless it is water surface from below)
                         if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
                         
-                        let distSq = dX*dX + dY*dY + dZ*dZ; // Exact distance sorting fixes Z-fighting
+                        let distSq = dX*dX + dY*dY + dZ*dZ; 
                         if (distSq < VIEW_DIST*VIEW_DIST) {
                             let o = getRenderItem(); o.type = 'face'; o.face = f; o.depthSq = distSq;
-                            o.wX = cX; o.wY = cY; o.h = cZ; // Save exact point for lighting
+                            o.wX = cX; o.wY = cY; o.h = cZ; 
                         }
                     }
                 }
@@ -604,6 +672,59 @@ function render() {
                         let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = rotX*rotX; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
                     }
                 }
+            }
+        }
+
+        // Render World Model Vehicles (Truck)
+        for (let v of vehicles) {
+            let dx = v.x - player.x, dy = v.y - player.y;
+            let rotX = dx * cosA + dy * sinA;
+            if (rotX < -10 || rotX > VIEW_DIST * 1.5) continue;
+            if (player.inVehicle === v && player.vehicleView === '1st') continue; 
+            
+            let model = WEAPON_MODELS[v.type];
+            if (model) {
+                let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0 };
+                let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
+                
+                for (let f of model.faces) {
+                    let wPts = [];
+                    for (let pt of f.pts) {
+                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
+                        p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+                        
+                        let cp = Math.cos(-v.pitch), sp = Math.sin(-v.pitch);
+                        let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
+                        
+                        let p2x = p1.x * cp - p1.z * sp;
+                        let p2y = p1.y;
+                        let p2z = p1.x * sp + p1.z * cp;
+                        
+                        let p3x = p2x;
+                        let p3y = p2y * cr - p2z * sr;
+                        let p3z = p2y * sr + p2z * cr;
+                        
+                        let wx = p3x * vcx - p3y * vsx;
+                        let wy = p3x * vsx + p3y * vcx;
+                        
+                        wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z });
+                    }
+                    
+                    let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
+                    let w = { x: wPts[2].x - wPts[0].x, y: wPts[2].y - wPts[0].y, z: wPts[2].z - wPts[0].z };
+                    let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
+                    
+                    if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
+                    
+                    let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
+                    let distSq = (cX-player.x)**2 + (cY-player.y)**2 + (cZ-camZ)**2;
+                    
+                    let o = getRenderItem();
+                    o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = distSq;
+                    o.wX = cX; o.wY = cY; o.h = cZ; o.norm = {x: nx, y: ny, z: nz};
+                }
+            } else {
+                let o = getRenderItem(); o.type = 'emoji'; o.emoji = '🚚'; o.size = 4; o.depthSq = rotX*rotX; o.h = v.z; o.wX = v.x; o.wY = v.y; o.targeted = (v === interactTarget);
             }
         }
         
@@ -644,15 +765,12 @@ function render() {
         let objLight = gameState === 'overworld' ? ambient : 1.0;
         let depth = Math.sqrt(o.depthSq);
         
-        // Use true exact height calculated for caves shading
         let isUnderground = o.type === 'face' ? (o.h < getGridBaseHeight(Math.floor(o.wX), Math.floor(o.wY)) - 2) : false;
         if (isUnderground && !o.face.isWater) objLight = 0.05; 
 
         if (objLight < 1.0 && o.type !== 'campfireBloom') {
             let lightIntensity = 0;
-            let cx = o.wX;
-            let cy = o.wY;
-            let cz = o.type === 'face' ? o.h : o.h + (o.size?o.size/2:0);
+            let cx = o.wX, cy = o.wY, cz = o.type === 'face' || o.type === 'objWorldFace' ? o.h : o.h + (o.size?o.size/2:0);
             
             if (isFlashlightOn) {
                 let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ; 
@@ -672,17 +790,12 @@ function render() {
             objLight = Math.min(1.0, objLight + lightIntensity);
         }
 
-        if (o.type === 'face' || o.type === 'wallPoly') {
-            let f = o.type === 'face' ? o.face : o;
-            
-            let camPts =[];
-            for (let k = 0; k < 4; k++) {
-                let dx = f.pts[k].x - player.x, dy = f.pts[k].y - player.y, dz = f.pts[k].z - camZ;
-                camPts.push({
-                    cx: dx * -sinA + dy * cosA,
-                    cy: dz,
-                    cz: dx * cosA + dy * sinA 
-                });
+        if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace') {
+            let ptsArray = (o.type === 'objWorldFace') ? o.pts : (o.type === 'face' ? o.face.pts : o.pts);
+            let camPts = [];
+            for (let k = 0; k < ptsArray.length; k++) {
+                let dx = ptsArray[k].x - player.x, dy = ptsArray[k].y - player.y, dz = ptsArray[k].z - camZ;
+                camPts.push({ cx: dx * -sinA + dy * cosA, cy: dz, cz: dx * cosA + dy * sinA });
             }
 
             let clipped =[];
@@ -692,21 +805,16 @@ function render() {
                 if(p1.cz >= zNear) clipped.push(p1);
                 if((p1.cz >= zNear) !== (p2.cz >= zNear)) {
                     let t = (zNear - p1.cz) / (p2.cz - p1.cz);
-                    clipped.push({
-                        cx: p1.cx + t * (p2.cx - p1.cx),
-                        cy: p1.cy + t * (p2.cy - p1.cy),
-                        cz: zNear
-                    });
+                    clipped.push({ cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear });
                 }
             }
             
             if (clipped.length < 3) continue; 
 
             if (o.type === 'face') {
-                let shade = f.shade * objLight;
-                let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
+                let shade = o.face.shade * objLight;
+                let fr = o.face.col.r * shade | 0, fg = o.face.col.g * shade | 0, fb = o.face.col.b * shade | 0;
 
-                // Underwater Dense Blue Fog Filter
                 if (player.isSubmerged) {
                     let wFog = Math.min(1, depth / (VIEW_DIST * 0.6));
                     fr = fr * (1 - wFog) + 15 * wFog | 0; 
@@ -718,20 +826,27 @@ function render() {
                     fg = fg * (1 - fog) + sky.g * fog | 0; 
                     fb = fb * (1 - fog) + sky.b * fog | 0;
                 }
-
-                // Transparent faces support
-                if (f.col.a !== undefined) {
-                    ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${f.col.a})`;
-                    ctx.strokeStyle = ctx.fillStyle; // Prevent edge gaps on water
-                } else {
-                    ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
+                if (o.face.col.a !== undefined) {
+                    ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${o.face.col.a})`;
                     ctx.strokeStyle = ctx.fillStyle; 
+                } else {
+                    ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`; ctx.strokeStyle = ctx.fillStyle; 
                 }
+            } else if (o.type === 'objWorldFace') {
+                let len = Math.hypot(o.norm.x, o.norm.y, o.norm.z);
+                let nx = o.norm.x/len, ny = o.norm.y/len, nz = o.norm.z/len;
+                let sunDot = Math.max(0, nx*0.3 + ny*0.5 + nz*0.8);
+                let shade = (0.4 + sunDot * 0.6) * objLight;
+                let fog = Math.min(1, depth / VIEW_DIST);
+                let fr = o.color.r * shade * (1-fog) + sky.r * fog | 0;
+                let fg = o.color.g * shade * (1-fog) + sky.g * fog | 0;
+                let fb = o.color.b * shade * (1-fog) + sky.b * fog | 0;
+                ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
+                ctx.strokeStyle = ctx.fillStyle;
             } else {
-                ctx.fillStyle = f.color; ctx.strokeStyle = '#000';
+                ctx.fillStyle = o.color; ctx.strokeStyle = '#000';
             }
             
-            // Eliminates sky-blue lines tearing between faces entirely!
             ctx.lineWidth = 2.0; 
             ctx.beginPath();
             for (let j = 0; j < clipped.length; j++) {
@@ -791,24 +906,23 @@ function render() {
         }
     }
 
-    renderWeaponModel();
-    ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
-    ctx.moveTo(canvas.width/2-cs, hY-player.pitch); ctx.lineTo(canvas.width/2+cs, hY-player.pitch);
-    ctx.moveTo(canvas.width/2, hY-player.pitch-cs); ctx.lineTo(canvas.width/2, hY-player.pitch+cs); ctx.stroke();
+    if (!player.inVehicle || player.vehicleView === '1st') {
+        renderWeaponModel();
+        ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
+        ctx.moveTo(canvas.width/2-cs, hY-player.pitch); ctx.lineTo(canvas.width/2+cs, hY-player.pitch);
+        ctx.moveTo(canvas.width/2, hY-player.pitch-cs); ctx.lineTo(canvas.width/2, hY-player.pitch+cs); ctx.stroke();
+    }
 
-    // The Submerged Screen Tint
     if (player.isSubmerged) {
         ctx.fillStyle = 'rgba(10, 50, 130, 0.4)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 }
 
-// Add the mouse move event hook here at the bottom of main for the new aiming constraints
 document.addEventListener('mousemove', (e) => { 
     if (!isPaused) { 
         player.angle += e.movementX * (isZooming ? 0.001 : 0.003); 
         
-        // Extended pitch bounds allows almost completely straight down aiming
         let maxPitch = canvas.height * 2.5; 
         player.pitch -= e.movementY * (isZooming ? 0.5 : 1.5); 
         player.pitch = Math.max(-maxPitch, Math.min(maxPitch, player.pitch)); 

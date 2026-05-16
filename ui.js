@@ -158,15 +158,36 @@ document.addEventListener('pointerlockchange', () => {
 window.addEventListener('mousedown', e => { if (isPaused) return; if (e.button === 0) isMouseDown = true; if (e.button === 2) { isZooming = true; adsEl.innerText = "ON"; } });
 window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = false; if (e.button === 2) { isZooming = false; adsEl.innerText = "OFF"; } });
 
+// --- Replace your keydown listener in ui.js with this: ---
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
     if (e.key >= '1' && e.key <= '7') switchWeapon(parseInt(e.key));
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
-    if (e.key.toLowerCase() === 'e' && interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) { 
-        if (interactTarget.rooms) enterBuilding(interactTarget); else if (interactTarget.action === 'exit') exitBuilding();
-        else if (interactTarget.action === 'stairs') { if (activeBuilding.floors > 1) { if (activeFloor === 0) changeFloor(1); else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1); else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); } } }
-        else { isInventoryOpen = true; activeContainer = interactTarget; updateInventories(); document.exitPointerLock(); }
+    
+    if (e.key.toLowerCase() === 'e') {
+        if (player.inVehicle) {
+            let v = player.inVehicle;
+            player.inVehicle = null;
+            player.x = v.x - Math.cos(v.angle) * 3;
+            player.y = v.y - Math.sin(v.angle) * 3;
+            player.z = getSafeFloorZ(player.x, player.y, v.z + 2) + 1.0;
+            player.vz = 0;
+        } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) { 
+            if (vehicles.includes(interactTarget)) {
+                player.inVehicle = interactTarget;
+                player.vehicleView = '3rd';
+            } else if (interactTarget.rooms) enterBuilding(interactTarget); 
+            else if (interactTarget.action === 'exit') exitBuilding();
+            else if (interactTarget.action === 'stairs') { if (activeBuilding.floors > 1) { if (activeFloor === 0) changeFloor(1); else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1); else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); } } }
+            else { isInventoryOpen = true; activeContainer = interactTarget; updateInventories(); document.exitPointerLock(); }
+        }
     }
+    
+    // Switch between 1st and 3rd person inside vehicle
+    if (e.key.toLowerCase() === 'v' && player.inVehicle) {
+        player.vehicleView = player.vehicleView === '3rd' ? '1st' : '3rd';
+    }
+
     if (e.key.toLowerCase() === 'i') { if(!isInventoryOpen) { isInventoryOpen = true; isDebugOpen = isStairMenuOpen = false; activeContainer = null; updateInventories(); document.exitPointerLock(); } else canvas.requestPointerLock(); }
     if (e.key === '`' || e.key === '~') { if(!isDebugOpen) { isDebugOpen = true; isInventoryOpen = isStairMenuOpen = false; activeContainer = null; document.exitPointerLock(); } else canvas.requestPointerLock(); }
 });
@@ -220,4 +241,9 @@ window.spawnDebug = (em) => {
     if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
     else if (em === '🔥') campfires.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.2, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 
+};
+window.spawnVehicle = (type) => { 
+    let cx = player.x + Math.cos(player.angle) * 5, cy = player.y + Math.sin(player.angle) * 5;
+    let z = getSafeFloorZ(cx, cy, player.z + 5); 
+    vehicles.push({ type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 }); 
 };
