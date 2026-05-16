@@ -49,7 +49,9 @@ const WEAPON_MODEL_CONFIG = {
 };
 
 const VEHICLE_MODEL_CONFIG = {
-    'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: 0 } // Standardizes Y-up to Z-up. Scale to fit voxels.
+    // Math.PI/2 faces it perfectly forward. 
+    // offsetZ pushes the model into the ground visually so the tires "squish" in the dirt and look connected
+    'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetZ: -0.8 } 
 };
 
 async function loadObjModel(name) {
@@ -293,7 +295,11 @@ function update() {
         v.speed *= 0.95; 
         
         let turnRate = steerInput * Math.min(Math.abs(v.speed)*0.4, 0.04); 
-        v.angle += (v.speed >= 0 ? turnRate : -turnRate);
+        let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
+        v.angle += actualTurn;
+        
+        // CAMERA FIX: Link camera rotation to the car's steering so it stays firmly behind
+        player.angle += actualTurn;
         
         let nx = v.x + Math.cos(v.angle) * v.speed;
         let ny = v.y + Math.sin(v.angle) * v.speed;
@@ -306,19 +312,24 @@ function update() {
         }
         
         let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
-        let wL = 2.0, wW = 1.2; 
-        let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 2);
-        let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 2);
-        let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 2);
-        let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 2);
+        let wL = 2.2, wW = 1.0; 
+        let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
+        let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 4);
+        let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
+        let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
         
-        v.z += (((zFL+zFR+zBL+zBR)/4) + 0.8 - v.z) * 0.2; 
-        v.pitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
-        v.roll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
+        let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6; 
+        v.z += (targetZ - v.z) * 0.3; 
+        
+        let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
+        let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
+        
+        v.pitch += (targetPitch - v.pitch) * 0.3; 
+        v.roll += (targetRoll - v.roll) * 0.3;    
 
         if (player.vehicleView === '3rd') {
-            player.x = v.x - Math.cos(v.angle) * 7;
-            player.y = v.y - Math.sin(v.angle) * 7;
+            player.x = v.x - Math.cos(player.angle) * 7;
+            player.y = v.y - Math.sin(player.angle) * 7;
             player.z = v.z + 4; 
         } else {
             player.x = v.x + Math.cos(v.angle) * 0.5 - Math.sin(v.angle) * 0.8; 
@@ -406,8 +417,22 @@ function update() {
             v.speed *= 0.90;
             v.x += Math.cos(v.angle) * v.speed;
             v.y += Math.sin(v.angle) * v.speed;
-            v.z += (getSafeFloorZ(v.x, v.y, v.z + 2) + 0.8 - v.z) * 0.2;
-            v.pitch *= 0.9; v.roll *= 0.9;
+            
+            let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
+            let wL = 2.2, wW = 1.0; 
+            let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
+            let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 4);
+            let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
+            let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
+            
+            let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6;
+            v.z += (targetZ - v.z) * 0.3;
+            
+            let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
+            let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
+            
+            v.pitch += (targetPitch - v.pitch) * 0.3;
+            v.roll += (targetRoll - v.roll) * 0.3;
         }
     }
 
@@ -684,7 +709,7 @@ function render() {
             
             let model = WEAPON_MODELS[v.type];
             if (model) {
-                let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0 };
+                let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
                 let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
                 
                 for (let f of model.faces) {
@@ -693,7 +718,7 @@ function render() {
                         let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
                         p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
                         
-                        let cp = Math.cos(-v.pitch), sp = Math.sin(-v.pitch);
+                        let cp = Math.cos(v.pitch), sp = Math.sin(v.pitch); 
                         let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
                         
                         let p2x = p1.x * cp - p1.z * sp;
@@ -707,7 +732,7 @@ function render() {
                         let wx = p3x * vcx - p3y * vsx;
                         let wy = p3x * vsx + p3y * vcx;
                         
-                        wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z });
+                        wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z + (conf.offsetZ || 0) });
                     }
                     
                     let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
