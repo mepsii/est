@@ -301,11 +301,9 @@ function update() {
 
         let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
         let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
-        
         let power = 0.016; 
-        let slopeForce = Math.sin(v.pitch) * 0.006; // Much slower gravity rolling
-
-        // Pre-calculate suspension wheels for dirt spawning
+        
+        // Raycast Suspension Points
         let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
         let wL = 2.2, wW = 1.0; 
         let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
@@ -313,38 +311,78 @@ function update() {
         let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
         let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
 
-        // Wheelspin / Bogging Logic: If trying to move forward on a steep slope, but speed is low
+        // Ground check - Are we hitting jumps or on the floor?
+        let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6; // Base ride height
+        v.isGrounded = (v.z <= targetZ + 0.6); // Tolerance for wheels extending on bumps
+        
         let slipping = false;
-        if (gas > 0 && v.pitch > 0.25 && v.speed < 0.2) {
-            slipping = true;
-            power *= 0.3; // Bog down drastically
-        }
+        
+        if (v.isGrounded) {
+            // -- GROUNDED PHYSICS --
+            let slopeForce = Math.sin(v.pitch) * 0.008; 
 
-        // Apply engine power
-        if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
-            v.speed += gas * power;
-        }
-        
-        v.speed -= slopeForce; 
-        v.speed *= 0.96; // Rolling drag
-        
-        // Parking Brakes / Friction
-        if (gas === 0) {
-            v.speed *= 0.92;
-            if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0;
-        }
-        
-        // Steering & Cornering Grip (bleeds speed)
-        let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
-        let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
-        v.angle += actualTurn;
-        v.speed *= (1.0 - Math.abs(actualTurn) * 0.5); // "Grip" friction slows you down in sharp turns
+            // Wheelspin / Bogging Logic
+            if (gas > 0 && v.pitch > 0.25 && v.speed < 0.2) {
+                slipping = true;
+                power *= 0.3; // Engine bogs down on steep climbs without momentum
+            }
 
-        player.angle += actualTurn; // Lock camera heading to car turning
+            if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
+                v.speed += gas * power;
+            }
+            
+            v.speed -= slopeForce; 
+            v.speed *= 0.96; // Rolling drag
+            
+            if (gas === 0) {
+                v.speed *= 0.92; // Engine braking
+                if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0; // Parking stop
+            }
+            
+            // Steering & Cornering Grip
+            let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
+            let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
+            v.angle += actualTurn;
+            v.speed *= (1.0 - Math.abs(actualTurn) * 0.5); // Grip friction slows you down in sharp turns
+            
+            player.angle += actualTurn; // Lock camera heading to car steering
+            
+            // Suspension Springs & Damping
+            let compression = targetZ - v.z;
+            v.vz += compression * 0.15; // Spring push
+            v.vz *= 0.80; // Heavy shock absorber damping
+            
+            // Fixed Inverse Roll Logic (Left side higher = positive roll)
+            let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
+            let targetRoll = Math.atan2((zFL+zBL)/2 - (zFR+zBR)/2, wW * 2); 
+            
+            v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; 
+            v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; 
+        } else {
+            // -- IN AIR PHYSICS --
+            v.speed *= 0.99; // Air resistance maintains momentum mostly
+            
+            // Very minimal mid-air steering correction
+            let actualTurn = (v.speed >= 0 ? steerInput * 0.005 : -steerInput * 0.005);
+            v.angle += actualTurn;
+            player.angle += actualTurn;
+            
+            // True Gravity!
+            v.vz -= 0.02; // Falling downward
+            v.vz *= 0.98; // Air drag cap
+            
+            // Smoothly level out pitch and roll when flying through air
+            v.vPitch -= v.pitch * 0.01; v.vPitch *= 0.95; 
+            v.vRoll -= v.roll * 0.05; v.vRoll *= 0.95; 
+        }
         
+        v.z += v.vz;
+        v.pitch += v.vPitch;
+        v.roll += v.vRoll;
+
+        // Front collision bounce
         let nx = v.x + Math.cos(v.angle) * v.speed;
         let ny = v.y + Math.sin(v.angle) * v.speed;
-        
         if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
             v.speed *= -0.4; // Bounce on crash
         } else {
@@ -352,22 +390,15 @@ function update() {
             v.y = ny;
         }
         
-        // Dynamic Spring Suspension Physics
-        let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6; 
-        let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
-        let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
-        
-        v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.82; v.z += v.vz;
-        v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; v.pitch += v.vPitch;
-        v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; v.roll += v.vRoll;
-
-        // Dirt Particles Kickup
-        if (slipping && tickCounter % 2 === 0) {
-            spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * 0.1, -sx * 0.1, true);
-            spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * 0.1, -sx * 0.1, true);
-        } else if (Math.abs(v.speed) > 0.05 && tickCounter % 3 === 0) {
-            spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
-            spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
+        // Dirt Particles Kickup (Only when Grounded)
+        if (v.isGrounded) {
+            if (slipping && tickCounter % 2 === 0) {
+                spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * 0.1, -sx * 0.1, true);
+                spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * 0.1, -sx * 0.1, true);
+            } else if (Math.abs(v.speed) > 0.05 && tickCounter % 3 === 0) {
+                spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
+                spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
+            }
         }
 
         // Elastic Camera Follower
@@ -376,9 +407,13 @@ function update() {
         v.camZ += (v.z - v.camZ) * 0.15;
 
         if (player.vehicleView === '3rd') {
-            player.x = v.camX - Math.cos(player.angle) * 11.5; // Farther back
-            player.y = v.camY - Math.sin(player.angle) * 11.5;
-            player.z = v.camZ + 3.5; // Lower to the ground, dynamic
+            player.x = v.camX - Math.cos(player.angle) * 14.0; // Further back
+            player.y = v.camY - Math.sin(player.angle) * 14.0;
+            player.z = v.camZ + 2.0; // Very low, dynamic action feel
+            
+            // Auto-center camera pitch on the truck so you don't lose it vertically over big jumps
+            let pitchTarget = v.pitch * 300; 
+            player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
             player.x = v.x + Math.cos(v.angle) * 0.5 - Math.sin(v.angle) * 0.8; 
             player.y = v.y + Math.sin(v.angle) * 0.5 + Math.cos(v.angle) * 0.8;
@@ -460,21 +495,10 @@ function update() {
         }
     }
 
-    // Apply exact same suspension and slow gravity physics to parked/empty vehicles
+    // Apply identical suspension and fall gravity physics to parked/empty vehicles
     for (let v of vehicles) {
         if (v !== player.inVehicle) {
             v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
-            
-            let slopeForce = Math.sin(v.pitch) * 0.006;
-            v.speed -= slopeForce;
-            v.speed *= 0.96;
-
-            if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.015) {
-                v.speed = 0; 
-            }
-            
-            v.x += Math.cos(v.angle) * v.speed;
-            v.y += Math.sin(v.angle) * v.speed;
             
             let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
             let wL = 2.2, wW = 1.0; 
@@ -484,12 +508,34 @@ function update() {
             let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
             
             let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6;
-            let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
-            let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
             
-            v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.82; v.z += v.vz;
-            v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; v.pitch += v.vPitch;
-            v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; v.roll += v.vRoll;
+            if (v.z <= targetZ + 0.6) {
+                let slopeForce = Math.sin(v.pitch) * 0.008;
+                v.speed -= slopeForce;
+                v.speed *= 0.96;
+                if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.015) v.speed = 0; 
+                
+                v.x += Math.cos(v.angle) * v.speed;
+                v.y += Math.sin(v.angle) * v.speed;
+                
+                v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.80; 
+                
+                let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
+                let targetRoll = Math.atan2((zFL+zBL)/2 - (zFR+zBR)/2, wW * 2);
+                
+                v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; 
+                v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; 
+            } else {
+                v.x += Math.cos(v.angle) * v.speed;
+                v.y += Math.sin(v.angle) * v.speed;
+                v.vz -= 0.02; v.vz *= 0.98;
+                v.vPitch -= v.pitch * 0.01; v.vPitch *= 0.95; 
+                v.vRoll -= v.roll * 0.05; v.vRoll *= 0.95; 
+            }
+            
+            v.z += v.vz;
+            v.pitch += v.vPitch;
+            v.roll += v.vRoll;
         }
     }
 
