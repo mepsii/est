@@ -34,6 +34,18 @@ function spawnBlood(x, y, z, colorObj, count) {
     }
 }
 
+function spawnDirt(x, y, z, vx, vy, isHeavy) {
+    let count = isHeavy ? 5 : 1;
+    for(let i=0; i<count; i++) {
+        let c = {r: 80 + Math.random()*20, g: 55 + Math.random()*15, b: 35 + Math.random()*10};
+        bloodParticles.push({
+            x: x, y: y, z: z + Math.random()*0.5,
+            vx: vx + (Math.random()-0.5)*0.1, vy: vy + (Math.random()-0.5)*0.1, vz: Math.random()*0.15 + (isHeavy ? 0.1 : 0.05),
+            color: c, life: 25 + Math.random()*20, size: Math.random()*0.1 + 0.05
+        });
+    }
+}
+
 function switchWeapon(id) { currentWeapon = id; weaponEl.innerText = WEAPONS[id].name; fireCooldown = 5; }
 function takeDamage(amt) { if (godMode) return; player.hp -= amt; hpEl.innerText = player.hp; damageFlash.style.opacity = '0.5'; setTimeout(() => damageFlash.style.opacity = '0', 100); if (player.hp <= 0) location.reload(); }
 
@@ -283,64 +295,90 @@ function update() {
     // Movement & Vehicle Physics Handling
     if (player.inVehicle) {
         let v = player.inVehicle;
-        // Init spring physics states if not present
+        // Init spring physics / camera states if not present
         v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
+        v.camX = v.camX || v.x; v.camY = v.camY || v.y; v.camZ = v.camZ || v.z;
 
         let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
         let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
         
         let power = 0.016; 
-        let slopeForce = Math.sin(v.pitch) * 0.015; // Gravity pulls down/pushes up hills
+        let slopeForce = Math.sin(v.pitch) * 0.006; // Much slower gravity rolling
 
-        if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
-            v.speed += gas * power;
-        }
-        
-        v.speed -= slopeForce; 
-        v.speed *= 0.95; // Drag/rolling resistance
-        
-        // Steering caps out at high speeds to prevent ice skating
-        let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
-        let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
-        v.angle += actualTurn;
-        
-        // Friction from hard turning (cornering bleeds speed)
-        v.speed *= (1.0 - Math.abs(actualTurn) * 0.5);
-
-        player.angle += actualTurn; // Lock camera heading to car
-        
-        let nx = v.x + Math.cos(v.angle) * v.speed;
-        let ny = v.y + Math.sin(v.angle) * v.speed;
-        
-        if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
-            v.speed *= -0.4; // Bounce back on crash
-        } else {
-            v.x = nx;
-            v.y = ny;
-        }
-        
-        // Dynamic Spring Suspension checking the voxel terrain heights
+        // Pre-calculate suspension wheels for dirt spawning
         let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
         let wL = 2.2, wW = 1.0; 
         let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
         let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 4);
         let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
         let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
+
+        // Wheelspin / Bogging Logic: If trying to move forward on a steep slope, but speed is low
+        let slipping = false;
+        if (gas > 0 && v.pitch > 0.25 && v.speed < 0.2) {
+            slipping = true;
+            power *= 0.3; // Bog down drastically
+        }
+
+        // Apply engine power
+        if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
+            v.speed += gas * power;
+        }
         
+        v.speed -= slopeForce; 
+        v.speed *= 0.96; // Rolling drag
+        
+        // Parking Brakes / Friction
+        if (gas === 0) {
+            v.speed *= 0.92;
+            if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0;
+        }
+        
+        // Steering & Cornering Grip (bleeds speed)
+        let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
+        let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
+        v.angle += actualTurn;
+        v.speed *= (1.0 - Math.abs(actualTurn) * 0.5); // "Grip" friction slows you down in sharp turns
+
+        player.angle += actualTurn; // Lock camera heading to car turning
+        
+        let nx = v.x + Math.cos(v.angle) * v.speed;
+        let ny = v.y + Math.sin(v.angle) * v.speed;
+        
+        if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
+            v.speed *= -0.4; // Bounce on crash
+        } else {
+            v.x = nx;
+            v.y = ny;
+        }
+        
+        // Dynamic Spring Suspension Physics
         let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6; 
         let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
         let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
         
-        // Apply spring-dampening forces so it bounces weightily over bumps
         v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.82; v.z += v.vz;
         v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; v.pitch += v.vPitch;
         v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; v.roll += v.vRoll;
 
-        // Tweak Camera Offsets Here
+        // Dirt Particles Kickup
+        if (slipping && tickCounter % 2 === 0) {
+            spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * 0.1, -sx * 0.1, true);
+            spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * 0.1, -sx * 0.1, true);
+        } else if (Math.abs(v.speed) > 0.05 && tickCounter % 3 === 0) {
+            spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
+            spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
+        }
+
+        // Elastic Camera Follower
+        v.camX += (v.x - v.camX) * 0.15; 
+        v.camY += (v.y - v.camY) * 0.15;
+        v.camZ += (v.z - v.camZ) * 0.15;
+
         if (player.vehicleView === '3rd') {
-            player.x = v.x - Math.cos(player.angle) * 11; // Further back
-            player.y = v.y - Math.sin(player.angle) * 11;
-            player.z = v.z + 5.5; // Higher up
+            player.x = v.camX - Math.cos(player.angle) * 11.5; // Farther back
+            player.y = v.camY - Math.sin(player.angle) * 11.5;
+            player.z = v.camZ + 3.5; // Lower to the ground, dynamic
         } else {
             player.x = v.x + Math.cos(v.angle) * 0.5 - Math.sin(v.angle) * 0.8; 
             player.y = v.y + Math.sin(v.angle) * 0.5 + Math.cos(v.angle) * 0.8;
@@ -422,17 +460,16 @@ function update() {
         }
     }
 
-    // Apply exact same suspension and gravity physics to parked/empty vehicles!
+    // Apply exact same suspension and slow gravity physics to parked/empty vehicles
     for (let v of vehicles) {
         if (v !== player.inVehicle) {
             v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
             
-            let slopeForce = Math.sin(v.pitch) * 0.015;
+            let slopeForce = Math.sin(v.pitch) * 0.006;
             v.speed -= slopeForce;
-            v.speed *= 0.95;
+            v.speed *= 0.96;
 
-            // Simple parking brake to prevent slow infinite rolling on slight hills
-            if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.01) {
+            if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.015) {
                 v.speed = 0; 
             }
             
@@ -720,7 +757,6 @@ function render() {
             }
         }
 
-        // Render World Model Vehicles (Truck)
         for (let v of vehicles) {
             let dx = v.x - player.x, dy = v.y - player.y;
             let rotX = dx * cosA + dy * sinA;
