@@ -49,8 +49,6 @@ const WEAPON_MODEL_CONFIG = {
 };
 
 const VEHICLE_MODEL_CONFIG = {
-    // Math.PI/2 faces it perfectly forward. 
-    // offsetZ pushes the model into the ground visually so the tires "squish" in the dirt and look connected
     'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetZ: -0.8 } 
 };
 
@@ -285,32 +283,43 @@ function update() {
     // Movement & Vehicle Physics Handling
     if (player.inVehicle) {
         let v = player.inVehicle;
+        // Init spring physics states if not present
+        v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
+
         let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
         let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
         
-        let power = 0.012; 
+        let power = 0.016; 
+        let slopeForce = Math.sin(v.pitch) * 0.015; // Gravity pulls down/pushes up hills
+
         if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
             v.speed += gas * power;
         }
-        v.speed *= 0.95; 
         
-        let turnRate = steerInput * Math.min(Math.abs(v.speed)*0.4, 0.04); 
+        v.speed -= slopeForce; 
+        v.speed *= 0.95; // Drag/rolling resistance
+        
+        // Steering caps out at high speeds to prevent ice skating
+        let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
         let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
         v.angle += actualTurn;
         
-        // CAMERA FIX: Link camera rotation to the car's steering so it stays firmly behind
-        player.angle += actualTurn;
+        // Friction from hard turning (cornering bleeds speed)
+        v.speed *= (1.0 - Math.abs(actualTurn) * 0.5);
+
+        player.angle += actualTurn; // Lock camera heading to car
         
         let nx = v.x + Math.cos(v.angle) * v.speed;
         let ny = v.y + Math.sin(v.angle) * v.speed;
         
         if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
-            v.speed *= -0.4; 
+            v.speed *= -0.4; // Bounce back on crash
         } else {
             v.x = nx;
             v.y = ny;
         }
         
+        // Dynamic Spring Suspension checking the voxel terrain heights
         let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
         let wL = 2.2, wW = 1.0; 
         let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
@@ -319,18 +328,19 @@ function update() {
         let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
         
         let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6; 
-        v.z += (targetZ - v.z) * 0.3; 
-        
         let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
         let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
         
-        v.pitch += (targetPitch - v.pitch) * 0.3; 
-        v.roll += (targetRoll - v.roll) * 0.3;    
+        // Apply spring-dampening forces so it bounces weightily over bumps
+        v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.82; v.z += v.vz;
+        v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; v.pitch += v.vPitch;
+        v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; v.roll += v.vRoll;
 
+        // Tweak Camera Offsets Here
         if (player.vehicleView === '3rd') {
-            player.x = v.x - Math.cos(player.angle) * 7;
-            player.y = v.y - Math.sin(player.angle) * 7;
-            player.z = v.z + 4; 
+            player.x = v.x - Math.cos(player.angle) * 11; // Further back
+            player.y = v.y - Math.sin(player.angle) * 11;
+            player.z = v.z + 5.5; // Higher up
         } else {
             player.x = v.x + Math.cos(v.angle) * 0.5 - Math.sin(v.angle) * 0.8; 
             player.y = v.y + Math.sin(v.angle) * 0.5 + Math.cos(v.angle) * 0.8;
@@ -412,9 +422,20 @@ function update() {
         }
     }
 
+    // Apply exact same suspension and gravity physics to parked/empty vehicles!
     for (let v of vehicles) {
         if (v !== player.inVehicle) {
-            v.speed *= 0.90;
+            v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
+            
+            let slopeForce = Math.sin(v.pitch) * 0.015;
+            v.speed -= slopeForce;
+            v.speed *= 0.95;
+
+            // Simple parking brake to prevent slow infinite rolling on slight hills
+            if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.01) {
+                v.speed = 0; 
+            }
+            
             v.x += Math.cos(v.angle) * v.speed;
             v.y += Math.sin(v.angle) * v.speed;
             
@@ -426,13 +447,12 @@ function update() {
             let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
             
             let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6;
-            v.z += (targetZ - v.z) * 0.3;
-            
             let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
             let targetRoll = Math.atan2((zFR+zBR)/2 - (zFL+zBL)/2, wW * 2);
             
-            v.pitch += (targetPitch - v.pitch) * 0.3;
-            v.roll += (targetRoll - v.roll) * 0.3;
+            v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.82; v.z += v.vz;
+            v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; v.pitch += v.vPitch;
+            v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; v.roll += v.vRoll;
         }
     }
 
