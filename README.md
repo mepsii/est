@@ -1,16 +1,16 @@
-//rapidly prototyped vibe-coding experiment. just a basic survival-fps game.\
-//just wanted to see how far it could be taken with totally free ai models.\
-//done almost entirely with various gemini models
+#a rapidly prototyped vibe-coding experiment. just a basic voxel based survival-fps game.\
+#just wanted to see how far it could be taken with totally free ai models.\
+#done w essentially all gemini
 
 ----
 
-<h2>implemented features:</h2>
+<h3>implemented features:</h3>
 
 - to be filled out
 
 ----
 
-<h2>intended features:</h2>
+<h3>potential features:</h3>
 
 - tbd
 
