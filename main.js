@@ -284,7 +284,12 @@ function update() {
         if (player.stamina < 100) player.stamina = Math.min(100, player.stamina + 0.3); 
     }
     staminaEl.innerText = Math.floor(player.stamina);
-
+    
+    // NEW: Update Coordinates Tracker
+    if (coordsEl) {
+        coordsEl.innerText = `${Math.floor(player.x)}, ${Math.floor(player.y)}, ${Math.floor(player.z)}`;
+    }
+    
     let curSpeedMult = speedMult * (isSprinting ? sprintMult : 1.0) * (player.inWater ? 0.5 : 1.0);
     let mv = 0, st = 0;
     if (keys['KeyW']) mv += player.speed * curSpeedMult; if (keys['KeyS']) mv -= player.speed * curSpeedMult;

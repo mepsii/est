@@ -79,30 +79,27 @@ function getDensity(x, y, z) {
     let density = baseH - z; 
     let depthFromSurface = baseH - z;
 
-    let dist2D = x*x + y*y;
-    let safeWeight = Math.max(0, 1.0 - (dist2D / 2500.0));
-    safeWeight = safeWeight * safeWeight * (3 - 2 * safeWeight);
+    // Removed the "safeWeight" crater logic here!
+    
+    let b = getBiome(x, y);
+    let warpAmp = (b > 0.65) ? 6.0 : 1.5; 
+    let warp3D = Math.sin(x*0.02 + y*0.015) + Math.cos(y*0.02 + z*0.015) + Math.sin(x*0.015 - z*0.02);
+    
+    // Apply 3D terrain warps across the whole world normally
+    density += warp3D * warpAmp;
 
-    density = (48 - z) * safeWeight + density * (1 - safeWeight);
-
-    if (safeWeight < 1.0) {
-        let b = getBiome(x, y);
-        let warpAmp = (b > 0.65) ? 6.0 : 1.5; 
-        let warp3D = Math.sin(x*0.02 + y*0.015) + Math.cos(y*0.02 + z*0.015) + Math.sin(x*0.015 - z*0.02);
-        density += warp3D * warpAmp * (1 - safeWeight);
-
-        if (depthFromSurface > 12 && dist2D > 1000.0) { 
-            let cx = x * 0.04, cy = y * 0.04, cz = z * 0.04;
-            let c1 = Math.sin(cx) + Math.cos(cy) + Math.sin(cz);
-            let c2 = Math.cos(cx*1.2 - cy) + Math.sin(cy*1.2 + cz) + Math.cos(cz*1.2);
-            let tube = Math.abs(c1 * c2);
-            
-            if (tube < 0.05) { 
-                let caveHollow = Math.pow((0.05 - tube) * 20.0, 2.0); 
-                density -= caveHollow; 
-            }
+    if (depthFromSurface > 12) { 
+        let cx = x * 0.04, cy = y * 0.04, cz = z * 0.04;
+        let c1 = Math.sin(cx) + Math.cos(cy) + Math.sin(cz);
+        let c2 = Math.cos(cx*1.2 - cy) + Math.sin(cy*1.2 + cz) + Math.cos(cz*1.2);
+        let tube = Math.abs(c1 * c2);
+        
+        if (tube < 0.05) { 
+            let caveHollow = Math.pow((0.05 - tube) * 20.0, 2.0); 
+            density -= caveHollow; 
         }
     }
+    
     return density;
 }
 

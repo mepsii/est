@@ -2,7 +2,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 const scoreEl = document.getElementById('score'), hpEl = document.getElementById('hp'), foodEl = document.getElementById('food'), staminaEl = document.getElementById('stamina'), oxygenEl = document.getElementById('oxygen');
-const weaponEl = document.getElementById('weapon-name'), adsEl = document.getElementById('ads-status');
+const weaponEl = document.getElementById('weapon-name'), adsEl = document.getElementById('ads-status'), coordsEl = document.getElementById('coords');
 const overlay = document.getElementById('overlay'), damageFlash = document.getElementById('damage-flash'), healFlash = document.getElementById('heal-flash');
 
 const invScreen = document.getElementById('inventory-screen'), containerUI = document.getElementById('container-ui');
