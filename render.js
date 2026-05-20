@@ -30,6 +30,88 @@ function render() {
     let fovMult = 0.7 / currentZoom; // FOV multiplier for horizontal frustum culling
 
     if (gameState === 'overworld') {
+        let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
+        let sunDx = Math.cos(sunTimeAngle) * 50000;
+        let sunDz = Math.sin(sunTimeAngle) * 50000;
+        let sunDy = 15000; 
+        let distSqCel = sunDx*sunDx + sunDy*sunDy + sunDz*sunDz;
+        
+        let sunRotX = sunDx * cosA + sunDy * sinA;
+        if (sunRotX > 0) {
+            let o = getRenderItem(); o.type = 'celestial'; o.emoji = '☀️'; o.depthSq = distSqCel;
+            o.wX = player.x + sunDx; o.wY = player.y + sunDy; o.h = camZ + sunDz; o.size = 6000;
+        }
+        
+        let moonDx = -sunDx, moonDy = -sunDy, moonDz = -sunDz;
+        let moonRotX = moonDx * cosA + moonDy * sinA;
+        if (moonRotX > 0) {
+            let o = getRenderItem(); o.type = 'celestial'; o.emoji = '🌕'; o.depthSq = distSqCel;
+            o.wX = player.x + moonDx; o.wY = player.y + moonDy; o.h = camZ + moonDz; o.size = 5000;
+        }
+
+        let cloudHeight = 130;
+        let cloudGrid = 20;
+        let cloudViewDist = 200;
+        let cloudRad = Math.ceil(cloudViewDist / cloudGrid);
+        let cloudSpeed = 25;
+        let cloudMoveX = gameTime * cloudSpeed;
+        let pCxCloud = Math.floor((player.x - cloudMoveX) / cloudGrid);
+        let pCyCloud = Math.floor(player.y / cloudGrid);
+        
+        let cGridSize = cloudRad * 2 + 3;
+        let cloudNoise = new Float32Array(cGridSize * cGridSize);
+        for (let x = 0; x < cGridSize; x++) {
+            for (let y = 0; y < cGridSize; y++) {
+                let cx = pCxCloud - cloudRad - 1 + x;
+                let cy = pCyCloud - cloudRad - 1 + y;
+                cloudNoise[x + y * cGridSize] = fbm2D(cx * cloudGrid * 0.012, cy * cloudGrid * 0.012, 2);
+            }
+        }
+
+        let cH = 12; 
+        let colorTop = 'rgba(255, 255, 255, 0.5)';
+        let colorBottom = 'rgba(210, 210, 210, 0.5)';
+        let colorSide1 = 'rgba(235, 235, 235, 0.5)';
+        let colorSide2 = 'rgba(220, 220, 220, 0.5)';
+
+        for (let x = 1; x < cGridSize - 1; x++) {
+            for (let y = 1; y < cGridSize - 1; y++) {
+                if (cloudNoise[x + y * cGridSize] > 0.45) {
+                    let cx = pCxCloud - cloudRad - 1 + x;
+                    let cy = pCyCloud - cloudRad - 1 + y;
+                    let wx = cx * cloudGrid + cloudMoveX;
+                    let wy = cy * cloudGrid;
+                    
+                    let n_px = cloudNoise[(x + 1) + y * cGridSize] > 0.45;
+                    let n_nx = cloudNoise[(x - 1) + y * cGridSize] > 0.45;
+                    let n_py = cloudNoise[x + (y + 1) * cGridSize] > 0.45;
+                    let n_ny = cloudNoise[x + (y - 1) * cGridSize] > 0.45;
+                    
+                    let addCloudFace = (pts, col) => {
+                        let cX = (pts[0].x + pts[2].x)/2, cY = (pts[0].y + pts[2].y)/2, cZ = (pts[0].z + pts[2].z)/2;
+                        let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
+                        let rotX = dX * cosA + dY * sinA;
+                        if (rotX > -cloudGrid && rotX < cloudViewDist) {
+                            let fRotY = dX * -sinA + dY * cosA;
+                            if (Math.abs(fRotY) <= Math.max(0, rotX) * fovMult + cloudGrid * 2) {
+                                let o = getRenderItem();
+                                o.type = 'cloudPoly'; o.pts = pts; o.color = col;
+                                o.depthSq = dX*dX + dY*dY + dZ*dZ;
+                            }
+                        }
+                    };
+
+                    addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight} ], colorBottom);
+                    addCloudFace([ {x: wx, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], colorTop);
+                    
+                    if (!n_nx) addCloudFace([ {x: wx, y: wy, z: cloudHeight}, {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy, z: cloudHeight + cH} ], colorSide1);
+                    if (!n_px) addCloudFace([ {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH} ], colorSide1);
+                    if (!n_ny) addCloudFace([ {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH} ], colorSide2);
+                    if (!n_py) addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], colorSide2);
+                }
+            }
+        }
+
         let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
         let chunkRadius = Math.ceil(VIEW_DIST / CHUNK_SIZE);
         
@@ -203,7 +285,7 @@ function render() {
             objLight = Math.min(1.0, objLight + lightIntensity);
         }
 
-        if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace') {
+        if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace' || o.type === 'cloudPoly') {
             let ptsArray = (o.type === 'objWorldFace') ? o.pts : (o.type === 'face' ? o.face.pts : o.pts);
             let camPts = [];
             for (let k = 0; k < ptsArray.length; k++) {
@@ -256,6 +338,10 @@ function render() {
                 let fb = o.color.b * shade * (1-fog) + sky.b * fog | 0;
                 ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
                 ctx.strokeStyle = ctx.fillStyle;
+            } else if (o.type === 'cloudPoly') {
+                ctx.fillStyle = o.color;
+                ctx.strokeStyle = o.color;
+                ctx.lineWidth = 1.0;
             } else {
                 ctx.fillStyle = o.color; ctx.strokeStyle = '#000';
             }
@@ -288,6 +374,12 @@ function render() {
                 aGrad.addColorStop(0, `rgba(255, 140, 50, ${aAlpha})`); aGrad.addColorStop(0.3, `rgba(255, 80, 20, ${aAlpha * 0.5})`); aGrad.addColorStop(1, `rgba(150, 10, 0, 0)`);
                 ctx.fillStyle = aGrad; ctx.fillRect(-airRad, -airRad, airRad*2, airRad*2); ctx.restore();
                 ctx.globalCompositeOperation = 'source-over';
+            } else if (o.type === 'celestial') {
+                ctx.font = sz + 'px sans-serif';
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'center';
+                ctx.fillText(o.emoji, sx, sy);
+                _lastFont = ''; _lastBaseline = ''; _lastAlign = '';
             } else if (o.type === 'locationalEnemy') {
                 let e = o.obj, isFlash = e.flash > 0, isZombie = e.type === 'zombie';
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
