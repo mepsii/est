@@ -1,6 +1,8 @@
-#a rapidly prototyped vibe-coding experiment. just a basic voxel based survival-fps game.\
+#a total experiment. just a basic voxel based survival-fps game.\
 #just wanted to see how far it could be taken with totally free ai models.\
 #done w essentially all gemini
+
+![https://img.shields.io/badge/vibe-coded-blue?style=flat-square](https://img.shields.io/badge/vibe-coded-blue?style=flat-square)
 
 ----
 
@@ -16,6 +18,6 @@
 
 ----
 
-<h1>THIS PROJECT IS VIBE-CODED. ENTIRELY. USE AT OWN RISK.</h1>
+<h1>DISCLAIMER: THIS PROJECT IS VIBE-CODED. ENTIRELY. USE AT OWN RISK.</h1>
 
 ----
