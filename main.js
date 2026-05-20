@@ -264,8 +264,8 @@ function update() {
         c.flicker = 0.85 + wave1 + wave2 + wave3 + (Math.random() > 0.95 ? (Math.random() * 0.08) : 0);
     }
 
-    player.inWater = gameState === 'overworld' && (player.z <= WATER_HEIGHT);
-    player.isSubmerged = gameState === 'overworld' && (player.z + player.baseHeight <= WATER_HEIGHT);
+    player.inWater = gameState === 'overworld' && (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z)) === 2);
+    player.isSubmerged = gameState === 'overworld' && (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z + player.baseHeight)) === 2);
 
     if (player.isSubmerged) {
         if (!godMode) player.oxygen = Math.max(0, player.oxygen - 0.15);
@@ -463,7 +463,7 @@ function update() {
                 if (player.inWater) {
                     player.vz -= 0.002; 
                     if (keys['Space']) {
-                        if (player.z > WATER_HEIGHT - 1.0) {
+                        if (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z + 1.0)) !== 2) {
                             player.vz = jumpPower * 0.7; 
                             keys['Space'] = false;
                         } else {
@@ -561,11 +561,11 @@ function update() {
         let isNight = gameTime < 6 || gameTime >= 19, spawnChance = isNight ? 0.001 : 0.0002;
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
             let angle = Math.random() * Math.PI * 2, dist = 20 + Math.random() * 10, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
-            let ez = getGridBaseHeight(Math.floor(ex), Math.floor(ey)) + 1;
-            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez)) && ez > WATER_HEIGHT + 0.5) { 
+            let ez = getSafeFloorZ(ex, ey, player.z) + 1;
+            if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez)) && getVoxel(Math.floor(ex), Math.floor(ey), Math.floor(ez - 1)) !== 2) { 
                 let biome = getBiome(ex, ey), alienChance = biome >= 0.65 ? 0.05 : 0.01;
                 if (Math.random() < alienChance) { enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 }); } 
-                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getGridBaseHeight(Math.floor(zx),Math.floor(zy))+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && zez > WATER_HEIGHT + 0.5 && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
+                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getSafeFloorZ(zx,zy,player.z)+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && getVoxel(Math.floor(zx), Math.floor(zy), Math.floor(zez - 1)) !== 2 && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
             }
         }
 
@@ -897,8 +897,8 @@ function render() {
         let objLight = gameState === 'overworld' ? ambient : 1.0;
         let depth = Math.sqrt(o.depthSq);
         
-        let isUnderground = o.type === 'face' ? (o.h < getGridBaseHeight(Math.floor(o.wX), Math.floor(o.wY)) - 2) : false;
-        if (isUnderground && !o.face.isWater) objLight = 0.05; 
+        let isUnderground = o.type === 'face' && !o.face.isWater && getVoxel(Math.floor(o.wX), Math.floor(o.wY), Math.floor(o.h) + 1.0) === 1;
+        if (isUnderground) objLight = 0.05; 
 
         if (objLight < 1.0 && o.type !== 'campfireBloom') {
             let lightIntensity = 0;
