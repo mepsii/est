@@ -46,24 +46,46 @@ function fbm2D(x, y, octaves) {
 // --- Terrain & Biome Logic ---
 function getTerrain(x, y) {
     let nx = x * 0.003, ny = y * 0.003;
+    
+    // Base continent shapes
     let elevation = fbm2D(nx, ny, 4); 
     let moisture = fbm2D(nx + 100, ny + 100, 3);
     let roughness = fbm2D(nx * 3, ny * 3, 3);
     
     let baseH = elevation * 60 + 10 + (roughness * 10 * elevation);
-    
-    let lakeMask = fbm2D(nx * 5, ny * 5, 2);
-    let isLake = lakeMask > 0.65 && elevation > 0.3; // Lakes form in mountains/hills
+    let oceanSurface = WATER_LEVEL; 
     let lakeSurface = 0;
-    
-    if (isLake) {
-        lakeSurface = Math.floor(baseH / 8) * 8; // Quantize to create flat pools
-        let lakeDepth = (lakeMask - 0.65) * 40; // Carve crater
-        baseH = Math.min(baseH, lakeSurface - lakeDepth);
+    let isLake = false;
+
+    // 1. Winding Rivers (Using Ridge Noise)
+    // Absolute value of noise creates sharp ravines that we invert into riverbeds
+    let riverNoise = Math.abs(fbm2D(nx * 1.5 + 50, ny * 1.5 + 50, 3) - 0.5) * 2.0; 
+    if (riverNoise < 0.06 && baseH > oceanSurface - 5) {
+        let riverCarve = (0.06 - riverNoise) / 0.06; // 0 to 1 (1 at dead center of river)
+        let riverBottom = oceanSurface - 3 - (roughness * 2); // Carve down to sea level
+        
+        // Square the carve value for steeper banks and flat bottoms
+        baseH = lerp(baseH, riverBottom, riverCarve * riverCarve); 
     }
-    
-    let oceanSurface = WATER_LEVEL; // Global Sea Level
-    
+
+    // 2. Large Lakes & Scattered Ponds
+    let lakeMask = fbm2D(nx * 4 + 20, ny * 4 + 20, 2);
+    let pondMask = fbm2D(nx * 15, ny * 15, 2); // High frequency for small scattered pools
+
+    if (lakeMask > 0.65 || pondMask > 0.72) {
+        isLake = true;
+        
+        // Snap water level to local terrain height to create perched mountain pools
+        let poolLevel = Math.floor((baseH - 1) / 4) * 4; 
+        lakeSurface = Math.max(oceanSurface, poolLevel); 
+        
+        let maskVal = lakeMask > 0.65 ? (lakeMask - 0.65) * 3 : (pondMask - 0.72) * 4;
+        let depth = maskVal * 15; 
+        
+        // Dig out the bowl
+        baseH = Math.min(baseH, lakeSurface - depth);
+    }
+
     return { baseH, lakeSurface, isLake, oceanSurface, moisture, elevation };
 }
 
@@ -115,7 +137,7 @@ function getVoxel(x, y, z, t = null) {
     
     if (density > 0) return 1; // Solid Terrain
     if (z <= t.oceanSurface) return 2; // Ocean Water
-    if (t.isLake && z <= t.lakeSurface) return 2; // Perched Mountain Lake
+    if (t.isLake && z <= t.lakeSurface) return 2; // Perched Mountain Lake/Pond
     
     return 0; // Air
 }
