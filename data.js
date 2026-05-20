@@ -89,7 +89,7 @@ const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
 
 // --- Game Data & Configs ---
 const RECIPES =[
-    { name: "Tent", result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 }, req: { '🪵': 2, '🧶': 2 } },
+    // { name: "Tent", result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 }, req: { '🪵': 2, '🧶': 2 } },
     { name: "Campfire", result: { type: 'campfire', emoji: '🔥', count: 1 }, req: { '🪵': 2 } }
 ];
 

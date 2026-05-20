@@ -268,9 +268,21 @@ function buildChunkMesh(cx, cy) {
             ];
         }
         
+        let isUnderground = false;
+        if (type === 1) {
+            let airX = x + nx, airY = y + ny, airZ = z + nz;
+            for (let checkZ = airZ; checkZ < MAX_Z; checkZ++) {
+                if (getVoxel(airX, airY, checkZ) === 1) {
+                    isUnderground = true;
+                    break;
+                }
+            }
+        }
+
         faces.push({ 
             pts: pts, 
             cx: x + 0.5 + nx * 0.5, cy: y + 0.5 + ny * 0.5, cz: z + 0.5 + nz * 0.5, 
+            bx: x, by: y, bz: z, underground: isUnderground,
             norm: { x: nx, y: ny, z: nz }, 
             col: col, shade: shade, isWater: (type === 2) 
         });

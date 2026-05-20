@@ -260,7 +260,7 @@ function render() {
         let objLight = gameState === 'overworld' ? ambient : 1.0;
         let depth = Math.sqrt(o.depthSq);
         
-        let isUnderground = o.type === 'face' && !o.face.isWater && getVoxel(Math.floor(o.wX), Math.floor(o.wY), Math.floor(o.h) + 1.0) === 1;
+        let isUnderground = o.type === 'face' && !o.face.isWater && o.face.underground;
         if (isUnderground) objLight = 0.05; 
 
         if (objLight < 1.0 && o.type !== 'campfireBloom') {
