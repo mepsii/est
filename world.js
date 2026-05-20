@@ -125,37 +125,54 @@ function getSolid(x, y, z) { return getSolidFast(x, y, z); }
 
 function getVoxelColor(x, y, z) {
     let t = getTerrainFast(x, y);
-    let depth = t.baseH - z;
+    let depthFromMacro = t.baseH - z;
     let colorNoise = hash(x, y, z) * 15;
     
-    // Deep underground rock or ocean floor
-    if (depth > 8.0 || z < t.oceanSurface - 2) {
+    // Determine true local surface & fluid presence
+    let isSurface = getVoxel(x, y, z + 1) !== 1; // True if Air or Water is directly above
+    let isUnderWater = (z <= t.oceanSurface) || (t.isLake && z <= t.lakeSurface);
+    
+    // 1. Bottom Layer: Grey Rock
+    let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0; // Mountains have thinner dirt
+    if (depthFromMacro > rockDepth || (isSurface && depthFromMacro > 15.0)) {
         let v = 90 + colorNoise;
         return { r: v|0, g: (v*0.95)|0, b: (v*0.9)|0 };
     }
     
-    // Beaches and lake shores
-    if ((z >= t.oceanSurface && z <= t.oceanSurface + 2) || (t.isLake && z >= t.lakeSurface && z <= t.lakeSurface + 2)) {
-        return { r: 210 + colorNoise, g: 200 + colorNoise, b: 150 + colorNoise };
+    // 2. Middle Layer & Underwater Overrides: Brown Dirt / Sand
+    if (!isSurface || isUnderWater) {
+        // Shallow underwater sand
+        if (isUnderWater && (z >= t.oceanSurface - 2 || (t.isLake && z >= t.lakeSurface - 2))) {
+            return { r: 200 + colorNoise, g: 180 + colorNoise, b: 130 + colorNoise }; // Sand
+        }
+        // Standard Brown Dirt
+        return { r: 95 + colorNoise, g: 65 + colorNoise, b: 35 + colorNoise }; 
+    }
+    
+    // 3. Top Layer: Surface Biomes
+    
+    // Beaches (just above water lines)
+    if ((z >= t.oceanSurface && z <= t.oceanSurface + 1.5) || (t.isLake && z >= t.lakeSurface && z <= t.lakeSurface + 1.5)) {
+        return { r: 210 + colorNoise, g: 200 + colorNoise, b: 150 + colorNoise }; // Sand
     }
     
     // Snowy Mountain Peaks
     if (t.elevation > 0.70 && z > t.baseH - 2.0) {
-        return { r: 240 + colorNoise, g: 245 + colorNoise, b: 255 + colorNoise };
+        return { r: 240 + colorNoise, g: 245 + colorNoise, b: 255 + colorNoise }; // Snow
     }
     
     // Desert Biome
     if (t.moisture < 0.35) {
-        return { r: 200 + colorNoise, g: 175 + colorNoise, b: 110 + colorNoise };
+        return { r: 200 + colorNoise, g: 175 + colorNoise, b: 110 + colorNoise }; // Desert Sand
     }
     
     // Forest / Lush Biome
     if (t.moisture > 0.6) {
-        return { r: 55 + colorNoise, g: 120 + colorNoise, b: 45 + colorNoise }; // Dark green
+        return { r: 55 + colorNoise, g: 120 + colorNoise, b: 45 + colorNoise }; // Dark green grass
     }
     
     // Standard Plains
-    return { r: 85 + colorNoise, g: 150 + colorNoise, b: 65 + colorNoise }; 
+    return { r: 85 + colorNoise, g: 150 + colorNoise, b: 65 + colorNoise }; // Bright green grass
 }
 
 // Organically Smooth Surface Mesher
