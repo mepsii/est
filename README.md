@@ -18,6 +18,13 @@
 
 ----
 
-<h1>⚠️⚠️DISCLAIMER: THIS PROJECT IS VIBE-CODED. ENTIRELY. USE AT OWN RISK.⚠️⚠️</h1>
+<p align="center">
+  ⚠️ <span>$$\huge\color{orange}{\textbf{DISCLAIMER}}$$</span> ⚠️
+  <br>
+  <span>$$\large\color{orange}{\textbf{VIBE-CODED. ENTIRELY.}}$$</span>
+  <br>
+  <span>$$\large\color{orange}{\textbf{USE AT OWN RISK}}$$</span>
+</p>
+
 
 ----
