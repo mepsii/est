@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EmojiSurvivalTest</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div id="damage-flash"></div>
     <div id="heal-flash"></div>
@@ -21,13 +23,16 @@
     </div>
 
     <div id="interact-tooltip">[E] Interact</div>
-    
+
     <div id="overlay">
         <h1>/est/</h1>
-        <p>1-7: Weapons/Tools | F: Flashlight | Space: Jump | Shift: Sprint | L-Click: Action | R-Click: Zoom | I: Inv | E: Interact | V: Switch View</p>
-        <p style="font-size: 0.8em; margin-top: 20px;">Explore, Hunt, Survive. Shovel (6) to dig, Dirt (7) to build.<br>(Press `~` for Debug Menu)</p>
-        
-        <div style="position: absolute; bottom: 15px; right: 20px; font-size: 12px; color: rgba(255, 255, 255, 0.4);">>est-0.00.65a</div>
+        <p>1-7: Weapons/Tools | F: Flashlight | Space: Jump | Shift: Sprint | L-Click: Action | R-Click: Zoom | I: Inv |
+            E: Interact | V: Switch View</p>
+        <p style="font-size: 0.8em; margin-top: 20px;">Explore, Hunt, Survive. Shovel (6) to dig, Dirt (7) to
+            build.<br>(Press `~` for Debug Menu)</p>
+
+        <div style="position: absolute; bottom: 15px; right: 20px; font-size: 12px; color: rgba(255, 255, 255, 0.4);">
+            >est-0.00.66</div>
     </div>
 
     <div id="stair-menu" class="panel">
@@ -42,7 +47,7 @@
             <h2>Inventory</h2>
             <div id="player-inv-grid" class="inv-grid"></div>
         </div>
-        
+
         <div id="crafting-ui" class="panel inv-panel">
             <h2>Crafting</h2>
             <div id="crafting-list"></div>
@@ -52,7 +57,7 @@
             <h2>Container</h2>
             <div id="container-inv-grid" class="inv-grid"></div>
         </div>
-        
+
         <div id="inv-hints">Left-Click to Move | Right-Click to Use/Place Item</div>
     </div>
 
@@ -86,10 +91,12 @@
         <div class="dbg-row"><label><input type="checkbox" id="dbg-noclip"> Noclip</label></div>
         <div class="dbg-row"><label><input type="checkbox" id="dbg-infstam"> Inf Stamina</label></div>
         <div class="dbg-row"><label>Speed %:</label><input type="number" id="dbg-speed" value="100"></div>
-        <div class="dbg-row"><label>Sprint Spd:</label><input type="number" id="dbg-sprint" value="1.5" step="0.1"></div>
-        <div class="dbg-row"><label>Jump Power:</label><input type="number" id="dbg-jump" value="0.28" step="0.05"></div>
+        <div class="dbg-row"><label>Sprint Spd:</label><input type="number" id="dbg-sprint" value="1.5" step="0.1">
+        </div>
+        <div class="dbg-row"><label>Jump Power:</label><input type="number" id="dbg-jump" value="0.28" step="0.05">
+        </div>
         <div class="dbg-row"><label><input type="checkbox" id="dbg-flight"> Flight Mode</label></div>
-        
+
         <div class="dbg-row">
             <label>FOV:</label>
             <input type="range" id="dbg-fov" value="64" min="40" max="120" style="width: 70px;">
@@ -100,11 +107,12 @@
             <input type="range" id="dbg-viewdist" value="80" min="20" max="250" style="width: 70px;">
             <span id="dbg-viewdist-val" style="width: 30px; text-align: right;">80</span>
         </div>
-        
+
         <hr style="border-color:#555; margin:10px 0;">
         <div class="dbg-row"><label><input type="checkbox" id="dbg-info"> Show Debug Info</label></div>
         <div class="dbg-row"><label><input type="checkbox" id="dbg-spawnenemies" checked> Spawn Enemies</label></div>
-        <div class="dbg-row"><button onclick="killAll()" style="width:100%; background:#833;">Kill All Enemies</button></div>
+        <div class="dbg-row"><button onclick="killAll()" style="width:100%; background:#833;">Kill All Enemies</button>
+        </div>
         <div style="text-align:center; margin-bottom: 5px; margin-top:5px;">Spawn Enemy Type</div>
         <div class="dbg-row spawn-btns" style="justify-content: center;">
             <button onclick="spawnEnemy('alien')" title="Original Alien">👽</button>
@@ -135,10 +143,15 @@
     </div>
 
     <canvas id="gameCanvas"></canvas>
-    
+
     <script src="data.js"></script>
     <script src="world.js"></script>
     <script src="ui.js"></script>
+    <script src="helpers.js"></script>
+    <script src="models.js"></script>
+    <script src="physics.js"></script>
+    <script src="render.js"></script>
     <script src="main.js"></script>
 </body>
+
 </html>
