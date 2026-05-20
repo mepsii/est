@@ -556,8 +556,8 @@ function update() {
 
     if (gameState === 'overworld') {
         let pxC = Math.floor(player.x / CHUNK_SIZE), pyC = Math.floor(player.y / CHUNK_SIZE);
-        let updateRad = Math.ceil(VIEW_DIST / CHUNK_SIZE);
-        for(let x = pxC - updateRad; x <= pxC + updateRad; x++) for(let y = pyC - updateRad; y <= pyC + updateRad; y++) getMapChunk(x, y);
+        let physRad = 4; // Local simulation radius for events, rendering will handle far chunk gen
+        for(let x = pxC - physRad; x <= pxC + physRad; x++) for(let y = pyC - physRad; y <= pyC + physRad; y++) getMapChunk(x, y);
 
         let isNight = gameTime < 6 || gameTime >= 19, spawnChance = isNight ? 0.001 : 0.0002;
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
@@ -763,6 +763,8 @@ function render() {
         return { sx, sy, depth: rotX };
     }
 
+    let fovMult = 0.7 / currentZoom; // FOV multiplier for horizontal frustum culling
+
     if (gameState === 'overworld') {
         let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
         let chunkRadius = Math.ceil(VIEW_DIST / CHUNK_SIZE);
@@ -770,7 +772,12 @@ function render() {
         for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
             for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
                 let dx = cx * CHUNK_SIZE + CHUNK_SIZE/2 - player.x, dy = cy * CHUNK_SIZE + CHUNK_SIZE/2 - player.y;
-                if (dx * cosA + dy * sinA < -CHUNK_SIZE*1.5) continue; 
+                let cRotX = dx * cosA + dy * sinA;
+                let cRotY = dx * -sinA + dy * cosA;
+                
+                // Chunk-level Frustum Culling
+                if (cRotX < -CHUNK_SIZE * 1.5) continue; 
+                if (Math.abs(cRotY) > cRotX * fovMult + CHUNK_SIZE * 1.5) continue;
                 
                 let faces = getChunkMesh(cx, cy);
                 for (let i = 0; i < faces.length; i++) {
@@ -784,6 +791,10 @@ function render() {
                     let rotX = dX * cosA + dY * sinA;
                     
                     if (rotX > -2 && rotX < VIEW_DIST) { 
+                        // Face-level Frustum Culling
+                        let fRotY = dX * -sinA + dY * cosA;
+                        if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
+
                         let ux = f.pts[1].x - f.pts[0].x, uy = f.pts[1].y - f.pts[0].y, uz = f.pts[1].z - f.pts[0].z;
                         let wx = f.pts[2].x - f.pts[0].x, wy = f.pts[2].y - f.pts[0].y, wz = f.pts[2].z - f.pts[0].z;
                         let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
@@ -801,7 +812,9 @@ function render() {
                 let chunk = getMapChunk(cx, cy);
                 for (let i = 0; i < chunk.length; i++) {
                     let obj = chunk[i], dX = obj.wx - player.x, dY = obj.wy - player.y, rotX = dX * cosA + dY * sinA;
-                    if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dX * -sinA + dY * cosA) < (rotX * 2.0) / currentZoom) {
+                    if (rotX > 0.2 && rotX < VIEW_DIST) {
+                        let fRotY = dX * -sinA + dY * cosA;
+                        if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
                         let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = rotX*rotX; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
                     }
                 }
@@ -813,6 +826,8 @@ function render() {
             let dx = v.x - player.x, dy = v.y - player.y;
             let rotX = dx * cosA + dy * sinA;
             if (rotX < -10 || rotX > VIEW_DIST * 1.5) continue;
+            let rotY = dx * -sinA + dy * cosA;
+            if (Math.abs(rotY) > Math.max(0, rotX) * fovMult + 10.0) continue;
             if (player.inVehicle === v && player.vehicleView === '1st') continue; 
             
             let model = WEAPON_MODELS[v.type];
@@ -861,21 +876,22 @@ function render() {
             }
         }
         
-        for (let e of enemies) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.depthSq = rotX*rotX; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y; if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; } else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; } } }
-        for (let c of campfires) { let rotX = (c.x-player.x)*cosA + (c.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'campfireBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
-        for (let e of containers) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
-        for (let e of animals) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
-        for (let b of buildings) { let rotX = (b.x-player.x)*cosA + (b.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
-        for (let d of damageTexts) { let rotX = (d.x-player.x)*cosA + (d.y-player.y)*sinA; if (rotX > 0.2 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
-        for (let b of bloodParticles) { let rotX = (b.x-player.x)*cosA + (b.y-player.y)*sinA; if (rotX > 0.1 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y;} }
+        for (let e of enemies) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.depthSq = rotX*rotX; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y; if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; } else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; } } }
+        for (let c of campfires) { let dx=c.x-player.x, dy=c.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'campfireBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
+        for (let e of containers) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
+        for (let e of animals) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
+        for (let b of buildings) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 8.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
+        for (let d of damageTexts) { let dx=d.x-player.x, dy=d.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
+        for (let b of bloodParticles) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y;} }
     } else {
         ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
         let interiorEnts = getInteriorEntities();
-        for (let e of interiorEnts) { let rotX = (e.x-player.x)*cosA + (e.y-player.y)*sinA; if (rotX > 0.2) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
+        for (let e of interiorEnts) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
         let walls = getInteriorWalls();
         for (let w of walls) {
             if (w.pts) {
-                let rotX = (w.pts[0].x-player.x)*cosA + (w.pts[0].y-player.y)*sinA; if (rotX > 0.1) { let o = getRenderItem(); o.type = 'wallPoly'; o.pts = w.pts; o.color = w.color; o.depthSq = rotX*rotX; }
+                let dx=w.pts[0].x-player.x, dy=w.pts[0].y-player.y, rotX = dx*cosA + dy*sinA; 
+                if (rotX > 0.1) { let o = getRenderItem(); o.type = 'wallPoly'; o.pts = w.pts; o.color = w.color; o.depthSq = rotX*rotX; }
             } else {
                 let r1 = (w.p1.x-player.x)*cosA + (w.p1.y-player.y)*sinA, r2 = (w.p2.x-player.x)*cosA + (w.p2.y-player.y)*sinA;
                 if (r1 > 0.1 || r2 > 0.1) { let o = getRenderItem(); o.type = 'wall'; o.p1 = w.p1; o.p2 = w.p2; o.color = w.color; o.depthSq = Math.min(r1, r2)**2; }
@@ -883,7 +899,7 @@ function render() {
         }
     }
 
-    for (let p of projectiles) { let rotX = (p.x-player.x)*cosA + (p.y-player.y)*sinA; if (rotX > 0.1 && rotX < VIEW_DIST) { let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = rotX*rotX; o.h = p.z; o.wX = p.x; o.wY = p.y;} }
+    for (let p of projectiles) { let dx=p.x-player.x, dy=p.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = rotX*rotX; o.h = p.z; o.wX = p.x; o.wY = p.y;} }
 
     activeRenderList.length = renderCount;
     for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];

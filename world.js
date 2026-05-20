@@ -115,7 +115,7 @@ function getTerrainFast(x, y) {
     if (val !== undefined) return val;
     let t = getTerrain(x, y);
     terrainCache.set(key, t);
-    if (terrainCache.size > 100000) terrainCache.clear(); // Clear to prevent memory leaks
+    if (terrainCache.size > 20000) terrainCache.clear(); // Reduced from 100000 to prevent GC stutters when traversing massive render distances
     return t;
 }
 

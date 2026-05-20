@@ -113,8 +113,8 @@ const ANIMAL_TYPES =[
 ];
 const TREE_EMOJIS = new Set(['🌲', '🌳', '🪾']), FLOWER_EMOJIS = new Set(['🌻', '🌹', '🌷', '🌼', '💀']);
 
-// Dynamic rendering controls (Changed VIEW_DIST to let)
-let VIEW_DIST = 45;
+// Dynamic rendering controls
+let VIEW_DIST = 80;
 const CHUNK_SIZE = 8; 
 
 // --- Game State Variables ---
