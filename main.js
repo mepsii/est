@@ -254,7 +254,8 @@ function update() {
     if (!godMode) { tickCounter++; if (tickCounter % 120 === 0) { if (player.food > 0) { player.food -= 1; foodEl.innerText = player.food; } else takeDamage(1); } } 
     else { hpEl.innerText = player.hp; foodEl.innerText = player.food; tickCounter++; }
 
-    currentZoom += ((isZooming ? 1.8 : 0.8) - currentZoom) * 0.15;
+    // Dynamic interpolation matching FOV slider logic
+    currentZoom += ((isZooming ? baseZoom * 2.25 : baseZoom) - currentZoom) * 0.15;
     
     let tickTime = tickCounter * 0.05;
     for (let c of campfires) {
@@ -930,7 +931,7 @@ function render() {
                 camPts.push({ cx: dx * -sinA + dy * cosA, cy: dz, cz: dx * cosA + dy * sinA });
             }
 
-            let clipped =[];
+            let clipped = [];
             let zNear = 0.1;
             for(let j=0; j<camPts.length; j++) {
                 let p1 = camPts[j], p2 = camPts[(j+1)%camPts.length];

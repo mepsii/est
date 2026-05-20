@@ -84,7 +84,6 @@ invScreen.addEventListener('mousedown', (e) => {
                 inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             }
             else if (item.type === 'building' || item.type === 'campfire') {
-                // FIXED: True 3D Raycast to drop items perfectly into caves or hills
                 const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
                 let hitX = player.x + Math.cos(player.angle) * 4.0;
                 let hitY = player.y + Math.sin(player.angle) * 4.0;
@@ -99,7 +98,6 @@ invScreen.addEventListener('mousedown', (e) => {
                     
                     if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
                         hitX = rx; hitY = ry; 
-                        // Target hit! Drop exactly down to find the floor block
                         for(let z = Math.floor(rz); z >= 0; z--) {
                             if (getSolid(Math.floor(rx), Math.floor(ry), z)) {
                                 hitZ = z + 1.0; 
@@ -111,7 +109,6 @@ invScreen.addEventListener('mousedown', (e) => {
                 }
                 
                 if (!foundSolid) {
-                    // Fallback: Drop straight down from where the player was looking 4 units ahead
                     for(let z = Math.floor(player.z + player.baseHeight + 2); z >= 0; z--) {
                         if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) { hitZ = z + 1.0; break; }
                     }
@@ -158,7 +155,6 @@ document.addEventListener('pointerlockchange', () => {
 window.addEventListener('mousedown', e => { if (isPaused) return; if (e.button === 0) isMouseDown = true; if (e.button === 2) { isZooming = true; adsEl.innerText = "ON"; } });
 window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = false; if (e.button === 2) { isZooming = false; adsEl.innerText = "OFF"; } });
 
-// --- Replace your keydown listener in ui.js with this: ---
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
     if (e.key >= '1' && e.key <= '7') switchWeapon(parseInt(e.key));
@@ -183,7 +179,6 @@ window.addEventListener('keydown', e => {
         }
     }
     
-    // Switch between 1st and 3rd person inside vehicle
     if (e.key.toLowerCase() === 'v' && player.inVehicle) {
         player.vehicleView = player.vehicleView === '3rd' ? '1st' : '3rd';
     }
@@ -209,12 +204,23 @@ document.getElementById('dbg-flight').onchange = e => flightMode = e.target.chec
 document.getElementById('dbg-spawnenemies').onchange = e => spawnEnemiesToggle = e.target.checked;
 document.getElementById('dbg-info').onchange = e => showDebugInfo = e.target.checked;
 
+// NEW: Dynamically process FOV and Render Distance UI changes
+document.getElementById('dbg-fov').oninput = e => { 
+    let fovDegrees = parseInt(e.target.value);
+    document.getElementById('dbg-fov-val').innerText = fovDegrees;
+    baseZoom = 0.5 / Math.tan((fovDegrees / 2) * (Math.PI / 180));
+};
+
+document.getElementById('dbg-viewdist').oninput = e => {
+    VIEW_DIST = parseInt(e.target.value);
+    document.getElementById('dbg-viewdist-val').innerText = VIEW_DIST;
+};
+
 function closeStairMenu() { isStairMenuOpen = false; canvas.requestPointerLock(); }
 document.getElementById('btn-stair-up').onclick = () => { changeFloor(1); closeStairMenu(); };
 document.getElementById('btn-stair-down').onclick = () => { changeFloor(-1); closeStairMenu(); };
 document.getElementById('btn-stair-cancel').onclick = closeStairMenu;
 
-// Cave-Safe Floor Finder for Spawners
 function getSafeFloorZ(x, y, startZ) {
     for(let z = Math.floor(startZ + 2); z >= 0; z--) {
         if (getSolid(Math.floor(x), Math.floor(y), z)) return z + 1.0;

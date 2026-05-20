@@ -113,7 +113,9 @@ const ANIMAL_TYPES =[
 ];
 const TREE_EMOJIS = new Set(['🌲', '🌳', '🪾']), FLOWER_EMOJIS = new Set(['🌻', '🌹', '🌷', '🌼', '💀']);
 
-const VIEW_DIST = 45, CHUNK_SIZE = 8; // Render distance expanded!
+// Dynamic rendering controls (Changed VIEW_DIST to let)
+let VIEW_DIST = 45;
+const CHUNK_SIZE = 8; 
 
 // --- Game State Variables ---
 let gameTime = 12.0;
@@ -127,6 +129,7 @@ let spawnEnemiesToggle = true, showDebugInfo = false;
 let isFlashlightOn = false;
 
 let currentWeapon = 1, score = 0, isPaused = true, tickCounter = 0;
+let baseZoom = 0.8;
 let isMouseDown = false, isZooming = false, currentZoom = 0.8, fireCooldown = 0, keys = {};
 let gameState = 'overworld', activeBuilding = null, activeFloor = 0, savedOverworld = { x: 0, y: 0, z: 0, angle: 0, pitch: 0 };
 
