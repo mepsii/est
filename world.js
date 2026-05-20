@@ -1,4 +1,6 @@
 // --- World Generation & Voxel Storage ---
+// Note: CHUNK_SIZE is omitted here as it is declared in the global/data scope.
+
 const WORLD_SEED = Math.random() * 10000;
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
 const chunkMeshes = new Map(), voxelMods = new Map(), terrainCache = new Map();
@@ -57,15 +59,28 @@ function getTerrain(x, y) {
     let lakeSurface = 0;
     let isLake = false;
 
-    // 1. Winding Rivers (Using Ridge Noise)
-    // Absolute value of noise creates sharp ravines that we invert into riverbeds
-    let riverNoise = Math.abs(fbm2D(nx * 1.5 + 50, ny * 1.5 + 50, 3) - 0.5) * 2.0; 
-    if (riverNoise < 0.06 && baseH > oceanSurface - 5) {
-        let riverCarve = (0.06 - riverNoise) / 0.06; // 0 to 1 (1 at dead center of river)
-        let riverBottom = oceanSurface - 3 - (roughness * 2); // Carve down to sea level
+    // 1. Winding Rivers & Dynamic Valleys
+    let heightDiff = Math.max(0, baseH - oceanSurface);
+    
+    // The higher the terrain, the wider the valley required to slope down naturally
+    let dynamicValleyWidth = 0.06 + (heightDiff * 0.004); 
+    
+    let riverNoise = Math.abs(fbm2D(nx * 1.2 + 50, ny * 1.2 + 50, 3) - 0.5) * 2.0; 
+    
+    if (riverNoise < dynamicValleyWidth && baseH > oceanSurface - 5) {
+        let riverCenter = 0.015; // The actual flat water channel width
+        let carveAlpha = 0;
         
-        // Square the carve value for steeper banks and flat bottoms
-        baseH = lerp(baseH, riverBottom, riverCarve * riverCarve); 
+        if (riverNoise < riverCenter) {
+            carveAlpha = 1.0; // Flat bottom
+        } else {
+            // Smoothly roll the terrain down into the valley 
+            let t = 1.0 - ((riverNoise - riverCenter) / (dynamicValleyWidth - riverCenter));
+            carveAlpha = t * t * (3.0 - 2.0 * t); // Smoothstep curve
+        }
+        
+        let riverBottom = oceanSurface - 3 - (roughness * 2); 
+        baseH = lerp(baseH, riverBottom, carveAlpha);
     }
 
     // 2. Large Lakes & Scattered Ponds
@@ -80,10 +95,14 @@ function getTerrain(x, y) {
         lakeSurface = Math.max(oceanSurface, poolLevel); 
         
         let maskVal = lakeMask > 0.65 ? (lakeMask - 0.65) * 3 : (pondMask - 0.72) * 4;
-        let depth = maskVal * 15; 
         
-        // Dig out the bowl
-        baseH = Math.min(baseH, lakeSurface - depth);
+        // Smoothstep the depth so pond shorelines slope nicely instead of dropping off
+        let t = Math.min(1.0, maskVal * 1.5);
+        let depthCurve = t * t * (3 - 2 * t);
+        let depth = depthCurve * 15; 
+        
+        // +1.5 ensures the outer rim stays just above water level for a natural bank
+        baseH = Math.min(baseH, lakeSurface + 1.5 - depth);
     }
 
     return { baseH, lakeSurface, isLake, oceanSurface, moisture, elevation };
@@ -137,7 +156,7 @@ function getVoxel(x, y, z, t = null) {
     
     if (density > 0) return 1; // Solid Terrain
     if (z <= t.oceanSurface) return 2; // Ocean Water
-    if (t.isLake && z <= t.lakeSurface) return 2; // Perched Mountain Lake/Pond
+    if (t.isLake && z <= t.lakeSurface) return 2; // Perched Mountain Lake
     
     return 0; // Air
 }
