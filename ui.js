@@ -22,7 +22,7 @@ function updateCraftingUI() {
     craftingList.innerHTML = '';
     let resourceCounts = {};
     for (let item of inventory) {
-        if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'campfire')) {
+        if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch')) {
             resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
         }
     }
@@ -61,12 +61,45 @@ function craftRecipe(index) {
 }
 
 function giveItem(itemData) {
-    if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'campfire') {
+    if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch') {
         let existing = inventory.find(i => i && i.emoji === itemData.emoji);
         if (existing) { existing.count = (existing.count || 1) + (itemData.count || 1); updateInventories(); return; }
     }
     let emptyIndex = inventory.findIndex(x => x === null);
     if (emptyIndex !== -1) { itemData.count = itemData.count || 1; inventory[emptyIndex] = { ...itemData }; updateInventories(); }
+}
+
+function getPlacementTarget() {
+    const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+    let hitX = player.x + Math.cos(player.angle) * 4.0;
+    let hitY = player.y + Math.sin(player.angle) * 4.0;
+    let hitZ = player.z; 
+
+    let foundSolid = false;
+    let step = 0.2;
+    for (let i = 0; i <= 6.0 / step; i++) {
+        let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
+        let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
+        let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step);
+        
+        if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
+            hitX = rx; hitY = ry; 
+            for(let z = Math.floor(rz); z >= 0; z--) {
+                if (getSolid(Math.floor(rx), Math.floor(ry), z)) {
+                    hitZ = z + 1.0; 
+                    foundSolid = true; break;
+                }
+            }
+            break;
+        }
+    }
+    
+    if (!foundSolid) {
+        for(let z = Math.floor(player.z + player.baseHeight + 2); z >= 0; z--) {
+            if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) { hitZ = z + 1.0; break; }
+        }
+    }
+    return { x: hitX, y: hitY, z: hitZ };
 }
 
 invScreen.addEventListener('mousedown', (e) => {
@@ -83,44 +116,14 @@ invScreen.addEventListener('mousedown', (e) => {
                 player.food = godMode ? player.food : Math.min(100, player.food + item.amount); foodEl.innerText = player.food; 
                 inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             }
-            else if (item.type === 'building' || item.type === 'campfire') {
-                const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
-                let hitX = player.x + Math.cos(player.angle) * 4.0;
-                let hitY = player.y + Math.sin(player.angle) * 4.0;
-                let hitZ = player.z; 
-
-                let foundSolid = false;
-                let step = 0.2;
-                for (let i = 0; i <= 6.0 / step; i++) {
-                    let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
-                    let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
-                    let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step);
-                    
-                    if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
-                        hitX = rx; hitY = ry; 
-                        for(let z = Math.floor(rz); z >= 0; z--) {
-                            if (getSolid(Math.floor(rx), Math.floor(ry), z)) {
-                                hitZ = z + 1.0; 
-                                foundSolid = true; break;
-                            }
-                        }
-                        break;
-                    }
-                }
-                
-                if (!foundSolid) {
-                    for(let z = Math.floor(player.z + player.baseHeight + 2); z >= 0; z--) {
-                        if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) { hitZ = z + 1.0; break; }
-                    }
-                }
-
-                if (item.type === 'campfire') {
-                    campfires.push({ x: hitX, y: hitY, z: hitZ, emoji: '🔥', size: 1.2, flicker: 1.0 });
-                } else {
-                    let isTent = item.emoji === '⛺';
-                    buildings.push({ x: hitX, y: hitY, z: hitZ, emoji: item.emoji, rooms: item.rooms, floors: item.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
-                }
-                item.count--; if (item.count <= 0) inventory[index] = null; updateInventories();
+            else if (item.type === 'building' || item.type === 'torch') {
+                placementItem = item;
+                placementIndex = index;
+                isInventoryOpen = false;
+                activeContainer = null;
+                document.exitPointerLock();
+                canvas.requestPointerLock();
+                updateInventories();
             }
         } else if (activeContainer) { 
             let emptyIndex = activeContainer.items.findIndex(x => x === null);
@@ -128,7 +131,7 @@ invScreen.addEventListener('mousedown', (e) => {
         }
     } else if (type === 'container' && !isRightClick) {
         let item = activeContainer.items[index]; if (!item) return;
-        if (item.type === 'resource' || item.type === 'building' || item.type === 'campfire') {
+        if (item.type === 'resource' || item.type === 'building' || item.type === 'torch') {
             let existing = inventory.find(i => i && i.emoji === item.emoji);
             if (existing) { existing.count = (existing.count || 1) + (item.count || 1); activeContainer.items[index] = null; updateInventories(); return; }
         }
@@ -144,6 +147,7 @@ overlay.addEventListener('click', () => { if(!isInventoryOpen && !isDebugOpen &&
 document.addEventListener('pointerlockchange', () => {
     isPaused = document.pointerLockElement !== canvas; 
     if (isPaused) { 
+        placementItem = null; 
         overlay.style.display = (isInventoryOpen || isDebugOpen || isStairMenuOpen) ? 'none' : 'flex'; 
         invScreen.style.display = isInventoryOpen ? 'flex' : 'none'; 
         containerUI.style.display = (isInventoryOpen && activeContainer) ? 'flex' : 'none'; 
@@ -152,7 +156,38 @@ document.addEventListener('pointerlockchange', () => {
     } else { isInventoryOpen = isDebugOpen = isStairMenuOpen = false; activeContainer = null; overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; }
 });
 
-window.addEventListener('mousedown', e => { if (isPaused) return; if (e.button === 0) isMouseDown = true; if (e.button === 2) { isZooming = true; adsEl.innerText = "ON"; } });
+window.addEventListener('mousedown', e => { 
+    if (isPaused) return; 
+    if (e.button === 0) {
+        if (placementItem) {
+            placementItem = null;
+        } else {
+            isMouseDown = true;
+        }
+    }
+    if (e.button === 2) { 
+        if (placementItem) {
+            let hitTarget = getPlacementTarget();
+            if (placementItem.type === 'torch') {
+                torches.push({ x: hitTarget.x, y: hitTarget.y, z: hitTarget.z, emoji: '🔥', size: 0.4, flicker: 1.0 });
+            } else {
+                let isTent = placementItem.emoji === '⛺';
+                buildings.push({ x: hitTarget.x, y: hitTarget.y, z: hitTarget.z, emoji: placementItem.emoji, rooms: placementItem.rooms, floors: placementItem.floors, roomW: isTent ? 6 : 10, roomH: isTent ? 6 : 10, wallH: isTent ? 3.0 : 3.5 });
+            }
+            
+            let actualItem = inventory[placementIndex];
+            if (actualItem && actualItem.emoji === placementItem.emoji) {
+                actualItem.count--;
+                if (actualItem.count <= 0) inventory[placementIndex] = null;
+            }
+            placementItem = null; 
+            updateInventories();
+        } else {
+            isZooming = true; 
+            adsEl.innerText = "ON"; 
+        }
+    } 
+});
 window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = false; if (e.button === 2) { isZooming = false; adsEl.innerText = "OFF"; } });
 
 window.addEventListener('keydown', e => {
@@ -245,7 +280,7 @@ window.spawnEnemy = (type) => {
 window.spawnDebug = (em) => { 
     let cx = player.x + Math.cos(player.angle) * 4, cy = player.y + Math.sin(player.angle) * 4, z = getSafeFloorZ(cx, cy, player.z); 
     if (em === '📦') containers.push({ x: cx, y: cy, z: z, emoji: em, size: 0.9, items: new Array(10).fill(null) }); 
-    else if (em === '🔥') campfires.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 1.2, flicker: 1.0 }); 
+    else if (em === '🔥') torches.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 0.4, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 
 };
 window.spawnVehicle = (type) => { 

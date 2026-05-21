@@ -67,7 +67,7 @@ let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
     let o = renderPool[renderCount++];
-    o.flash = 0; o.targeted = false; o.dead = false; o.hp = undefined; o.wX = undefined; o.wY = undefined; o.flicker = 1.0; o.obj = null;
+    o.flash = 0; o.targeted = false; o.dead = false; o.hp = undefined; o.wX = undefined; o.wY = undefined; o.flicker = 1.0; o.obj = null; o.ghost = false;
     return o;
 }
 
@@ -89,8 +89,7 @@ const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
 
 // --- Game Data & Configs ---
 const RECIPES =[
-    // { name: "Tent", result: { type: 'building', emoji: '⛺', count: 1, rooms: 1, floors: 1 }, req: { '🪵': 2, '🧶': 2 } },
-    { name: "Campfire", result: { type: 'campfire', emoji: '🔥', count: 1 }, req: { '🪵': 2 } }
+    { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 2 } }
 ];
 
 const WEAPONS = { 
@@ -121,6 +120,7 @@ const CHUNK_SIZE = 8;
 let gameTime = 12.0;
 let timeSpeed = 1.0;
 let isInventoryOpen = false, isDebugOpen = false, isStairMenuOpen = false, interactTarget = null, activeContainer = null;
+let placementItem = null, placementIndex = -1;
 let inventory = new Array(20).fill(null); 
 let godMode = false, noclip = false, speedMult = 1.0;
 let flightMode = false, jumpPower = 0.28;
@@ -133,7 +133,7 @@ let baseZoom = 0.8;
 let isMouseDown = false, isZooming = false, currentZoom = 0.8, fireCooldown = 0, keys = {};
 let gameState = 'overworld', activeBuilding = null, activeFloor = 0, savedOverworld = { x: 0, y: 0, z: 0, angle: 0, pitch: 0 };
 
-const campfires = [];
+const torches = [];
 const destroyedEntities = new Set();
 const damageTexts = [];
 const bloodParticles =[];

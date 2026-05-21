@@ -12,7 +12,7 @@ function update() {
     currentZoom += ((isZooming ? baseZoom * 2.25 : baseZoom) - currentZoom) * 0.15;
     
     let tickTime = tickCounter * 0.05;
-    for (let c of campfires) {
+    for (let c of torches) {
         let wave1 = Math.sin(tickTime * 1.7 + c.x) * 0.03;
         let wave2 = Math.sin(tickTime * 2.3 + c.y) * 0.03;
         let wave3 = Math.sin(tickTime * 5.1 - c.x) * 0.02;

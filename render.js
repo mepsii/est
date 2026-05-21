@@ -12,7 +12,7 @@ function render() {
     renderCount = 0; 
     let sky = getSkyColor(gameTime);
     let ambient = getAmbientLight(gameTime);
-    let visibleCampfires = campfires.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST);
+    let visibleTorches = torches.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST);
 
     ctx.fillStyle = `rgb(${sky.r|0}, ${sky.g|0}, ${sky.b|0})`; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -223,12 +223,28 @@ function render() {
         }
         
         for (let e of enemies) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.depthSq = rotX*rotX; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y; if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; } else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; } } }
-        for (let c of campfires) { let dx=c.x-player.x, dy=c.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'campfireBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
+        for (let c of torches) { let dx=c.x-player.x, dy=c.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'torchBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
         for (let e of containers) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
         for (let e of animals) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
         for (let b of buildings) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 8.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
         for (let d of damageTexts) { let dx=d.x-player.x, dy=d.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
         for (let b of bloodParticles) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y;} }
+        
+        if (typeof placementItem !== 'undefined' && placementItem !== null) {
+            let target = getPlacementTarget();
+            let dx = target.x - player.x, dy = target.y - player.y, rotX = dx*cosA + dy*sinA;
+            if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) {
+                let o = getRenderItem(); 
+                o.type = 'emoji'; 
+                o.emoji = placementItem.emoji; 
+                o.size = placementItem.type === 'torch' ? 0.4 : 4.5; 
+                o.depthSq = rotX*rotX; 
+                o.h = target.z; 
+                o.wX = target.x; 
+                o.wY = target.y; 
+                o.ghost = true;
+            }
+        }
     } else {
         ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
         let interiorEnts = getInteriorEntities();
@@ -258,27 +274,29 @@ function render() {
         let o = activeRenderList[i];
         
         let objLight = gameState === 'overworld' ? ambient : 1.0;
-        let depth = Math.sqrt(o.depthSq);
+        
+        // Prevent depth NaN crashing due to subtraction hacks or overlapping entities perfectly
+        let depth = Math.max(0.1, Math.sqrt(Math.max(0, o.depthSq))); 
         
         let isUnderground = o.type === 'face' && !o.face.isWater && o.face.underground;
         if (isUnderground) objLight = 0.05; 
 
-        if (objLight < 1.0 && o.type !== 'campfireBloom') {
+        if (objLight < 1.0 && o.type !== 'torchBloom') {
             let lightIntensity = 0;
             let cx = o.wX, cy = o.wY, cz = o.type === 'face' || o.type === 'objWorldFace' ? o.h : o.h + (o.size?o.size/2:0);
             
             if (isFlashlightOn) {
                 let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ; 
-                let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                if (dist > 0.1 && dist < 45) {
-                    let dot = (dx/dist)*aimX + (dy/dist)*aimY + (dz/dist)*aimZ; 
+                let lDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                if (lDist > 0.1 && lDist < 45) {
+                    let dot = (dx/lDist)*aimX + (dy/lDist)*aimY + (dz/lDist)*aimZ; 
                     if (dot > 0.90) { 
-                        let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - dist/45, 2);
+                        let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - lDist/45, 2);
                         lightIntensity += att * 1.5;
                     }
                 }
             }
-            for (let c of visibleCampfires) {
+            for (let c of visibleTorches) {
                 let dist = Math.hypot(cx - c.x, cy - c.y, cz - c.z); 
                 if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
             }
@@ -363,7 +381,7 @@ function render() {
             if (!p) continue;
             let sx = p.sx, sy = p.sy, sz = (fov/depth)*o.size; 
             
-            if (o.type === 'campfireBloom') {
+            if (o.type === 'torchBloom') {
                 let f = o.flicker, flameCenterY = sy - (0.4 * o.size / depth) * fov; 
                 let distFade = Math.min(1, 40 / depth); 
                 ctx.globalCompositeOperation = 'lighter';
@@ -404,7 +422,9 @@ function render() {
             } else if (o.type === 'emoji' || o.type === 'animal') {
                 const sprite = SpriteCache.get(o.emoji, o.targeted || (o.flash > 0), o.dead, objLight);
                 let scale = sz / 128;
+                if (o.ghost) ctx.globalAlpha = 0.5;
                 ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - (sprite.height - 20)*scale, sprite.width * scale, sprite.height * scale);
+                if (o.ghost) ctx.globalAlpha = 1.0;
             } else {
                 ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/depth), 0, 7); ctx.fill();
             }
