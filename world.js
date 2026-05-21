@@ -1,16 +1,12 @@
 // --- World Generation & Voxel Storage ---
-// Note: CHUNK_SIZE is omitted here as it is declared in the global/data scope.
-
 const WORLD_SEED = Math.random() * 10000;
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
 const chunkMeshes = new Map(), voxelMods = new Map(), terrainCache = new Map();
-const MAX_Z = 96; // Massive height limit for deep digging and tall mountains
+const MAX_Z = 96;
 
-// Globals kept for backward compatibility with external files
 const WATER_LEVEL = 24;
 const WATER_HEIGHT = 24.35; 
 
-// --- 3D Noise Implementation ---
 function hash(x, y, z) {
     let h = (x * 127.1 + y * 311.7 + z * 74.7 + WORLD_SEED) * 43758.5453123;
     return h - Math.floor(h);
@@ -45,11 +41,9 @@ function fbm2D(x, y, octaves) {
     return v;
 }
 
-// --- Terrain & Biome Logic ---
 function getTerrain(x, y) {
     let nx = x * 0.003, ny = y * 0.003;
     
-    // Base continent shapes
     let elevation = fbm2D(nx, ny, 4); 
     let moisture = fbm2D(nx + 100, ny + 100, 3);
     let roughness = fbm2D(nx * 3, ny * 3, 3);
@@ -59,171 +53,146 @@ function getTerrain(x, y) {
     let lakeSurface = 0;
     let isLake = false;
 
-    // 1. Winding Rivers & Dynamic Valleys
     let heightDiff = Math.max(0, baseH - oceanSurface);
-    
-    // The higher the terrain, the wider the valley required to slope down naturally
     let dynamicValleyWidth = 0.06 + (heightDiff * 0.004); 
     
     let riverNoise = Math.abs(fbm2D(nx * 1.2 + 50, ny * 1.2 + 50, 3) - 0.5) * 2.0; 
     
     if (riverNoise < dynamicValleyWidth && baseH > oceanSurface - 5) {
-        let riverCenter = 0.015; // The actual flat water channel width
+        let riverCenter = 0.015; 
         let carveAlpha = 0;
         
         if (riverNoise < riverCenter) {
-            carveAlpha = 1.0; // Flat bottom
+            carveAlpha = 1.0; 
         } else {
-            // Smoothly roll the terrain down into the valley 
             let t = 1.0 - ((riverNoise - riverCenter) / (dynamicValleyWidth - riverCenter));
-            carveAlpha = t * t * (3.0 - 2.0 * t); // Smoothstep curve
+            carveAlpha = t * t * (3.0 - 2.0 * t); 
         }
         
         let riverBottom = oceanSurface - 3 - (roughness * 2); 
         baseH = lerp(baseH, riverBottom, carveAlpha);
     }
 
-    // 2. Large Lakes & Scattered Ponds
     let lakeMask = fbm2D(nx * 4 + 20, ny * 4 + 20, 2);
-    let pondMask = fbm2D(nx * 15, ny * 15, 2); // High frequency for small scattered pools
+    let pondMask = fbm2D(nx * 15, ny * 15, 2); 
 
     if (lakeMask > 0.65 || pondMask > 0.72) {
         isLake = true;
-        
-        // Snap water level to local terrain height to create perched mountain pools
         let poolLevel = Math.floor((baseH - 1) / 4) * 4; 
         lakeSurface = Math.max(oceanSurface, poolLevel); 
-        
         let maskVal = lakeMask > 0.65 ? (lakeMask - 0.65) * 3 : (pondMask - 0.72) * 4;
-        
-        // Smoothstep the depth so pond shorelines slope nicely instead of dropping off
         let t = Math.min(1.0, maskVal * 1.5);
         let depthCurve = t * t * (3 - 2 * t);
         let depth = depthCurve * 15; 
-        
-        // +1.5 ensures the outer rim stays just above water level for a natural bank
         baseH = Math.min(baseH, lakeSurface + 1.5 - depth);
     }
 
     return { baseH, lakeSurface, isLake, oceanSurface, moisture, elevation };
 }
 
-// Ultra-fast memory cache to prevent CPU freeze on load
 function getTerrainFast(x, y) {
     let key = `${Math.floor(x)},${Math.floor(y)}`;
     let val = terrainCache.get(key);
     if (val !== undefined) return val;
     let t = getTerrain(x, y);
     terrainCache.set(key, t);
-    if (terrainCache.size > 20000) terrainCache.clear(); // Reduced from 100000 to prevent GC stutters when traversing massive render distances
+    if (terrainCache.size > 20000) terrainCache.clear();
     return t;
 }
 
-// Legacy Compat Wrappers
 function getGridBaseHeight(x, y) { return Math.floor(getTerrainFast(x, y).baseH); }
 function getGridBaseHeightFloat(x, y) { return getTerrainFast(x, y).baseH; }
 function getBiome(x, y) { return getTerrainFast(x, y).moisture; }
 
 function getVoxel(x, y, z, t = null) {
-    if (z < 0) return 1; // Bedrock
-    if (z >= MAX_Z) return 0; // Sky Limit
+    if (z < 0) return 1; 
+    if (z >= MAX_Z) return 0; 
     
     let mod = voxelMods.get(`${x},${y},${z}`);
-    if (mod !== undefined) return mod === 1 ? 1 : 0;
+    if (mod !== undefined) return mod === 1 ? 1 : (mod === 3 ? 3 : 0);
     
     if (!t) t = getTerrainFast(x, y);
     
     let density = t.baseH - z;
     
-    // Performance Optimization: Quick exit for open air or deep rock (Skips 3D noise)
     if (density < -15) {
-        if (z <= t.oceanSurface) return 2; // Ocean Water
-        if (t.isLake && z <= t.lakeSurface) return 2; // Perched Mountain Lake
-        return 0; // Air
+        if (z <= t.oceanSurface) return 2; 
+        if (t.isLake && z <= t.lakeSurface) return 2; 
+        return 0; 
     }
-    if (density > 20) return 1; // Solid Deep Terrain
+    if (density > 20) return 1; 
     
-    // Add 3D overhangs and structure organically near the surface
     let structure = noise3D(x * 0.04, y * 0.04, z * 0.04);
     density += structure * 10.0; 
     
-    // Deep underground hollow caves
     let depth = t.baseH - z;
     if (depth > 12) {
         let caveNoise = Math.abs(noise3D(x * 0.03, y * 0.03, z * 0.03) - 0.5) * 2.0;
         if (caveNoise < 0.25) density -= (0.25 - caveNoise) * 40.0;
     }
     
-    if (density > 0) return 1; // Solid Terrain
-    if (z <= t.oceanSurface) return 2; // Ocean Water
-    if (t.isLake && z <= t.lakeSurface) return 2; // Perched Mountain Lake
+    if (density > 0) return 1; 
+    if (z <= t.oceanSurface) return 2; 
+    if (t.isLake && z <= t.lakeSurface) return 2; 
     
-    return 0; // Air
+    return 0; 
 }
 
-function getSolidFast(x, y, z) { return getVoxel(x, y, z) === 1; }
+function getSolidFast(x, y, z) { 
+    let v = getVoxel(x, y, z);
+    return v === 1 || v === 3; 
+}
 function getSolid(x, y, z) { return getSolidFast(x, y, z); }
 
-function getVoxelColor(x, y, z) {
+function getVoxelColor(x, y, z, vType = null) {
+    let v = vType || getVoxel(x, y, z);
+    if (v === 3) return { r: 150, g: 150, b: 150 };
+
     let t = getTerrainFast(x, y);
     let depthFromMacro = t.baseH - z;
     let colorNoise = hash(x, y, z) * 15;
     
-    // Determine true local surface & fluid presence
-    let isSurface = getVoxel(x, y, z + 1) !== 1; // True if Air or Water is directly above
+    let isSurface = (getVoxel(x, y, z + 1) !== 1 && getVoxel(x, y, z + 1) !== 3); 
     let isUnderWater = (z <= t.oceanSurface) || (t.isLake && z <= t.lakeSurface);
     
-    // 1. Bottom Layer: Grey Rock
-    let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0; // Mountains have thinner dirt
+    let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0; 
     if (depthFromMacro > rockDepth || (isSurface && depthFromMacro > 15.0)) {
-        let v = 90 + colorNoise;
-        return { r: v|0, g: (v*0.95)|0, b: (v*0.9)|0 };
+        let rv = 90 + colorNoise;
+        return { r: rv|0, g: (rv*0.95)|0, b: (rv*0.9)|0 };
     }
     
-    // 2. Middle Layer & Underwater Overrides: Brown Dirt / Sand
     if (!isSurface || isUnderWater) {
-        // Shallow underwater sand
         if (isUnderWater && (z >= t.oceanSurface - 2 || (t.isLake && z >= t.lakeSurface - 2))) {
-            return { r: 200 + colorNoise, g: 180 + colorNoise, b: 130 + colorNoise }; // Sand
+            return { r: 200 + colorNoise, g: 180 + colorNoise, b: 130 + colorNoise }; 
         }
-        // Standard Brown Dirt
         return { r: 95 + colorNoise, g: 65 + colorNoise, b: 35 + colorNoise }; 
     }
     
-    // 3. Top Layer: Surface Biomes
-    
-    // Beaches (just above water lines)
     if ((z >= t.oceanSurface && z <= t.oceanSurface + 1.5) || (t.isLake && z >= t.lakeSurface && z <= t.lakeSurface + 1.5)) {
-        return { r: 210 + colorNoise, g: 200 + colorNoise, b: 150 + colorNoise }; // Sand
+        return { r: 210 + colorNoise, g: 200 + colorNoise, b: 150 + colorNoise }; 
     }
-    
-    // Snowy Mountain Peaks
     if (t.elevation > 0.70 && z > t.baseH - 2.0) {
-        return { r: 240 + colorNoise, g: 245 + colorNoise, b: 255 + colorNoise }; // Snow
+        return { r: 240 + colorNoise, g: 245 + colorNoise, b: 255 + colorNoise }; 
     }
-    
-    // Desert Biome
     if (t.moisture < 0.35) {
-        return { r: 200 + colorNoise, g: 175 + colorNoise, b: 110 + colorNoise }; // Desert Sand
+        return { r: 200 + colorNoise, g: 175 + colorNoise, b: 110 + colorNoise }; 
     }
-    
-    // Forest / Lush Biome
     if (t.moisture > 0.6) {
-        return { r: 55 + colorNoise, g: 120 + colorNoise, b: 45 + colorNoise }; // Dark green grass
+        return { r: 55 + colorNoise, g: 120 + colorNoise, b: 45 + colorNoise }; 
     }
-    
-    // Standard Plains
-    return { r: 85 + colorNoise, g: 150 + colorNoise, b: 65 + colorNoise }; // Bright green grass
+    return { r: 85 + colorNoise, g: 150 + colorNoise, b: 65 + colorNoise }; 
 }
 
-// Organically Smooth Surface Mesher
 function getSmoothVertex(cx, cy, cz) {
     let sumX = 0, sumY = 0, sumZ = 0, count = 0;
+    let touchesCube = false;
     
     for (let dx = -1; dx <= 0; dx++) {
         for (let dy = -1; dy <= 0; dy++) {
             for (let dz = -1; dz <= 0; dz++) {
-                if (getVoxel(cx + dx, cy + dy, cz + dz) === 1) {
+                let v = getVoxel(cx + dx, cy + dy, cz + dz);
+                if (v === 3) touchesCube = true; 
+                if (v === 1 || v === 3) {
                     sumX += (cx + dx + 0.5);
                     sumY += (cy + dy + 0.5);
                     sumZ += (cz + dz + 0.5);
@@ -233,6 +202,8 @@ function getSmoothVertex(cx, cy, cz) {
         }
     }
     
+    if (touchesCube) return { x: cx, y: cy, z: cz };
+
     if (count === 0 || count === 8) return { x: cx, y: cy, z: cz };
     
     let w = 0.5;
@@ -242,6 +213,8 @@ function getSmoothVertex(cx, cy, cz) {
         z: cz + (sumZ / count - cz) * w 
     };
 }
+
+function getCubeVertex(px, py, pz) { return { x: px, y: py, z: pz }; }
 
 function getWaterVertex(px, py, pz, isTop) {
     return { x: px, y: py, z: isTop ? pz - 0.15 : pz };
@@ -259,6 +232,13 @@ function buildChunkMesh(cx, cy) {
                 getWaterVertex(p3[0], p3[1], p3[2], p3[2] > z),
                 getWaterVertex(p4[0], p4[1], p4[2], p4[2] > z)
             ];
+        } else if (type === 3) {
+            pts = [
+                getCubeVertex(p1[0], p1[1], p1[2]),
+                getCubeVertex(p2[0], p2[1], p2[2]),
+                getCubeVertex(p3[0], p3[1], p3[2]),
+                getCubeVertex(p4[0], p4[1], p4[2])
+            ];
         } else { 
             pts = [
                 getSmoothVertex(p1[0], p1[1], p1[2]),
@@ -269,10 +249,11 @@ function buildChunkMesh(cx, cy) {
         }
         
         let isUnderground = false;
-        if (type === 1) {
+        if (type === 1 || type === 3) {
             let airX = x + nx, airY = y + ny, airZ = z + nz;
             for (let checkZ = airZ; checkZ < MAX_Z; checkZ++) {
-                if (getVoxel(airX, airY, checkZ) === 1) {
+                let checkV = getVoxel(airX, airY, checkZ);
+                if (checkV === 1 || checkV === 3) {
                     isUnderground = true;
                     break;
                 }
@@ -293,25 +274,32 @@ function buildChunkMesh(cx, cy) {
             let t = getTerrainFast(x, y);
             let colVoxels = new Uint8Array(MAX_Z);
             
-            // Prefetch entire Z column for massive speed boost
             for (let z = 0; z < MAX_Z; z++) {
                 colVoxels[z] = getVoxel(x, y, z, t);
             }
             
             for (let z = 0; z < MAX_Z; z++) {
                 let v = colVoxels[z];
-                if (v === 1) { 
-                    let col = getVoxelColor(x, y, z);
-                    if (z === MAX_Z - 1 || colVoxels[z+1] !== 1) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col, 1);
-                    if (z === 0 || colVoxels[z-1] !== 1) addFace(x, y, z, [x, y+1, z], [x+1, y+1, z], [x+1, y, z], [x, y, z], 0, 0, -1, 0.3, col, 1);
-                    if (getVoxel(x+1, y, z) !== 1) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, col, 1);
-                    if (getVoxel(x-1, y, z) !== 1) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, col, 1);
-                    if (getVoxel(x, y+1, z) !== 1) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col, 1);
-                    if (getVoxel(x, y-1, z) !== 1) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, 1);
+                if (v === 1 || v === 3) { 
+                    let col = getVoxelColor(x, y, z, v);
+                    let up = z < MAX_Z - 1 ? colVoxels[z+1] : 0;
+                    let dn = z > 0 ? colVoxels[z-1] : 1;
+                    let px = getVoxel(x+1, y, z);
+                    let nx = getVoxel(x-1, y, z);
+                    let py = getVoxel(x, y+1, z);
+                    let ny = getVoxel(x, y-1, z);
+
+                    if (z === MAX_Z - 1 || (up !== 1 && up !== 3)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col, v);
+                    if (z === 0 || (dn !== 1 && dn !== 3)) addFace(x, y, z, [x, y+1, z], [x+1, y+1, z], [x+1, y, z], [x, y, z], 0, 0, -1, 0.3, col, v);
+                    if (px !== 1 && px !== 3) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, col, v);
+                    if (nx !== 1 && nx !== 3) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, col, v);
+                    if (py !== 1 && py !== 3) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col, v);
+                    if (ny !== 1 && ny !== 3) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, v);
                 } 
                 else if (v === 2) { 
                     let wCol = { r: 30, g: 110, b: 200, a: 0.6 };
-                    if (z === MAX_Z - 1 || colVoxels[z+1] === 0) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, wCol, 2);
+                    let up = z < MAX_Z - 1 ? colVoxels[z+1] : 0;
+                    if (z === MAX_Z - 1 || up === 0) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, wCol, 2);
                     if (getVoxel(x+1, y, z) === 0) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, wCol, 2);
                     if (getVoxel(x-1, y, z) === 0) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, wCol, 2);
                     if (getVoxel(x, y+1, z) === 0) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, wCol, 2);
@@ -349,16 +337,35 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
     });
 }
 
-// Raycast downwards from max height to guarantee safe spawn floor
+function getAimVoxel(range) {
+    const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+    let step = 0.2;
+    for (let i = 0; i <= range / step; i++) {
+        let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
+        let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
+        let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step); 
+        
+        if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
+            return {
+                hitX: rx, hitY: ry, hitZ: rz,
+                placeX: rx - Math.cos(player.angle)*Math.cos(pitchAngle)*step,
+                placeY: ry - Math.sin(player.angle)*Math.cos(pitchAngle)*step,
+                placeZ: rz - Math.sin(pitchAngle)*step
+            };
+        }
+    }
+    return null;
+}
+
 let startZ = MAX_Z - 1;
 while (startZ > 0 && getVoxel(0, 0, startZ) !== 1) startZ--;
 player.x = 0; player.y = 0; player.z = startZ + 1.5;
 
 function getEntityAt(gx, gy) {
-    if (Math.sqrt(gx*gx + gy*gy) < 20) return null; // Safe Zone Clearance
+    if (Math.sqrt(gx*gx + gy*gy) < 20) return null; 
     
     let t = getTerrainFast(gx, gy);
-    if (t.isLake || t.baseH <= t.oceanSurface) return null; // No entities in water
+    if (t.isLake || t.baseH <= t.oceanSurface) return null; 
 
     let cluster = fbm2D(gx * 0.1, gy * 0.1, 2);
     let h = hash(gx, gy, 0);
@@ -434,7 +441,6 @@ function getMapChunk(cx, cy) {
     while (bZInt >= 0 && getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt) !== 1) bZInt--;
     let bZ = bZInt + 1.0;
 
-    // Check that we aren't spawning chests/animals deep underwater
     if (getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt + 1) !== 2) {
         if (chunkHash > 0.94) {
             let items = new Array(10).fill(null); 
@@ -454,7 +460,7 @@ function checkCollision(nx, ny, nz, pHeight = 1.4) {
     for (let x = Math.floor(nx - r); x <= Math.floor(nx + r); x++) {
         for (let y = Math.floor(ny - r); y <= Math.floor(ny + r); y++) {
             for (let z = Math.floor(nz); z <= Math.floor(nz + pHeight); z++) {
-                if (getVoxel(x, y, z) === 1) return true;
+                if (getSolid(x, y, z)) return true;
             }
         }
     }

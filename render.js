@@ -27,7 +27,7 @@ function render() {
         return { sx, sy, depth: rotX };
     }
 
-    let fovMult = 0.7 / currentZoom; // FOV multiplier for horizontal frustum culling
+    let fovMult = 0.7 / currentZoom; 
 
     if (gameState === 'overworld') {
         let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
@@ -121,7 +121,6 @@ function render() {
                 let cRotX = dx * cosA + dy * sinA;
                 let cRotY = dx * -sinA + dy * cosA;
                 
-                // Chunk-level Frustum Culling
                 if (cRotX < -CHUNK_SIZE * 1.5) continue; 
                 if (Math.abs(cRotY) > cRotX * fovMult + CHUNK_SIZE * 1.5) continue;
                 
@@ -137,7 +136,6 @@ function render() {
                     let rotX = dX * cosA + dY * sinA;
                     
                     if (rotX > -2 && rotX < VIEW_DIST) { 
-                        // Face-level Frustum Culling
                         let fRotY = dX * -sinA + dY * cosA;
                         if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
 
@@ -167,7 +165,6 @@ function render() {
             }
         }
 
-        // Render World Model Vehicles (Truck)
         for (let v of vehicles) {
             let dx = v.x - player.x, dy = v.y - player.y;
             let rotX = dx * cosA + dy * sinA;
@@ -245,6 +242,54 @@ function render() {
                 o.ghost = true;
             }
         }
+
+        let curW = WEAPONS[currentWeapon];
+        if (curW && (curW.toolType === 'place' || curW.toolType === 'place_cube' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
+            let aim = getAimVoxel(curW.range);
+            if (aim) {
+                let isPlace = (curW.toolType === 'place' || curW.toolType === 'place_cube');
+                let targetX = isPlace ? aim.placeX : aim.hitX;
+                let targetY = isPlace ? aim.placeY : aim.hitY;
+                let targetZ = isPlace ? aim.placeZ : aim.hitZ;
+                let isFine = (curW.toolType === 'place_cube' || curW.toolType === 'pickaxe');
+                
+                let mx = isFine ? Math.floor(targetX) : targetX;
+                let my = isFine ? Math.floor(targetY) : targetY;
+                let mz = isFine ? Math.floor(targetZ) : targetZ;
+                
+                let cx = mx, cy = my, cz = mz;
+                let sz = isFine ? 1.0 : 1.4;
+                if (!isFine) {
+                    cx -= sz/2; cy -= sz/2; cz -= sz/2;
+                }
+
+                let p000 = {x:cx, y:cy, z:cz}, p100 = {x:cx+sz, y:cy, z:cz}, p110 = {x:cx+sz, y:cy+sz, z:cz}, p010 = {x:cx, y:cy+sz, z:cz};
+                let p001 = {x:cx, y:cy, z:cz+sz}, p101 = {x:cx+sz, y:cy, z:cz+sz}, p111 = {x:cx+sz, y:cy+sz, z:cz+sz}, p011 = {x:cx, y:cy+sz, z:cz+sz};
+                
+                let col;
+                if (curW.toolType === 'place_cube') col = {r: 200, g: 200, b: 200, a: 0.35};
+                else if (curW.toolType === 'place') col = {r: 120, g: 255, b: 120, a: 0.35};
+                else col = {r: 255, g: 80, b: 80, a: 0.35}; 
+
+                let addPF = (p1, p2, p3, p4) => {
+                    let tCx = (p1.x+p3.x)/2, tCy = (p1.y+p3.y)/2, tCz = (p1.z+p3.z)/2;
+                    let dx = tCx - player.x, dy = tCy - player.y, dz = tCz - camZ;
+                    let rotX = dx * cosA + dy * sinA;
+                    if (rotX > 0.1 && rotX < VIEW_DIST) {
+                        let o = getRenderItem(); o.type = 'face'; 
+                        o.face = { pts: [p1,p2,p3,p4], col: col, shade: 1.0, isWater: false };
+                        o.depthSq = dx*dx + dy*dy + dz*dz;
+                        o.wX = tCx; o.wY = tCy; o.h = tCz;
+                    }
+                };
+                addPF(p001, p101, p111, p011);
+                addPF(p010, p110, p100, p000);
+                addPF(p000, p100, p101, p001);
+                addPF(p110, p010, p011, p111);
+                addPF(p100, p110, p111, p101);
+                addPF(p010, p000, p001, p011);
+            }
+        }
     } else {
         ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
         let interiorEnts = getInteriorEntities();
@@ -275,7 +320,6 @@ function render() {
         
         let objLight = gameState === 'overworld' ? ambient : 1.0;
         
-        // Prevent depth NaN crashing due to subtraction hacks or overlapping entities perfectly
         let depth = Math.max(0.1, Math.sqrt(Math.max(0, o.depthSq))); 
         
         let isUnderground = o.type === 'face' && !o.face.isWater && o.face.underground;

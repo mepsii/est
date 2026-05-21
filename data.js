@@ -99,7 +99,8 @@ const WEAPONS = {
     4: { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe' },
     5: { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe' },
     6: { name: "Shovel", fireRate: 15, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel' },
-    7: { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place' }
+    7: { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place' },
+    8: { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place_cube' }
 };
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };

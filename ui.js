@@ -192,7 +192,7 @@ window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = fals
 
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
-    if (e.key >= '1' && e.key <= '7') switchWeapon(parseInt(e.key));
+    if (e.key >= '1' && e.key <= '8') switchWeapon(parseInt(e.key));
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     
     if (e.key.toLowerCase() === 'e') {
@@ -239,7 +239,6 @@ document.getElementById('dbg-flight').onchange = e => flightMode = e.target.chec
 document.getElementById('dbg-spawnenemies').onchange = e => spawnEnemiesToggle = e.target.checked;
 document.getElementById('dbg-info').onchange = e => showDebugInfo = e.target.checked;
 
-// NEW: Dynamically process FOV and Render Distance UI changes
 document.getElementById('dbg-fov').oninput = e => { 
     let fovDegrees = parseInt(e.target.value);
     document.getElementById('dbg-fov-val').innerText = fovDegrees;
@@ -288,3 +287,17 @@ window.spawnVehicle = (type) => {
     let z = getSafeFloorZ(cx, cy, player.z + 5); 
     vehicles.push({ type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 }); 
 };
+
+// --- SPLASH TEXT LOADER ---
+fetch('splash.txt')
+    .then(res => res.ok ? res.text() : Promise.reject())
+    .then(txt => {
+        let lines = txt.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length > 0) {
+            document.getElementById('splash-text').innerText = lines[Math.floor(Math.random() * lines.length)];
+        }
+    })
+    .catch(() => {
+        // Fallback if splash.txt is missing
+        document.getElementById('splash-text').innerText = "placeholder!";
+    });

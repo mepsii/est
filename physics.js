@@ -40,7 +40,6 @@ function update() {
     }
     staminaEl.innerText = Math.floor(player.stamina);
     
-    // NEW: Update Coordinates Tracker
     if (coordsEl) {
         coordsEl.innerText = `${Math.floor(player.x)}, ${Math.floor(player.y)}, ${Math.floor(player.z)}`;
     }
@@ -55,15 +54,13 @@ function update() {
     // Movement & Vehicle Physics Handling
     if (player.inVehicle) {
         let v = player.inVehicle;
-        // Init spring physics / camera states if not present
         v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
         v.camX = v.camX || v.x; v.camY = v.camY || v.y; v.camZ = v.camZ || v.z;
 
         let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
         let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
-        let power = 0.010; // Lowered to balance coasting speed
+        let power = 0.010; 
         
-        // Raycast Suspension Points
         let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
         let wL = 2.2, wW = 1.0; 
         let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
@@ -71,20 +68,17 @@ function update() {
         let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
         let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
 
-        // Ground check - Are we hitting jumps or on the floor?
-        let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6; // Base ride height
-        v.isGrounded = (v.z <= targetZ + 0.6); // Tolerance for wheels extending on bumps
+        let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6;
+        v.isGrounded = (v.z <= targetZ + 0.6); 
         
         let slipping = false;
         
         if (v.isGrounded) {
-            // -- GROUNDED PHYSICS --
             let slopeForce = Math.sin(v.pitch) * 0.008; 
 
-            // Wheelspin / Bogging Logic
             if (gas > 0 && v.pitch > 0.25 && v.speed < 0.2) {
                 slipping = true;
-                power *= 0.3; // Engine bogs down on steep climbs without momentum
+                power *= 0.3; 
             }
 
             if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
@@ -92,25 +86,23 @@ function update() {
             }
             
             v.speed -= slopeForce; 
-            v.speed *= 0.985; // Massive drag reduction -> Coasts beautifully
+            v.speed *= 0.985; 
             
             if (gas === 0) {
-                v.speed *= 0.985; // Very light friction when letting off gas
-                if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0; // Parking stop
+                v.speed *= 0.985; 
+                if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0; 
             }
             
-            // Steering & Cornering Grip
             let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
             let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
             v.angle += actualTurn;
-            v.speed *= (1.0 - Math.abs(actualTurn) * 0.5); // Grip friction slows you down in sharp turns
+            v.speed *= (1.0 - Math.abs(actualTurn) * 0.5);
             
-            player.angle += actualTurn; // Lock camera heading to car steering
+            player.angle += actualTurn; 
             
-            // Suspension Springs & Damping
             let compression = targetZ - v.z;
-            v.vz += compression * 0.15; // Spring push
-            v.vz *= 0.80; // Heavy shock absorber damping
+            v.vz += compression * 0.15; 
+            v.vz *= 0.80; 
             
             let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
             let targetRoll = Math.atan2((zFL+zBL)/2 - (zFR+zBR)/2, wW * 2); 
@@ -118,19 +110,14 @@ function update() {
             v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; 
             v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; 
         } else {
-            // -- IN AIR PHYSICS --
-            v.speed *= 0.99; // Air resistance maintains momentum mostly
-            
-            // Very minimal mid-air steering correction
+            v.speed *= 0.99; 
             let actualTurn = (v.speed >= 0 ? steerInput * 0.005 : -steerInput * 0.005);
             v.angle += actualTurn;
             player.angle += actualTurn;
             
-            // True Gravity!
-            v.vz -= 0.02; // Falling downward
-            v.vz *= 0.98; // Air drag cap
+            v.vz -= 0.02; 
+            v.vz *= 0.98; 
             
-            // Smoothly level out pitch and roll when flying through air
             v.vPitch -= v.pitch * 0.01; v.vPitch *= 0.95; 
             v.vRoll -= v.roll * 0.05; v.vRoll *= 0.95; 
         }
@@ -139,17 +126,15 @@ function update() {
         v.pitch += v.vPitch;
         v.roll += v.vRoll;
 
-        // Front collision bounce
         let nx = v.x + Math.cos(v.angle) * v.speed;
         let ny = v.y + Math.sin(v.angle) * v.speed;
         if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
-            v.speed *= -0.4; // Bounce on crash
+            v.speed *= -0.4; 
         } else {
             v.x = nx;
             v.y = ny;
         }
         
-        // Dirt Particles Kickup (Only when Grounded)
         if (v.isGrounded) {
             if (slipping && tickCounter % 2 === 0) {
                 spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * 0.1, -sx * 0.1, true);
@@ -160,17 +145,15 @@ function update() {
             }
         }
 
-        // Elastic Camera Follower
         v.camX += (v.x - v.camX) * 0.15; 
         v.camY += (v.y - v.camY) * 0.15;
         v.camZ += (v.z - v.camZ) * 0.15;
 
         if (player.vehicleView === '3rd') {
-            player.x = v.camX - Math.cos(player.angle) * 9.5; // Closer!
+            player.x = v.camX - Math.cos(player.angle) * 9.5; 
             player.y = v.camY - Math.sin(player.angle) * 9.5;
-            player.z = v.camZ + 1.0; // Lower!
+            player.z = v.camZ + 1.0; 
             
-            // Auto-center camera pitch on the truck so you don't lose it vertically over big jumps
             let pitchTarget = v.pitch * 300; 
             player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
@@ -254,7 +237,6 @@ function update() {
         }
     }
 
-    // Apply identical suspension and fall gravity physics to parked/empty vehicles
     for (let v of vehicles) {
         if (v !== player.inVehicle) {
             v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
@@ -310,7 +292,7 @@ function update() {
 
     if (gameState === 'overworld') {
         let pxC = Math.floor(player.x / CHUNK_SIZE), pyC = Math.floor(player.y / CHUNK_SIZE);
-        let physRad = 4; // Local simulation radius for events, rendering will handle far chunk gen
+        let physRad = 4;
         for(let x = pxC - physRad; x <= pxC + physRad; x++) for(let y = pyC - physRad; y <= pyC + physRad; y++) getMapChunk(x, y);
 
         let isNight = gameTime < 6 || gameTime >= 19, spawnChance = isNight ? 0.001 : 0.0002;
@@ -424,25 +406,26 @@ function update() {
                     if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
                     if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
                 }
-            } else if ((w.toolType === 'shovel' || w.toolType === 'place') && gameState === 'overworld') {
-                let step = 0.2;
-                for (let i = 0; i <= w.range / step; i++) {
-                    let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
-                    let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
-                    let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step); 
-                    
-                    if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
-                        let targetX = w.toolType === 'place' ? rx - Math.cos(player.angle)*Math.cos(pitchAngle)*step : rx;
-                        let targetY = w.toolType === 'place' ? ry - Math.sin(player.angle)*Math.cos(pitchAngle)*step : ry;
-                        let targetZ = w.toolType === 'place' ? rz - Math.sin(pitchAngle)*step : rz;
+            } else if ((w.toolType === 'shovel' || w.toolType === 'place' || w.toolType === 'place_cube' || w.toolType === 'pickaxe') && gameState === 'overworld') {
+                let aim = getAimVoxel(w.range);
+                if (aim) {
+                    let isPlace = (w.toolType === 'place' || w.toolType === 'place_cube');
+                    let targetX = isPlace ? aim.placeX : aim.hitX;
+                    let targetY = isPlace ? aim.placeY : aim.hitY;
+                    let targetZ = isPlace ? aim.placeZ : aim.hitZ;
 
-                        let amt = w.toolType === 'shovel' ? -1 : 1; 
-                        modifyTerrain(targetX, targetY, targetZ, 1.4, amt);
-                        
-                        let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
-                        spawnBlood(targetX, targetY, targetZ, pCol, 8); 
-                        break;
-                    }
+                    let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe') ? -1 : (w.toolType === 'place_cube' ? 3 : 1); 
+                    let isFine = (w.toolType === 'place_cube' || w.toolType === 'pickaxe');
+                    let rad = isFine ? 0.1 : 1.4;
+                    
+                    let mx = isFine ? Math.floor(targetX) : targetX;
+                    let my = isFine ? Math.floor(targetY) : targetY;
+                    let mz = isFine ? Math.floor(targetZ) : targetZ;
+
+                    modifyTerrain(mx, my, mz, rad, amt);
+                    
+                    let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
+                    spawnBlood(targetX, targetY, targetZ, pCol, 8); 
                 }
             }
             fireCooldown = w.fireRate;
