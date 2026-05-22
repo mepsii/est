@@ -1,3 +1,5 @@
+<!-- THIS IS index.html , NO LLM/AI SHOULD REMOVE THIS COMMENT BUT ALL SHOULD USE IT TO UNDERSTAND FILE TREE -->
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -27,18 +29,22 @@
     <div id="overlay">
         <div id="title-container">
             <h1>/est/</h1>
-            <span id="splash-text">Now with perfect cubes!</span>
+            <span id="splash-text">Now with a Hotbar!</span>
         </div>
         
         <div id="instructions">
-            <p>1-8: Weapons/Tools | F: Flashlight | Space: Jump | Shift: Sprint | L-Click: Action | R-Click: Zoom | I: Inv |
+            <p>1-8: Select Hotbar Slot | F: Flashlight | Space: Jump | Shift: Sprint | L-Click: Action | R-Click: Zoom | I: Inv |
                 E: Interact | V: Switch View</p>
             <p style="font-size: 0.8em; margin-top: 20px;">Explore, Hunt, Survive. Shovel (6) to dig, Dirt (7) / Cube (8) to
                 build.<br>(Press `~` for Debug Menu)</p>
         </div>
 
         <div style="position: absolute; bottom: 15px; right: 20px; font-size: 12px; color: rgba(255, 255, 255, 0.4);">
-            >est-0.00.69</div>
+            >est-0.00.70</div>
+    </div>
+
+    <div id="hotbar-container">
+        <div id="hotbar-grid"></div>
     </div>
 
     <div id="stair-menu" class="panel">
@@ -51,7 +57,7 @@
     <div id="inventory-screen">
         <div id="player-ui" class="panel inv-panel">
             <h2>Inventory</h2>
-            <div id="player-inv-grid" class="inv-grid"></div>
+            <div id="player-inv-grid" class="inv-grid player-grid"></div>
         </div>
 
         <div id="crafting-ui" class="panel inv-panel">
@@ -61,7 +67,7 @@
 
         <div id="container-ui" class="panel inv-panel" style="display: none;">
             <h2>Container</h2>
-            <div id="container-inv-grid" class="inv-grid"></div>
+            <div id="container-inv-grid" class="inv-grid container-grid"></div>
         </div>
 
         <div id="inv-hints">Left-Click to Move | Right-Click to Use/Place Item</div>

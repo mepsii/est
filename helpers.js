@@ -1,3 +1,5 @@
+//THIS IS helpers.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 // --- Game Helper Functions ---
 function getSkyColor(t) {
     const stops = [ [0, 5, 5, 20], [5, 5, 5, 30], [6.5, 255, 120, 80], [8, 135, 206, 235], [18, 135, 206, 235], [19.5, 255, 100, 50], [21, 5, 5, 20], [24, 5, 5, 20] ];
@@ -46,7 +48,20 @@ function spawnDirt(x, y, z, vx, vy, isHeavy) {
     }
 }
 
-function switchWeapon(id) { currentWeapon = id; weaponEl.innerText = WEAPONS[id].name; fireCooldown = 5; }
+function selectHotbar(index) {
+    hotbarSelection = index;
+    let item = inventory[index];
+    if (item && item.id && ITEMS[item.id]) {
+        weaponEl.innerText = ITEMS[item.id].name;
+    } else if (item) {
+        weaponEl.innerText = item.emoji + " Item";
+    } else {
+        weaponEl.innerText = "Empty Hands";
+    }
+    fireCooldown = 5;
+    if (typeof updateHotbarUI === 'function') updateHotbarUI();
+}
+
 function takeDamage(amt) { if (godMode) return; player.hp -= amt; hpEl.innerText = player.hp; damageFlash.style.opacity = '0.5'; setTimeout(() => damageFlash.style.opacity = '0', 100); if (player.hp <= 0) location.reload(); }
 
 function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }

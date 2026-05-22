@@ -1,3 +1,5 @@
+//THIS IS render.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
@@ -243,7 +245,9 @@ function render() {
             }
         }
 
-        let curW = WEAPONS[currentWeapon];
+        let activeItem = inventory[hotbarSelection];
+        let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+
         if (curW && (curW.toolType === 'place' || curW.toolType === 'place_cube' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
             let aim = getAimVoxel(curW.range);
             if (aim) {

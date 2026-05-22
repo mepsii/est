@@ -1,3 +1,5 @@
+//THIS IS data.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 // --- Globals & DOM ---
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -92,15 +94,15 @@ const RECIPES =[
     { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 2 } }
 ];
 
-const WEAPONS = { 
-    1: { name: "Pistol", fireRate: 15, spread: 0.005, speed: 2.5, count: 1, dmg: 3 }, 
-    2: { name: "SMG", fireRate: 4, spread: 0.04, speed: 3.0, count: 1, dmg: 1 }, 
-    3: { name: "Shotgun", fireRate: 40, spread: 0.08, speed: 2.2, count: 12, dmg: 2 },
-    4: { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe' },
-    5: { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe' },
-    6: { name: "Shovel", fireRate: 15, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel' },
-    7: { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place' },
-    8: { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place_cube' }
+const ITEMS = { 
+    'pistol': { name: "Pistol", fireRate: 15, spread: 0.005, speed: 2.5, count: 1, dmg: 3, type: 'weapon' }, 
+    'smg': { name: "SMG", fireRate: 4, spread: 0.04, speed: 3.0, count: 1, dmg: 1, type: 'weapon' }, 
+    'shotgun': { name: "Shotgun", fireRate: 40, spread: 0.08, speed: 2.2, count: 12, dmg: 2, type: 'weapon' },
+    'axe': { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe', type: 'tool' },
+    'pickaxe': { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe', type: 'tool' },
+    'shovel': { name: "Shovel", fireRate: 15, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel', type: 'tool' },
+    'dirt': { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place', type: 'block' },
+    'cube': { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place_cube', type: 'block' }
 };
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };
@@ -122,14 +124,27 @@ let gameTime = 12.0;
 let timeSpeed = 1.0;
 let isInventoryOpen = false, isDebugOpen = false, isStairMenuOpen = false, interactTarget = null, activeContainer = null;
 let placementItem = null, placementIndex = -1;
-let inventory = new Array(20).fill(null); 
+
+let inventory = new Array(24).fill(null); 
+// Assign initial starting gear to Hotbar slots
+inventory[0] = { id: 'pistol', type: 'weapon', emoji: '🔫', count: 1 };
+inventory[1] = { id: 'smg', type: 'weapon', emoji: '📠', count: 1 };
+inventory[2] = { id: 'shotgun', type: 'weapon', emoji: '🪈', count: 1 };
+inventory[3] = { id: 'axe', type: 'tool', emoji: '🪓', count: 1 };
+inventory[4] = { id: 'pickaxe', type: 'tool', emoji: '⛏️', count: 1 };
+inventory[5] = { id: 'shovel', type: 'tool', emoji: '🥄', count: 1 };
+inventory[6] = { id: 'dirt', type: 'block', emoji: '🟫', count: 64 };
+inventory[7] = { id: 'cube', type: 'block', emoji: '🧊', count: 64 };
+
+let hotbarSelection = 0;
+
 let godMode = false, noclip = false, speedMult = 1.0;
 let flightMode = false, jumpPower = 0.28;
 let infiniteStamina = false, sprintMult = 1.5;
 let spawnEnemiesToggle = true, showDebugInfo = false;
 let isFlashlightOn = false;
 
-let currentWeapon = 1, score = 0, isPaused = true, tickCounter = 0;
+let score = 0, isPaused = true, tickCounter = 0;
 let baseZoom = 0.8;
 let isMouseDown = false, isZooming = false, currentZoom = 0.8, fireCooldown = 0, keys = {};
 let gameState = 'overworld', activeBuilding = null, activeFloor = 0, savedOverworld = { x: 0, y: 0, z: 0, angle: 0, pitch: 0 };

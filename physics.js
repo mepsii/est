@@ -1,3 +1,5 @@
+//THIS IS physics.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 // --- Update Physics & Logic ---
 function update() {
     if (isPaused) return;
@@ -374,64 +376,77 @@ function update() {
 
     if (fireCooldown > 0) fireCooldown--;
     if (isMouseDown && fireCooldown <= 0 && (!player.inVehicle || player.vehicleView === '1st')) {
-        const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom), w = WEAPONS[currentWeapon];
-        if (w.isMelee) {
-            let hitTarget = null; let cDist = w.range;
-            if (gameState === 'overworld') {
-                for (let e of enemies) { let d = Math.hypot(player.x - e.x, player.y - e.y); if (d < cDist) { let a = Math.atan2(e.y - player.y, e.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - a), Math.cos(player.angle - a))); if (ad < 0.6) { cDist = d; hitTarget = { obj: e, type: 'enemy' }; } } }
-                for (let a of animals) { if(a.dead) continue; let d = Math.hypot(player.x - a.x, player.y - a.y); if (d < cDist) { let aTo = Math.atan2(a.y - player.y, a.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: a, type: 'animal' }; } } }
-                
-                if (!hitTarget && (w.toolType === 'axe' || w.toolType === 'pickaxe')) {
-                    let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
-                    for(let cx = pCx - 1; cx <= pCx + 1; cx++) for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
-                        let chunk = getMapChunk(cx, cy);
-                        for(let i=0; i<chunk.length; i++) {
-                            let cObj = chunk[i]; if (cObj.hp !== undefined) { let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy); if (d < cDist) { let aTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i }; } } }
+        let activeItem = inventory[hotbarSelection];
+        let w = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+
+        if (w) {
+            const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+            if (w.isMelee) {
+                let hitTarget = null; let cDist = w.range;
+                if (gameState === 'overworld') {
+                    for (let e of enemies) { let d = Math.hypot(player.x - e.x, player.y - e.y); if (d < cDist) { let a = Math.atan2(e.y - player.y, e.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - a), Math.cos(player.angle - a))); if (ad < 0.6) { cDist = d; hitTarget = { obj: e, type: 'enemy' }; } } }
+                    for (let a of animals) { if(a.dead) continue; let d = Math.hypot(player.x - a.x, player.y - a.y); if (d < cDist) { let aTo = Math.atan2(a.y - player.y, a.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: a, type: 'animal' }; } } }
+                    
+                    if (!hitTarget && (w.toolType === 'axe' || w.toolType === 'pickaxe')) {
+                        let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
+                        for(let cx = pCx - 1; cx <= pCx + 1; cx++) for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
+                            let chunk = getMapChunk(cx, cy);
+                            for(let i=0; i<chunk.length; i++) {
+                                let cObj = chunk[i]; if (cObj.hp !== undefined) { let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy); if (d < cDist) { let aTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i }; } } }
+                            }
                         }
                     }
                 }
-            }
 
-            if (hitTarget) {
-                if (hitTarget.type === 'enemy') {
-                    hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
-                    let bCol = getBloodColor(hitTarget.obj.type); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
-                    if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
-                } else if (hitTarget.type === 'animal') {
-                    hitTarget.obj.hp -= w.dmg; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
-                    let bCol = getBloodColor('animal'); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
-                    if (hitTarget.obj.hp <= 0) { hitTarget.obj.dead = true; score += 25; scoreEl.innerText = score; hitTarget.obj.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) hitTarget.obj.items[k] = { ...hitTarget.obj.drop }; }
-                } else if (hitTarget.type === 'static') {
-                    let sObj = hitTarget.obj, isTree = TREE_EMOJIS.has(sObj.emoji), isRock = sObj.emoji === '🪨', validHit = false;
-                    if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
-                    if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
+                if (hitTarget) {
+                    if (hitTarget.type === 'enemy') {
+                        hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
+                        let bCol = getBloodColor(hitTarget.obj.type); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
+                        if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
+                    } else if (hitTarget.type === 'animal') {
+                        hitTarget.obj.hp -= w.dmg; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
+                        let bCol = getBloodColor('animal'); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
+                        if (hitTarget.obj.hp <= 0) { hitTarget.obj.dead = true; score += 25; scoreEl.innerText = score; hitTarget.obj.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) hitTarget.obj.items[k] = { ...hitTarget.obj.drop }; }
+                    } else if (hitTarget.type === 'static') {
+                        let sObj = hitTarget.obj, isTree = TREE_EMOJIS.has(sObj.emoji), isRock = sObj.emoji === '🪨', validHit = false;
+                        if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
+                        if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
+                    }
+                } else if ((w.toolType === 'shovel' || w.toolType === 'place' || w.toolType === 'place_cube' || w.toolType === 'pickaxe') && gameState === 'overworld') {
+                    let aim = getAimVoxel(w.range);
+                    if (aim) {
+                        let isPlace = (w.toolType === 'place' || w.toolType === 'place_cube');
+                        let targetX = isPlace ? aim.placeX : aim.hitX;
+                        let targetY = isPlace ? aim.placeY : aim.hitY;
+                        let targetZ = isPlace ? aim.placeZ : aim.hitZ;
+
+                        let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe') ? -1 : (w.toolType === 'place_cube' ? 3 : 1); 
+                        let isFine = (w.toolType === 'place_cube' || w.toolType === 'pickaxe');
+                        let rad = isFine ? 0.1 : 1.4;
+                        
+                        let mx = isFine ? Math.floor(targetX) : targetX;
+                        let my = isFine ? Math.floor(targetY) : targetY;
+                        let mz = isFine ? Math.floor(targetZ) : targetZ;
+
+                        modifyTerrain(mx, my, mz, rad, amt);
+                        
+                        let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
+                        spawnBlood(targetX, targetY, targetZ, pCol, 8); 
+
+                        if (isPlace) {
+                            activeItem.count--;
+                            if (activeItem.count <= 0) {
+                                inventory[hotbarSelection] = null;
+                            }
+                            updateInventories();
+                        }
+                    }
                 }
-            } else if ((w.toolType === 'shovel' || w.toolType === 'place' || w.toolType === 'place_cube' || w.toolType === 'pickaxe') && gameState === 'overworld') {
-                let aim = getAimVoxel(w.range);
-                if (aim) {
-                    let isPlace = (w.toolType === 'place' || w.toolType === 'place_cube');
-                    let targetX = isPlace ? aim.placeX : aim.hitX;
-                    let targetY = isPlace ? aim.placeY : aim.hitY;
-                    let targetZ = isPlace ? aim.placeZ : aim.hitZ;
-
-                    let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe') ? -1 : (w.toolType === 'place_cube' ? 3 : 1); 
-                    let isFine = (w.toolType === 'place_cube' || w.toolType === 'pickaxe');
-                    let rad = isFine ? 0.1 : 1.4;
-                    
-                    let mx = isFine ? Math.floor(targetX) : targetX;
-                    let my = isFine ? Math.floor(targetY) : targetY;
-                    let mz = isFine ? Math.floor(targetZ) : targetZ;
-
-                    modifyTerrain(mx, my, mz, rad, amt);
-                    
-                    let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
-                    spawnBlood(targetX, targetY, targetZ, pCol, 8); 
-                }
+                fireCooldown = w.fireRate;
+            } else {
+                for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: player.z + 1.2, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
+                fireCooldown = w.fireRate;
             }
-            fireCooldown = w.fireRate;
-        } else {
-            for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: player.z + 1.2, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
-            fireCooldown = w.fireRate;
         }
     }
 

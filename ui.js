@@ -1,28 +1,93 @@
+//THIS IS ui.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
+// Drag & Drop State Variables
+let dragItemData = null;
+let dragSourceType = null;
+let dragSourceIndex = -1;
+let dragEl = null;
+
 // --- Inventory & UI Init ---
-for(let i = 0; i < 20; i++) { let slot = document.createElement('div'); slot.className = 'inv-slot'; slot.dataset.index = i; slot.dataset.type = 'player'; playerInvGrid.appendChild(slot); }
-for(let i = 0; i < 10; i++) { let slot = document.createElement('div'); slot.className = 'inv-slot'; slot.dataset.index = i; slot.dataset.type = 'container'; containerInvGrid.appendChild(slot); }
+for(let i = 0; i < 24; i++) { 
+    let slot = document.createElement('div'); 
+    slot.className = 'inv-slot'; 
+    slot.dataset.index = i; 
+    slot.dataset.type = 'player'; 
+    playerInvGrid.appendChild(slot); 
+}
+
+const hotbarGrid = document.getElementById('hotbar-grid');
+for(let i = 0; i < 8; i++) {
+    let slot = document.createElement('div');
+    slot.className = 'hotbar-slot';
+    slot.id = 'hotbar-slot-' + i;
+    hotbarGrid.appendChild(slot);
+}
+
+for(let i = 0; i < 10; i++) { 
+    let slot = document.createElement('div'); 
+    slot.className = 'inv-slot'; 
+    slot.dataset.index = i; 
+    slot.dataset.type = 'container'; 
+    containerInvGrid.appendChild(slot); 
+}
+
+document.getElementById('inv-hints').innerText = "Drag & Drop to Move | Right-Click to Use";
+
+function updateHotbarUI() {
+    for(let i = 0; i < 8; i++) {
+        let slot = document.getElementById('hotbar-slot-' + i);
+        if (slot) {
+            if (i === hotbarSelection) slot.classList.add('active');
+            else slot.classList.remove('active');
+        }
+    }
+}
 
 function updateInventories() {
     const pSlots = playerInvGrid.children;
-    for(let i = 0; i < 20; i++) { 
+    for(let i = 0; i < 24; i++) { 
         let item = inventory[i];
-        pSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+        if (pSlots[i]) {
+            pSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+        }
     }
+    
     if (activeContainer) { 
         const cSlots = containerInvGrid.children; 
         for(let i = 0; i < 10; i++) { 
             let item = activeContainer.items[i];
-            cSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+            if (cSlots[i]) {
+                cSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+            }
         } 
     }
+
+    // Reflect inventory 0-7 directly onto Hotbar
+    for(let i = 0; i < 8; i++) {
+        let item = inventory[i];
+        let slot = document.getElementById('hotbar-slot-' + i);
+        if (slot) {
+            let numLabel = `<span style="position:absolute; top:2px; left:4px; color: rgba(255,255,255,0.5); font-size: 10px; font-weight: bold;">${i+1}</span>`;
+            slot.innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}${numLabel}` : numLabel;
+        }
+    }
+
+    updateHotbarUI();
     updateCraftingUI();
+
+    if (inventory[hotbarSelection]) {
+        let item = inventory[hotbarSelection];
+        weaponEl.innerText = (item.id && ITEMS[item.id]) ? ITEMS[item.id].name : item.emoji + " Item";
+    } else {
+        weaponEl.innerText = "Empty Hands";
+    }
 }
 
 function updateCraftingUI() {
     craftingList.innerHTML = '';
     let resourceCounts = {};
     for (let item of inventory) {
-        if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch')) {
+        if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch' || item.type === 'block')) {
             resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
         }
     }
@@ -61,7 +126,7 @@ function craftRecipe(index) {
 }
 
 function giveItem(itemData) {
-    if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch') {
+    if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch' || itemData.type === 'block') {
         let existing = inventory.find(i => i && i.emoji === itemData.emoji);
         if (existing) { existing.count = (existing.count || 1) + (itemData.count || 1); updateInventories(); return; }
     }
@@ -102,12 +167,23 @@ function getPlacementTarget() {
     return { x: hitX, y: hitY, z: hitZ };
 }
 
+// Drag Start and Right-Click Logic
 invScreen.addEventListener('mousedown', (e) => {
-    if (!e.target.closest('.inv-slot')) return;
-    let slotEl = e.target.closest('.inv-slot'), index = parseInt(slotEl.dataset.index), type = slotEl.dataset.type, isRightClick = e.button === 2;
-    if (type === 'player') {
-        let item = inventory[index]; if (!item) return;
-        if (isRightClick) { 
+    let slotEl = e.target.closest('.inv-slot');
+    if (!slotEl) return;
+    
+    let index = parseInt(slotEl.dataset.index);
+    let type = slotEl.dataset.type;
+    let targetInv = type === 'player' ? inventory : activeContainer.items;
+    let isRightClick = e.button === 2;
+
+    if (isRightClick) {
+        if (dragItemData) return; // Ignore right-clicks while dragging
+        
+        let item = targetInv[index]; 
+        if (!item) return;
+
+        if (type === 'player') { 
             if (item.type === 'heal' && (player.hp < 100 || godMode)) { 
                 player.hp = godMode ? player.hp : Math.min(100, player.hp + item.amount); hpEl.innerText = player.hp; 
                 inventory[index] = null; healFlash.style.background = 'lime'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
@@ -125,20 +201,81 @@ invScreen.addEventListener('mousedown', (e) => {
                 canvas.requestPointerLock();
                 updateInventories();
             }
-        } else if (activeContainer) { 
-            let emptyIndex = activeContainer.items.findIndex(x => x === null);
-            if (emptyIndex !== -1) { activeContainer.items[emptyIndex] = item; inventory[index] = null; updateInventories(); }
         }
-    } else if (type === 'container' && !isRightClick) {
-        let item = activeContainer.items[index]; if (!item) return;
-        if (item.type === 'resource' || item.type === 'building' || item.type === 'torch') {
-            let existing = inventory.find(i => i && i.emoji === item.emoji);
-            if (existing) { existing.count = (existing.count || 1) + (item.count || 1); activeContainer.items[index] = null; updateInventories(); return; }
+    } else if (e.button === 0) {
+        // Drag Start
+        let item = targetInv[index];
+        if (item) {
+            dragItemData = item;
+            dragSourceType = type;
+            dragSourceIndex = index;
+            targetInv[index] = null; // Temporarily clear from source array to not render it
+
+            dragEl = document.createElement('div');
+            dragEl.className = 'drag-item';
+            dragEl.innerHTML = `${item.emoji}${item.count > 1 ? '<span class="drag-count">'+item.count+'</span>' : ''}`;
+            document.body.appendChild(dragEl);
+            
+            dragEl.style.left = e.clientX + 'px';
+            dragEl.style.top = e.clientY + 'px';
+            
+            updateInventories();
         }
-        let emptyIndex = inventory.findIndex(x => x === null);
-        if (emptyIndex !== -1) { inventory[emptyIndex] = item; activeContainer.items[index] = null; updateInventories(); }
     }
 });
+
+// Drag Move Logic
+window.addEventListener('mousemove', e => {
+    if (dragEl) {
+        dragEl.style.left = e.clientX + 'px';
+        dragEl.style.top = e.clientY + 'px';
+    }
+});
+
+// Drag Drop Logic
+window.addEventListener('mouseup', e => {
+    if (e.button === 0 && dragItemData) {
+        let dropSlot = e.target.closest('.inv-slot');
+        let sourceInv = dragSourceType === 'player' ? inventory : activeContainer.items;
+        
+        if (dropSlot) {
+            let destType = dropSlot.dataset.type;
+            let destIndex = parseInt(dropSlot.dataset.index);
+            let destInv = destType === 'player' ? inventory : activeContainer.items;
+
+            // If dropped on the exact same slot it was taken from
+            if (destType === dragSourceType && destIndex === dragSourceIndex) {
+                sourceInv[dragSourceIndex] = dragItemData;
+            } else {
+                let destItem = destInv[destIndex];
+
+                // If hovering the identical item and it's stackable
+                if (destItem && destItem.emoji === dragItemData.emoji && destItem.id === dragItemData.id && destItem.type !== 'weapon' && destItem.type !== 'tool') {
+                    destItem.count += dragItemData.count;
+                    dragItemData = null; // Successfully merged, drag item consumed
+                } else {
+                    // Swap items
+                    destInv[destIndex] = dragItemData;
+                    sourceInv[dragSourceIndex] = destItem; // destItem is null if empty, or an item if swapping
+                }
+            }
+        } else {
+            // Cancel Drag - return to source if dropped outside
+            sourceInv[dragSourceIndex] = dragItemData;
+        }
+
+        // Cleanup
+        if (dragEl) {
+            dragEl.remove();
+            dragEl = null;
+        }
+        dragItemData = null;
+        dragSourceType = null;
+        dragSourceIndex = -1;
+        updateInventories();
+    }
+});
+
 window.addEventListener('contextmenu', e => e.preventDefault());
 
 // --- Input Bindings ---
@@ -153,7 +290,20 @@ document.addEventListener('pointerlockchange', () => {
         containerUI.style.display = (isInventoryOpen && activeContainer) ? 'flex' : 'none'; 
         debugMenu.style.display = isDebugOpen ? 'block' : 'none'; stairMenu.style.display = isStairMenuOpen ? 'block' : 'none';
         interactTooltip.style.display = 'none'; keys = {}; 
-    } else { isInventoryOpen = isDebugOpen = isStairMenuOpen = false; activeContainer = null; overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; }
+    } else { 
+        // Handles dropping an item back if UI is closed mid-drag
+        if (dragItemData) {
+            let sourceInv = dragSourceType === 'player' ? inventory : activeContainer.items;
+            sourceInv[dragSourceIndex] = dragItemData;
+            if (dragEl) { dragEl.remove(); dragEl = null; }
+            dragItemData = null;
+        }
+        
+        isInventoryOpen = isDebugOpen = isStairMenuOpen = false; 
+        activeContainer = null; 
+        overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; 
+        updateInventories();
+    }
 });
 
 window.addEventListener('mousedown', e => { 
@@ -192,7 +342,7 @@ window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = fals
 
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
-    if (e.key >= '1' && e.key <= '8') switchWeapon(parseInt(e.key));
+    if (e.key >= '1' && e.key <= '8') selectHotbar(parseInt(e.key) - 1);
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     
     if (e.key.toLowerCase() === 'e') {
@@ -301,3 +451,7 @@ fetch('splash.txt')
         // Fallback if splash.txt is missing
         document.getElementById('splash-text').innerText = "placeholder!";
     });
+
+// Init hotbar UI states immediately
+updateInventories();
+selectHotbar(0);

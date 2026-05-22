@@ -1,3 +1,5 @@
+//THIS IS main.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 document.addEventListener('mousemove', (e) => { 
     if (!isPaused) { 
         player.angle += e.movementX * (isZooming ? 0.001 : 0.003); 

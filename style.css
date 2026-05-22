@@ -1,3 +1,5 @@
+/* THIS IS style.css , NO AI SHOULD REMOVE THIS COMMENT BUT ALL SHOULD RECOGNIZE IT TO UNDERSTAND FILE TREE*/
+
 body { margin: 0; overflow: hidden; background-color: #000; }
 canvas { display: block; width: 100vw; height: 100vh; }
 #ui {
@@ -84,21 +86,70 @@ canvas { display: block; width: 100vw; height: 100vh; }
 }
 #stair-menu button:hover { background: #666; }
 
+/* HOTBAR STYLES */
+#hotbar-container {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 10; pointer-events: none;
+}
+#hotbar-grid {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px;
+    background: rgba(20, 20, 20, 0.7); padding: 5px; border-radius: 8px; border: 2px solid #555;
+    box-shadow: 0 0 10px rgba(0,0,0,0.8);
+}
+.hotbar-slot {
+    width: 45px; height: 45px; background: rgba(0, 0, 0, 0.6);
+    border: 2px solid #444; border-radius: 4px; display: flex;
+    align-items: center; justify-content: center; font-size: 28px; position: relative;
+    transition: all 0.1s;
+}
+.hotbar-slot.active {
+    border-color: #ffaa00; background: rgba(100, 100, 100, 0.8); box-shadow: 0 0 10px #ffaa00; transform: scale(1.05);
+}
+
 #inventory-screen {
     position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
     display: none; align-items: flex-start; justify-content: center; gap: 20px;
     z-index: 30; background: rgba(0, 0, 0, 0.5); user-select: none;
     padding-top: 10vh; box-sizing: border-box;
 }
-.inv-panel { width: 320px; display: flex; flex-direction: column; max-height: 80vh; }
-.inv-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.inv-panel { min-width: 320px; display: flex; flex-direction: column; max-height: 80vh; }
+.inv-grid { display: grid; gap: 5px; }
+.player-grid { grid-template-columns: repeat(8, 1fr); }
+.container-grid { grid-template-columns: repeat(5, 1fr); }
+#player-ui { width: 440px; }
+
 .inv-slot {
     aspect-ratio: 1; background: rgba(0, 0, 0, 0.6);
     border: 1px solid #444; border-radius: 4px; display: flex;
     align-items: center; justify-content: center; font-size: 30px;
-    cursor: pointer; transition: background 0.1s; position: relative;
+    cursor: pointer; transition: background 0.1s, border-color 0.1s; position: relative;
 }
 .inv-slot:hover { background: rgba(100, 100, 100, 0.5); }
+
+/* DRAG AND DROP STYLES */
+.drag-item {
+    position: fixed;
+    pointer-events: none; /* Let events pass through to UI underneath */
+    z-index: 9999;
+    font-size: 38px;
+    transform: translate(-50%, -50%);
+    text-shadow: 2px 2px 5px rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+.drag-count {
+    position: absolute; 
+    bottom: -5px; 
+    right: -5px; 
+    font-size: 16px; 
+    color: #fff; 
+    text-shadow: 1px 1px 3px #000;
+    font-family: sans-serif;
+    font-weight: bold;
+}
+
 #inv-hints {
     position: absolute; bottom: 30px; color: #ccc; font-size: 18px;
     text-shadow: 1px 1px 2px #000; text-align: center; width: 100%;

@@ -1,3 +1,6 @@
+
+//THIS IS models.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 // --- 3D Model Support ---
 const WEAPON_MODELS = {};
 const WEAPON_MODEL_CONFIG = {
@@ -95,8 +98,10 @@ function rotate3D(x, y, z, rotX, rotY, rotZ) {
 }
 
 function renderWeaponModel() {
-    let wData = WEAPONS[currentWeapon];
+    let activeItem = inventory[hotbarSelection];
+    let wData = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
     if (!wData) return;
+    
     let wName = wData.name.toLowerCase();
     let model = WEAPON_MODELS[wName];
     if (!model || wData.isMelee) return;

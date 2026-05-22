@@ -1,3 +1,5 @@
+//THIS IS world.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+
 // --- World Generation & Voxel Storage ---
 const WORLD_SEED = Math.random() * 10000;
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
