@@ -176,3 +176,113 @@ canvas { display: block; width: 100vw; height: 100vh; }
 .dbg-row button { background: #444; color: white; border: 1px solid #666; cursor: pointer; padding: 3px 6px;}
 .dbg-row button:hover { background: #666; }
 .spawn-btns button { font-size: 20px; padding: 5px; margin: 2px; }
+
+/* TOOLTIP STYLES */
+.tooltip {
+    position: fixed;
+    pointer-events: none;
+    z-index: 10000;
+    background: rgba(18, 18, 24, 0.85);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #f1f3f5;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 
+                inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    max-width: 260px;
+    font-size: 13px;
+    line-height: 1.4;
+    transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+    transform: scale(0.96);
+    display: none;
+}
+
+.tooltip.visible {
+    opacity: 1;
+    transform: scale(1);
+    display: block;
+}
+
+.tooltip-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.tooltip-emoji {
+    font-size: 24px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+.tooltip-title {
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+    letter-spacing: -0.2px;
+}
+.tooltip-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 9px;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+.tooltip-badge.weapon { background: rgba(255, 75, 75, 0.2); color: #ff6b6b; border: 1px solid rgba(255, 75, 75, 0.3); }
+.tooltip-badge.tool { background: rgba(255, 169, 77, 0.2); color: #ffa94d; border: 1px solid rgba(255, 169, 77, 0.3); }
+.tooltip-badge.block { background: rgba(77, 171, 247, 0.2); color: #4dabf7; border: 1px solid rgba(77, 171, 247, 0.3); }
+.tooltip-badge.food { background: rgba(81, 207, 102, 0.2); color: #51cf66; border: 1px solid rgba(81, 207, 102, 0.3); }
+.tooltip-badge.heal { background: rgba(240, 101, 149, 0.2); color: #f06595; border: 1px solid rgba(240, 101, 149, 0.3); }
+.tooltip-badge.resource { background: rgba(173, 181, 189, 0.2); color: #adb5bd; border: 1px solid rgba(173, 181, 189, 0.3); }
+.tooltip-badge.craft { background: rgba(132, 94, 247, 0.2); color: #845ef7; border: 1px solid rgba(132, 94, 247, 0.3); }
+
+.tooltip-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 8px 0;
+}
+
+.tooltip-desc {
+    color: #ced4da;
+    font-size: 11px;
+    font-style: italic;
+    margin-bottom: 8px;
+}
+
+.tooltip-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: #e9ecef;
+}
+.tooltip-stat-row {
+    display: flex;
+    justify-content: space-between;
+}
+.tooltip-stat-label {
+    color: #868e96;
+}
+.tooltip-stat-value {
+    font-weight: 600;
+}
+
+.tooltip-reqs-title {
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #845ef7;
+    margin-bottom: 4px;
+}
+.tooltip-reqs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+}

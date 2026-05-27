@@ -6,6 +6,250 @@ let dragSourceType = null;
 let dragSourceIndex = -1;
 let dragEl = null;
 
+// --- Tooltip Database ---
+const ITEM_DETAILS = {
+    // Resources
+    '🪵': { name: 'Wood', desc: 'Freshly chopped timber. Used to craft torches.', category: 'resource' },
+    '🪨': { name: 'Stone', desc: 'Heavy rock. Useful for building or crafting.', category: 'resource' },
+    '🧶': { name: 'Wool', desc: 'Soft sheep wool. Soft and warm.', category: 'resource' },
+    // Consumables
+    '🩹': { name: 'Bandage', desc: 'Heals minor wounds and restores health.', category: 'heal' },
+    '🍔': { name: 'Burger', desc: 'Juicy burger. Greatly satisfies hunger.', category: 'food' },
+    '🥓': { name: 'Bacon', desc: 'Salty bacon strip. Delicious and filling.', category: 'food' },
+    '🍗': { name: 'Chicken Leg', desc: 'Cooked chicken leg. Good source of protein.', category: 'food' },
+    '🍖': { name: 'Raw Meat', desc: 'Edible, but maybe it should be cooked? Restores hunger.', category: 'food' },
+    // Placeables
+    '🔥': { name: 'Torch', desc: 'Provides light. Press Right-Click in inventory to place.', category: 'torch' },
+    // Blocks
+    '🟫': { name: 'Dirt Block', desc: 'A block of compressed soil. Right-Click in inventory to place.', category: 'block' },
+    '🧊': { name: 'Cube Block', desc: 'A solid building cube. Right-Click in inventory to place.', category: 'block' },
+    // Weapons/Tools
+    'pistol': { name: 'Pistol', desc: 'Semiautomatic handgun. Shoots fast, decent damage.', category: 'weapon' },
+    'smg': { name: 'SMG', desc: 'Fully automatic submachine gun. High fire rate, high spread.', category: 'weapon' },
+    'shotgun': { name: 'Shotgun', desc: 'Powerful close-range scatter gun. Fires 12 pellets at once.', category: 'weapon' },
+    'axe': { name: 'Axe', desc: 'Sharp melee weapon and harvesting tool. Used to harvest Wood from trees.', category: 'tool' },
+    'pickaxe': { name: 'Pickaxe', desc: 'Pointy mining tool. Used to harvest Stone from rocks.', category: 'tool' },
+    'shovel': { name: 'Shovel', desc: 'Digging tool. Used to dig up dirt.', category: 'tool' }
+};
+
+function resolveItemDetails(item) {
+    if (!item) return null;
+    
+    let details = {
+        name: item.emoji + ' Item',
+        desc: 'No description available.',
+        category: item.type || 'resource',
+        emoji: item.emoji || '📦',
+        stats: {}
+    };
+
+    const baseItem = item.id ? ITEMS[item.id] : null;
+    if (baseItem) {
+        details.name = baseItem.name || details.name;
+        details.category = baseItem.type || details.category;
+    }
+
+    const key = item.id || item.emoji;
+    const info = ITEM_DETAILS[key];
+    if (info) {
+        details.name = info.name;
+        details.desc = info.desc;
+        if (info.category) details.category = info.category;
+    }
+
+    if (baseItem) {
+        if (baseItem.dmg !== undefined && baseItem.dmg > 0) {
+            details.stats['Damage'] = `${baseItem.dmg} DMG`;
+        }
+        if (baseItem.range !== undefined) {
+            details.stats['Range'] = `${baseItem.range}m`;
+        }
+        if (baseItem.fireRate !== undefined) {
+            details.stats['Fire Rate'] = baseItem.fireRate + ' ticks';
+        }
+        if (baseItem.spread !== undefined) {
+            details.stats['Spread'] = (baseItem.spread * 100).toFixed(1) + '%';
+        }
+    } else {
+        if (item.amount !== undefined) {
+            if (item.type === 'heal') {
+                details.stats['Heal Amount'] = `+${item.amount} HP`;
+            } else if (item.type === 'food') {
+                details.stats['Food Value'] = `+${item.amount} Food`;
+            }
+        }
+    }
+
+    return details;
+}
+
+function renderItemTooltip(item) {
+    const details = resolveItemDetails(item);
+    if (!details) return '';
+
+    let statsHtml = '';
+    const statKeys = Object.keys(details.stats);
+    if (statKeys.length > 0) {
+        statsHtml += '<div class="tooltip-divider"></div><div class="tooltip-stats">';
+        for (let statName of statKeys) {
+            statsHtml += `
+                <div class="tooltip-stat-row">
+                    <span class="tooltip-stat-label">${statName}</span>
+                    <span class="tooltip-stat-value">${details.stats[statName]}</span>
+                </div>
+            `;
+        }
+        statsHtml += '</div>';
+    }
+
+    const badgeClass = details.category.toLowerCase();
+
+    return `
+        <div class="tooltip-header">
+            <span class="tooltip-emoji">${details.emoji}</span>
+            <div class="tooltip-title">${details.name}</div>
+        </div>
+        <div class="tooltip-badge ${badgeClass}">${details.category}</div>
+        <div class="tooltip-divider"></div>
+        <div class="tooltip-desc">${details.desc}</div>
+        ${statsHtml}
+    `;
+}
+
+function renderRecipeTooltip(recipe) {
+    if (!recipe) return '';
+
+    const resultItem = recipe.result;
+    const details = resolveItemDetails(resultItem);
+    
+    let resourceCounts = {};
+    for (let item of inventory) {
+        if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch' || item.type === 'block')) {
+            resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
+        }
+    }
+
+    let reqsHtml = '';
+    for (let reqEmoji in recipe.req) {
+        let reqAmt = recipe.req[reqEmoji];
+        let hasAmt = resourceCounts[reqEmoji] || 0;
+        let color = hasAmt >= reqAmt ? '#51cf66' : '#ff6b6b';
+        let ingredientName = ITEM_DETAILS[reqEmoji] ? ITEM_DETAILS[reqEmoji].name : reqEmoji;
+        reqsHtml += `<div style="color: ${color}; display: flex; justify-content: space-between;">
+            <span>${reqEmoji} ${ingredientName}</span>
+            <span>${hasAmt}/${reqAmt}</span>
+        </div>`;
+    }
+
+    return `
+        <div class="tooltip-header">
+            <span class="tooltip-emoji">${details.emoji}</span>
+            <div class="tooltip-title">Craft: ${recipe.name}</div>
+        </div>
+        <div class="tooltip-badge craft">Craftable</div>
+        <div class="tooltip-divider"></div>
+        <div class="tooltip-desc">${details.desc}</div>
+        <div class="tooltip-divider"></div>
+        <div class="tooltip-reqs-title">Ingredients Required</div>
+        <div class="tooltip-reqs-list">
+            ${reqsHtml}
+        </div>
+    `;
+}
+
+let itemTooltipEl = null;
+
+function updateTooltip(e) {
+    if (!itemTooltipEl) {
+        itemTooltipEl = document.getElementById('item-tooltip');
+    }
+    if (!itemTooltipEl || dragItemData) {
+        hideTooltip();
+        return;
+    }
+
+    let hoveredSlot = e.target.closest('.inv-slot, .hotbar-slot, .craft-btn');
+    if (!hoveredSlot) {
+        hideTooltip();
+        return;
+    }
+
+    let html = '';
+    
+    // Case 1: Inventory slot
+    if (hoveredSlot.classList.contains('inv-slot')) {
+        let index = parseInt(hoveredSlot.dataset.index);
+        let type = hoveredSlot.dataset.type;
+        let targetInv = type === 'player' ? inventory : (activeContainer ? activeContainer.items : null);
+        if (targetInv) {
+            let item = targetInv[index];
+            if (item) html = renderItemTooltip(item);
+        }
+    }
+    // Case 2: Hotbar slot
+    else if (hoveredSlot.classList.contains('hotbar-slot')) {
+        let idParts = hoveredSlot.id.split('-');
+        let index = parseInt(idParts[idParts.length - 1]);
+        let item = inventory[index];
+        if (item) html = renderItemTooltip(item);
+    }
+    // Case 3: Crafting button
+    else if (hoveredSlot.classList.contains('craft-btn')) {
+        let recipeIndex = parseInt(hoveredSlot.dataset.recipeIndex);
+        if (!isNaN(recipeIndex)) {
+            let recipe = RECIPES[recipeIndex];
+            if (recipe) html = renderRecipeTooltip(recipe);
+        }
+    }
+
+    if (!html) {
+        hideTooltip();
+        return;
+    }
+
+    itemTooltipEl.innerHTML = html;
+    
+    // Position tooltip near cursor with viewport bounds checking
+    itemTooltipEl.classList.add('visible');
+    
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+    
+    // Get tooltip dimensions
+    const tooltipRect = itemTooltipEl.getBoundingClientRect();
+    
+    // Try placing tooltip to the bottom-right of cursor
+    let posX = mouseX + 15;
+    let posY = mouseY + 15;
+    
+    // Bounds check - horizontal
+    if (posX + tooltipRect.width > window.innerWidth) {
+        // Flip to left side of cursor
+        posX = mouseX - tooltipRect.width - 15;
+    }
+    // Bounds check - vertical
+    if (posY + tooltipRect.height > window.innerHeight) {
+        // Flip to top side of cursor
+        posY = mouseY - tooltipRect.height - 15;
+    }
+    
+    // Keep it on screen (absolute minimums/maximums)
+    posX = Math.max(10, Math.min(posX, window.innerWidth - tooltipRect.width - 10));
+    posY = Math.max(10, Math.min(posY, window.innerHeight - tooltipRect.height - 10));
+    
+    itemTooltipEl.style.left = posX + 'px';
+    itemTooltipEl.style.top = posY + 'px';
+}
+
+function hideTooltip() {
+    if (!itemTooltipEl) {
+        itemTooltipEl = document.getElementById('item-tooltip');
+    }
+    if (itemTooltipEl) {
+        itemTooltipEl.classList.remove('visible');
+    }
+}
+
 // --- Inventory & UI Init ---
 for(let i = 0; i < 24; i++) { 
     let slot = document.createElement('div'); 
@@ -44,6 +288,7 @@ function updateHotbarUI() {
 }
 
 function updateInventories() {
+    hideTooltip();
     const pSlots = playerInvGrid.children;
     for(let i = 0; i < 24; i++) { 
         let item = inventory[i];
@@ -101,6 +346,7 @@ function updateCraftingUI() {
         }
         let btn = document.createElement('button');
         btn.className = 'craft-btn';
+        btn.dataset.recipeIndex = index;
         let hasSpace = inventory.some(i => i === null) || inventory.some(i => i && i.emoji === recipe.result.emoji);
         if (!hasSpace) canMake = false;
         btn.disabled = !canMake;
@@ -230,6 +476,7 @@ window.addEventListener('mousemove', e => {
         dragEl.style.left = e.clientX + 'px';
         dragEl.style.top = e.clientY + 'px';
     }
+    updateTooltip(e);
 });
 
 // Drag Drop Logic
@@ -282,6 +529,7 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 overlay.addEventListener('click', () => { if(!isInventoryOpen && !isDebugOpen && !isStairMenuOpen) canvas.requestPointerLock(); });
 
 document.addEventListener('pointerlockchange', () => {
+    hideTooltip();
     isPaused = document.pointerLockElement !== canvas; 
     if (isPaused) { 
         placementItem = null; 
@@ -451,6 +699,9 @@ fetch('splash.txt')
         // Fallback if splash.txt is missing
         document.getElementById('splash-text').innerText = "placeholder!";
     });
+
+window.addEventListener('mousedown', hideTooltip);
+window.addEventListener('mouseleave', hideTooltip);
 
 // Init hotbar UI states immediately
 updateInventories();
