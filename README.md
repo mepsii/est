@@ -1,5 +1,5 @@
 #a total experiment. just a basic voxel based survival-fps game.\
-#just wanted to see how far it could be taken with totally free ai models.\
+#just wanted to see how far it could be taken with nothing but ai models.\
 #done w essentially all gemini
 
 ![https://img.shields.io/badge/vibe-coded-blue?style=flat-square](https://img.shields.io/badge/vibe-coded-blue?style=flat-square)
@@ -21,7 +21,7 @@
 <p align="center">
   ⚠️ <span>$$\huge\color{orange}{\textbf{DISCLAIMER}}$$</span> ⚠️
   <br>
-  <span>$$\large\color{orange}{\textbf{VIBE-CODED. ENTIRELY.}}$$</span>
+  <span>$$\large\color{orange}{\textbf{VIBECODED. ENTIRELY.}}$$</span>
   <br>
   <span>$$\large\color{orange}{\textbf{USE AT OWN RISK}}$$</span>
 </p>
