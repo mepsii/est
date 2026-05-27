@@ -644,7 +644,7 @@ window.addEventListener('keydown', e => {
     if (e.key >= '1' && e.key <= '8') selectHotbar(parseInt(e.key) - 1);
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     
-    if (e.key.toLowerCase() === 'q') {
+    if (e.key.toLowerCase() === 'b') {
         if (!isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused && !player.inVehicle) {
             dropActiveItem();
         }

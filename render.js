@@ -314,16 +314,67 @@ function render() {
     for (let e of droppedItems) {
         let dx = e.x - player.x, dy = e.y - player.y, rotX = dx*cosA + dy*sinA;
         if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) {
-            let o = getRenderItem();
-            o.type = 'droppedItem';
-            o.emoji = e.item.emoji;
-            o.size = 0.55;
-            o.depthSq = rotX*rotX;
+            let itemId = e.item.id;
+            let model = itemId ? WEAPON_MODELS[itemId] : null;
+            
             // Bobbing hover effect
-            o.h = e.z + Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
-            o.targeted = (e === interactTarget);
-            o.wX = e.x;
-            o.wY = e.y;
+            let bobZ = Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
+            let itemZ = e.z + bobZ;
+
+            if (model) {
+                // Render as 3D Model
+                let conf = WEAPON_MODEL_CONFIG[itemId] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
+                let scale = conf.scale * 1.5;
+                let spinAngle = e.hoverTime * 0.012;
+                
+                // Spin around vertical axis (yaw)
+                let ryaw = conf.rotZ + spinAngle;
+
+                for (let f of model.faces) {
+                    let wPts = [];
+                    for (let pt of f.pts) {
+                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, ryaw);
+                        
+                        let wx = p1.x * scale;
+                        let wy = p1.y * scale;
+                        let wz = p1.z * scale;
+                        
+                        wPts.push({ x: e.x + wx, y: e.y + wy, z: itemZ + wz + 0.15 });
+                    }
+                    
+                    let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
+                    let w = { x: wPts[2].x - wPts[0].x, y: wPts[2].y - wPts[0].y, z: wPts[2].z - wPts[0].z };
+                    let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
+                    
+                    if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
+                    
+                    let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
+                    let distSq = (cX-player.x)**2 + (cY-player.y)**2 + (cZ-camZ)**2;
+                    
+                    let o = getRenderItem();
+                    o.type = 'objWorldFace'; 
+                    o.pts = wPts; 
+                    o.color = f.color; 
+                    o.depthSq = distSq;
+                    o.wX = cX; 
+                    o.wY = cY; 
+                    o.h = cZ; 
+                    o.norm = {x: nx, y: ny, z: nz};
+                    o.targeted = (e === interactTarget);
+                }
+            } else {
+                // Fallback to Emoji Sprite
+                let o = getRenderItem();
+                o.type = 'droppedItem';
+                o.emoji = e.item.emoji;
+                o.size = 0.55;
+                o.depthSq = rotX*rotX;
+                o.h = itemZ;
+                o.targeted = (e === interactTarget);
+                o.wX = e.x;
+                o.wY = e.y;
+                o.spinScaleX = Math.cos(e.hoverTime * 0.012);
+            }
         }
     }
 
@@ -419,8 +470,13 @@ function render() {
                 let fr = o.color.r * shade * (1-fog) + sky.r * fog | 0;
                 let fg = o.color.g * shade * (1-fog) + sky.g * fog | 0;
                 let fb = o.color.b * shade * (1-fog) + sky.b * fog | 0;
+                if (o.targeted) {
+                    fr = Math.min(255, fr + 40);
+                    fg = Math.min(255, fg + 40);
+                    fb = Math.min(255, fb + 40);
+                }
                 ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
-                ctx.strokeStyle = ctx.fillStyle;
+                ctx.strokeStyle = o.targeted ? 'rgba(255, 255, 255, 0.8)' : ctx.fillStyle;
             } else if (o.type === 'cloudPoly') {
                 ctx.fillStyle = o.color;
                 ctx.strokeStyle = o.color;
@@ -487,9 +543,22 @@ function render() {
             } else if (o.type === 'emoji' || o.type === 'animal' || o.type === 'droppedItem') {
                 const sprite = SpriteCache.get(o.emoji, o.targeted || (o.flash > 0), o.dead, objLight);
                 let scale = sz / 128;
+                
+                ctx.save();
                 if (o.ghost) ctx.globalAlpha = 0.5;
-                ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - (sprite.height - 20)*scale, sprite.width * scale, sprite.height * scale);
+                
+                if (o.spinScaleX !== undefined) {
+                    let drawW = sprite.width * scale;
+                    let drawH = sprite.height * scale;
+                    ctx.translate(sx, sy - drawH / 2 + 10 * scale);
+                    ctx.scale(o.spinScaleX, 1.0);
+                    ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
+                } else {
+                    ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - (sprite.height - 20)*scale, sprite.width * scale, sprite.height * scale);
+                }
+                
                 if (o.ghost) ctx.globalAlpha = 1.0;
+                ctx.restore();
             } else {
                 ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/depth), 0, 7); ctx.fill();
             }
