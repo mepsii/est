@@ -310,6 +310,23 @@ function render() {
         }
     }
 
+    // Render Dropped Items (in both overworld & interior states)
+    for (let e of droppedItems) {
+        let dx = e.x - player.x, dy = e.y - player.y, rotX = dx*cosA + dy*sinA;
+        if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) {
+            let o = getRenderItem();
+            o.type = 'droppedItem';
+            o.emoji = e.item.emoji;
+            o.size = 0.55;
+            o.depthSq = rotX*rotX;
+            // Bobbing hover effect
+            o.h = e.z + Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
+            o.targeted = (e === interactTarget);
+            o.wX = e.x;
+            o.wY = e.y;
+        }
+    }
+
     for (let p of projectiles) { let dx=p.x-player.x, dy=p.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = rotX*rotX; o.h = p.z; o.wX = p.x; o.wY = p.y;} }
 
     activeRenderList.length = renderCount;
@@ -467,7 +484,7 @@ function render() {
                 let bsz = Math.max(2, (fov/depth) * o.size);
                 ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, ${Math.min(1.0, o.life / 20.0)})`;
                 ctx.fillRect(sx - bsz/2, sy - bsz/2, bsz, bsz);
-            } else if (o.type === 'emoji' || o.type === 'animal') {
+            } else if (o.type === 'emoji' || o.type === 'animal' || o.type === 'droppedItem') {
                 const sprite = SpriteCache.get(o.emoji, o.targeted || (o.flash > 0), o.dead, objLight);
                 let scale = sz / 128;
                 if (o.ghost) ctx.globalAlpha = 0.5;

@@ -153,5 +153,5 @@ const torches = [];
 const destroyedEntities = new Set();
 const damageTexts = [];
 const bloodParticles =[];
-const projectiles = [], enemies = [], containers = [], animals = [], buildings = [], vehicles = [];
+const projectiles = [], enemies = [], containers = [], animals = [], buildings = [], vehicles = [], droppedItems = [];
 const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100, oxygen: 100, inVehicle: null, vehicleView: '3rd' };

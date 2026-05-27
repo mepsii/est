@@ -292,6 +292,59 @@ function update() {
         b.life--; if (b.life <= 0) bloodParticles.splice(i, 1); 
     }
 
+    // Update Dropped Items physics
+    for (let i = droppedItems.length - 1; i >= 0; i--) {
+        let item = droppedItems[i];
+        
+        // Gravity
+        item.vz -= 0.012;
+        
+        let nx = item.x + item.vx;
+        let ny = item.y + item.vy;
+        let nz = item.z + item.vz;
+        
+        if (gameState === 'overworld') {
+            if (!getSolid(Math.floor(nx), Math.floor(item.y), Math.floor(item.z))) {
+                item.x = nx;
+            } else {
+                item.vx = -item.vx * 0.4;
+            }
+            if (!getSolid(Math.floor(item.x), Math.floor(ny), Math.floor(item.z))) {
+                item.y = ny;
+            } else {
+                item.vy = -item.vy * 0.4;
+            }
+        } else {
+            if (!isSolid(nx, item.y)) {
+                item.x = nx;
+            } else {
+                item.vx = -item.vx * 0.4;
+            }
+            if (!isSolid(item.x, ny)) {
+                item.y = ny;
+            } else {
+                item.vy = -item.vy * 0.4;
+            }
+        }
+        
+        // Floor level check
+        let floorZ = (gameState === 'overworld') ? getSafeFloorZ(item.x, item.y, item.z) : 0.0;
+        if (nz <= floorZ) {
+            item.z = floorZ;
+            item.vz = 0;
+            // Apply ground friction
+            item.vx *= 0.85;
+            item.vy *= 0.85;
+            if (Math.abs(item.vx) < 0.005) item.vx = 0;
+            if (Math.abs(item.vy) < 0.005) item.vy = 0;
+        } else {
+            item.z = nz;
+        }
+        
+        item.hoverTime++;
+        if (item.cooldown > 0) item.cooldown--;
+    }
+
     if (gameState === 'overworld') {
         let pxC = Math.floor(player.x / CHUNK_SIZE), pyC = Math.floor(player.y / CHUNK_SIZE);
         let physRad = 4;
@@ -365,6 +418,11 @@ function update() {
         for (let v of vehicles) checkTarget(v, 4.0); 
     } 
     else { for (let e of getInteriorEntities()) checkTarget(e, 3.0); }
+
+    // Check dropped items interaction in both states
+    for (let item of droppedItems) {
+        if (item.cooldown <= 0) checkTarget(item, 3.0);
+    }
 
     if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
         if (vehicles.includes(interactTarget)) interactTooltip.innerText = "[E] Drive Truck";

@@ -374,10 +374,60 @@ function craftRecipe(index) {
 function giveItem(itemData) {
     if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch' || itemData.type === 'block') {
         let existing = inventory.find(i => i && i.emoji === itemData.emoji);
-        if (existing) { existing.count = (existing.count || 1) + (itemData.count || 1); updateInventories(); return; }
+        if (existing) { 
+            existing.count = (existing.count || 1) + (itemData.count || 1); 
+            updateInventories(); 
+            return true; 
+        }
     }
     let emptyIndex = inventory.findIndex(x => x === null);
-    if (emptyIndex !== -1) { itemData.count = itemData.count || 1; inventory[emptyIndex] = { ...itemData }; updateInventories(); }
+    if (emptyIndex !== -1) { 
+        itemData.count = itemData.count || 1; 
+        inventory[emptyIndex] = { ...itemData }; 
+        updateInventories(); 
+        return true; 
+    }
+    return false;
+}
+
+function dropActiveItem() {
+    let activeItem = inventory[hotbarSelection];
+    if (!activeItem) return;
+
+    let dropItemData = { ...activeItem, count: 1 };
+    activeItem.count--;
+    if (activeItem.count <= 0) {
+        inventory[hotbarSelection] = null;
+    }
+    updateInventories();
+    spawnDroppedItem(dropItemData, true);
+}
+
+function spawnDroppedItem(itemData, thrownForward = true) {
+    let force = thrownForward ? 0.12 : 0.02;
+    let upForce = thrownForward ? 0.10 : 0.04;
+    
+    let vx = 0, vy = 0;
+    if (thrownForward) {
+        vx = Math.cos(player.angle) * force + (Math.random() - 0.5) * 0.04;
+        vy = Math.sin(player.angle) * force + (Math.random() - 0.5) * 0.04;
+    } else {
+        let randAngle = Math.random() * Math.PI * 2;
+        vx = Math.cos(randAngle) * force;
+        vy = Math.sin(randAngle) * force;
+    }
+
+    droppedItems.push({
+        x: player.x + Math.cos(player.angle) * 0.4,
+        y: player.y + Math.sin(player.angle) * 0.4,
+        z: player.z + 1.0,
+        vx: vx,
+        vy: vy,
+        vz: upForce + Math.random() * 0.04,
+        item: itemData,
+        hoverTime: Math.random() * 100,
+        cooldown: 50
+    });
 }
 
 function getPlacementTarget() {
@@ -507,8 +557,9 @@ window.addEventListener('mouseup', e => {
                 }
             }
         } else {
-            // Cancel Drag - return to source if dropped outside
-            sourceInv[dragSourceIndex] = dragItemData;
+            // Drop item on the ground when dragged outside panel
+            spawnDroppedItem(dragItemData, false);
+            dragItemData = null;
         }
 
         // Cleanup
@@ -593,6 +644,12 @@ window.addEventListener('keydown', e => {
     if (e.key >= '1' && e.key <= '8') selectHotbar(parseInt(e.key) - 1);
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     
+    if (e.key.toLowerCase() === 'q') {
+        if (!isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused && !player.inVehicle) {
+            dropActiveItem();
+        }
+    }
+    
     if (e.key.toLowerCase() === 'e') {
         if (player.inVehicle) {
             let v = player.inVehicle;
@@ -605,6 +662,13 @@ window.addEventListener('keydown', e => {
             if (vehicles.includes(interactTarget)) {
                 player.inVehicle = interactTarget;
                 player.vehicleView = '3rd';
+            } else if (droppedItems.includes(interactTarget)) {
+                let success = giveItem({ ...interactTarget.item });
+                if (success) {
+                    droppedItems.splice(droppedItems.indexOf(interactTarget), 1);
+                    interactTarget = null;
+                    updateInventories();
+                }
             } else if (interactTarget.rooms) enterBuilding(interactTarget); 
             else if (interactTarget.action === 'exit') exitBuilding();
             else if (interactTarget.action === 'stairs') { if (activeBuilding.floors > 1) { if (activeFloor === 0) changeFloor(1); else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1); else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); } } }
