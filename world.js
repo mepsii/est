@@ -4,6 +4,34 @@
 const WORLD_SEED = Math.random() * 10000;
 const biomeCache = new Map(), entityInfoCache = new Map(), mapChunks = new Map();
 const chunkMeshes = new Map(), voxelMods = new Map(), terrainCache = new Map();
+
+// --- WebAssembly Integration ---
+let wasmLoaded = false;
+let wasmExports = null;
+
+// Decode base64 WASM binary
+const wasmBytes = Uint8Array.from(atob(WASM_BASE64), c => c.charCodeAt(0));
+
+// Instantiate WebAssembly module
+WebAssembly.instantiate(wasmBytes, {
+    env: {
+        abort(message, fileName, lineNumber, columnNumber) {
+            console.error("WASM aborted: " + message);
+        }
+    }
+}).then(result => {
+    wasmExports = result.instance.exports;
+    wasmExports.init(WORLD_SEED);
+    wasmLoaded = true;
+    console.log("WebAssembly world module loaded successfully!");
+    
+    // Clear caches to force rebuild and retrieval via WASM
+    terrainCache.clear();
+    chunkMeshes.clear();
+}).catch(err => {
+    console.error("Failed to instantiate WASM module:", err);
+});
+
 const MAX_Z = 96;
 
 const WATER_LEVEL = 24;
@@ -44,6 +72,20 @@ function fbm2D(x, y, octaves) {
 }
 
 function getTerrain(x, y) {
+    if (wasmLoaded) {
+        return {
+            baseH: wasmExports.getTerrainBaseH(x, y),
+            lakeSurface: wasmExports.getTerrainLakeSurface(x, y),
+            isLake: wasmExports.getTerrainIsLake(x, y) !== 0,
+            oceanSurface: wasmExports.getTerrainOceanSurface(x, y),
+            moisture: wasmExports.getTerrainMoisture(x, y),
+            elevation: wasmExports.getTerrainElevation(x, y)
+        };
+    }
+    return getTerrainJS(x, y);
+}
+
+function getTerrainJS(x, y) {
     let nx = x * 0.003, ny = y * 0.003;
     
     let elevation = fbm2D(nx, ny, 4); 
@@ -107,6 +149,13 @@ function getGridBaseHeightFloat(x, y) { return getTerrainFast(x, y).baseH; }
 function getBiome(x, y) { return getTerrainFast(x, y).moisture; }
 
 function getVoxel(x, y, z, t = null) {
+    if (wasmLoaded) {
+        return wasmExports.getVoxelWasm(x, y, z);
+    }
+    return getVoxelJS(x, y, z, t);
+}
+
+function getVoxelJS(x, y, z, t = null) {
     if (z < 0) return 1; 
     if (z >= MAX_Z) return 0; 
     
@@ -140,13 +189,32 @@ function getVoxel(x, y, z, t = null) {
     return 0; 
 }
 
-function getSolidFast(x, y, z) { 
+function getSolidFast(x, y, z) {
+    if (wasmLoaded) {
+        return wasmExports.getSolidWasm(x, y, z) !== 0;
+    }
+    return getSolidFastJS(x, y, z);
+}
+
+function getSolidFastJS(x, y, z) { 
     let v = getVoxel(x, y, z);
     return v === 1 || v === 3; 
 }
 function getSolid(x, y, z) { return getSolidFast(x, y, z); }
 
 function getVoxelColor(x, y, z, vType = null) {
+    if (wasmLoaded) {
+        let packed = wasmExports.getVoxelColorWasm(x, y, z);
+        return {
+            r: packed & 0xFF,
+            g: (packed >> 8) & 0xFF,
+            b: (packed >> 16) & 0xFF
+        };
+    }
+    return getVoxelColorJS(x, y, z, vType);
+}
+
+function getVoxelColorJS(x, y, z, vType = null) {
     let v = vType || getVoxel(x, y, z);
     if (v === 3) return { r: 150, g: 150, b: 150 };
 
@@ -223,6 +291,64 @@ function getWaterVertex(px, py, pz, isTop) {
 }
 
 function buildChunkMesh(cx, cy) {
+    if (wasmLoaded) {
+        let faceCount = wasmExports.buildChunkMeshWasm(cx, cy);
+        let ptr = wasmExports.getMeshBufferPointer();
+        
+        let f32 = new Float32Array(wasmExports.memory.buffer, ptr, faceCount * 24);
+        let u32 = new Uint32Array(wasmExports.memory.buffer, ptr, faceCount * 24);
+        
+        let faces = [];
+        for (let i = 0; i < faceCount; i++) {
+            let base = i * 24;
+            
+            let p1 = { x: f32[base + 0], y: f32[base + 1], z: f32[base + 2] };
+            let p2 = { x: f32[base + 3], y: f32[base + 4], z: f32[base + 5] };
+            let p3 = { x: f32[base + 6], y: f32[base + 7], z: f32[base + 8] };
+            let p4 = { x: f32[base + 9], y: f32[base + 10], z: f32[base + 11] };
+            
+            let nx = f32[base + 12];
+            let ny = f32[base + 13];
+            let nz = f32[base + 14];
+            
+            let cx_f = f32[base + 15];
+            let cy_f = f32[base + 16];
+            let cz_f = f32[base + 17];
+            
+            let bx = f32[base + 18];
+            let by = f32[base + 19];
+            let bz = f32[base + 20];
+            
+            let packedColor = u32[base + 21];
+            let col = {
+                r: packedColor & 0xFF,
+                g: (packedColor >> 8) & 0xFF,
+                b: (packedColor >> 16) & 0xFF,
+                a: ((packedColor >> 24) & 0xFF) / 255
+            };
+            
+            let packedFlags = u32[base + 22];
+            let isWater = (packedFlags & 1) !== 0;
+            let underground = (packedFlags & 2) !== 0;
+            let shade = ((packedFlags >> 8) & 0xFF) / 255;
+            
+            faces.push({
+                pts: [p1, p2, p3, p4],
+                cx: cx_f, cy: cy_f, cz: cz_f,
+                bx: bx, by: by, bz: bz,
+                underground: underground,
+                norm: { x: nx, y: ny, z: nz },
+                col: col,
+                shade: shade,
+                isWater: isWater
+            });
+        }
+        return faces;
+    }
+    return buildChunkMeshJS(cx, cy);
+}
+
+function buildChunkMeshJS(cx, cy) {
     let faces = [];
 
     function addFace(x, y, z, p1, p2, p3, p4, nx, ny, nz, shade, col, type) {
@@ -313,13 +439,43 @@ function buildChunkMesh(cx, cy) {
     return faces;
 }
 
+let meshesBuiltThisFrame = 0;
+
 function getChunkMesh(cx, cy) {
     let key = `${cx},${cy}`;
-    if (!chunkMeshes.has(key)) chunkMeshes.set(key, buildChunkMesh(cx, cy));
-    return chunkMeshes.get(key);
+    if (chunkMeshes.has(key)) return chunkMeshes.get(key);
+    
+    if (meshesBuiltThisFrame >= 3) {
+        return [];
+    }
+    
+    meshesBuiltThisFrame++;
+    let mesh = buildChunkMesh(cx, cy);
+    chunkMeshes.set(key, mesh);
+    return mesh;
 }
 
 function modifyTerrain(cx, cy, cz, radius, amount) {
+    if (wasmLoaded) {
+        wasmExports.modifyTerrainWasm(cx, cy, cz, radius, amount);
+        let modifiedChunks = new Set();
+        for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
+            for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
+                modifiedChunks.add(`${Math.floor(x / CHUNK_SIZE)},${Math.floor(y / CHUNK_SIZE)}`);
+            }
+        }
+        modifiedChunks.forEach(key => {
+            let [mcx, mcy] = key.split(',').map(Number);
+            chunkMeshes.delete(`${mcx},${mcy}`);
+            chunkMeshes.delete(`${mcx+1},${mcy}`); chunkMeshes.delete(`${mcx-1},${mcy}`);
+            chunkMeshes.delete(`${mcx},${mcy+1}`); chunkMeshes.delete(`${mcx},${mcy-1}`);
+        });
+        return;
+    }
+    modifyTerrainJS(cx, cy, cz, radius, amount);
+}
+
+function modifyTerrainJS(cx, cy, cz, radius, amount) {
     let modifiedChunks = new Set();
     for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
         for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {

@@ -3,6 +3,8 @@
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
+    meshesBuiltThisFrame = 0;
+
     let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
     let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
 
@@ -98,7 +100,7 @@ function render() {
                             if (Math.abs(fRotY) <= Math.max(0, rotX) * fovMult + cloudGrid * 2) {
                                 let o = getRenderItem();
                                 o.type = 'cloudPoly'; o.pts = pts; o.color = col;
-                                o.depthSq = dX*dX + dY*dY + dZ*dZ;
+                                o.depthSq = rotX * rotX;
                             }
                         }
                     };
@@ -127,32 +129,16 @@ function render() {
                 if (Math.abs(cRotY) > cRotX * fovMult + CHUNK_SIZE * 1.5) continue;
                 
                 let faces = getChunkMesh(cx, cy);
-                for (let i = 0; i < faces.length; i++) {
-                    let f = faces[i];
-
-                    let cX = (f.pts[0].x + f.pts[1].x + f.pts[2].x + f.pts[3].x) / 4;
-                    let cY = (f.pts[0].y + f.pts[1].y + f.pts[2].y + f.pts[3].y) / 4;
-                    let cZ = (f.pts[0].z + f.pts[1].z + f.pts[2].z + f.pts[3].z) / 4;
-
-                    let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
-                    let rotX = dX * cosA + dY * sinA;
-                    
-                    if (rotX > -2 && rotX < VIEW_DIST) { 
-                        let fRotY = dX * -sinA + dY * cosA;
-                        if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
-
-                        let ux = f.pts[1].x - f.pts[0].x, uy = f.pts[1].y - f.pts[0].y, uz = f.pts[1].z - f.pts[0].z;
-                        let wx = f.pts[2].x - f.pts[0].x, wy = f.pts[2].y - f.pts[0].y, wz = f.pts[2].z - f.pts[0].z;
-                        let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-
-                        if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
-                        
-                        let distSq = dX*dX + dY*dY + dZ*dZ; 
-                        if (distSq < VIEW_DIST*VIEW_DIST) {
-                            let o = getRenderItem(); o.type = 'face'; o.face = f; o.depthSq = distSq;
-                            o.wX = cX; o.wY = cY; o.h = cZ; 
-                        }
-                    }
+                if (faces.length > 0) {
+                    let o = getRenderItem();
+                    o.type = 'chunk_mesh';
+                    o.cx = cx; o.cy = cy;
+                    // depthSq is the distance from the player to the chunk center
+                    o.depthSq = cRotX * cRotX;
+                    o.wX = cx * CHUNK_SIZE + CHUNK_SIZE/2;
+                    o.wY = cy * CHUNK_SIZE + CHUNK_SIZE/2;
+                    o.h = 48; // mid height of chunk
+                    o.faces = faces;
                 }
                 
                 let chunk = getMapChunk(cx, cy);
@@ -210,10 +196,10 @@ function render() {
                     if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
                     
                     let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
-                    let distSq = (cX-player.x)**2 + (cY-player.y)**2 + (cZ-camZ)**2;
+                    let fRotX = (cX - player.x) * cosA + (cY - player.y) * sinA;
                     
                     let o = getRenderItem();
-                    o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = distSq;
+                    o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = fRotX * fRotX;
                     o.wX = cX; o.wY = cY; o.h = cZ; o.norm = {x: nx, y: ny, z: nz};
                 }
             } else {
@@ -282,7 +268,7 @@ function render() {
                     if (rotX > 0.1 && rotX < VIEW_DIST) {
                         let o = getRenderItem(); o.type = 'face'; 
                         o.face = { pts: [p1,p2,p3,p4], col: col, shade: 1.0, isWater: false };
-                        o.depthSq = dx*dx + dy*dy + dz*dz;
+                        o.depthSq = rotX * rotX;
                         o.wX = tCx; o.wY = tCy; o.h = tCz;
                     }
                 };
@@ -349,13 +335,13 @@ function render() {
                     if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
                     
                     let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
-                    let distSq = (cX-player.x)**2 + (cY-player.y)**2 + (cZ-camZ)**2;
+                    let fRotX = (cX - player.x) * cosA + (cY - player.y) * sinA;
                     
                     let o = getRenderItem();
                     o.type = 'objWorldFace'; 
                     o.pts = wPts; 
                     o.color = f.color; 
-                    o.depthSq = distSq;
+                    o.depthSq = fRotX * fRotX;
                     o.wX = cX; 
                     o.wY = cY; 
                     o.h = cZ; 
@@ -383,6 +369,12 @@ function render() {
     activeRenderList.length = renderCount;
     for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
     activeRenderList.sort((a,b) => b.depthSq - a.depthSq); 
+    
+    // Draw Budgeting: Scale budget dynamically from 5,000 at VIEW_DIST=80 up to 30,000 at VIEW_DIST=600
+    let drawBudget = Math.max(5000, Math.floor(5000 + (VIEW_DIST - 80) * 100));
+    if (activeRenderList.length > drawBudget) {
+        activeRenderList = activeRenderList.slice(activeRenderList.length - drawBudget);
+    }
 
     if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
     ctx.lineJoin = 'round'; 
@@ -419,7 +411,165 @@ function render() {
             objLight = Math.min(1.0, objLight + lightIntensity);
         }
 
-        if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace' || o.type === 'cloudPoly') {
+        if (o.type === 'chunk_mesh') {
+            let faces = o.faces;
+            let visibleFaces = [];
+            
+            for (let i = 0; i < faces.length; i++) {
+                let f = faces[i];
+                let cX = f.cx, cY = f.cy, cZ = f.cz;
+                let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
+                let rotX = dX * cosA + dY * sinA;
+                
+                if (rotX > -2 && rotX < VIEW_DIST) {
+                    let fRotY = dX * -sinA + dY * cosA;
+                    if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
+                    
+                    let nx = f.norm.x, ny = f.norm.y, nz = f.norm.z;
+                    if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
+                    
+                    let distSq = dX*dX + dY*dY + dZ*dZ;
+                    if (distSq >= VIEW_DIST * VIEW_DIST * 0.90) continue;
+                    
+                    let ptsArray = f.pts;
+                    let camPts = [];
+                    for (let k = 0; k < ptsArray.length; k++) {
+                        let dx_pt = ptsArray[k].x - player.x, dy_pt = ptsArray[k].y - player.y, dz_pt = ptsArray[k].z - camZ;
+                        camPts.push({ cx: dx_pt * -sinA + dy_pt * cosA, cy: dz_pt, cz: dx_pt * cosA + dy_pt * sinA });
+                    }
+                    
+                    let clipped = [];
+                    let zNear = 0.1;
+                    for (let j = 0; j < camPts.length; j++) {
+                        let p1 = camPts[j], p2 = camPts[(j + 1) % camPts.length];
+                        if (p1.cz >= zNear) clipped.push(p1);
+                        if ((p1.cz >= zNear) !== (p2.cz >= zNear)) {
+                            let t = (zNear - p1.cz) / (p2.cz - p1.cz);
+                            clipped.push({ cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear });
+                        }
+                    }
+                    
+                    if (clipped.length < 3) continue;
+                    
+                    let depth = Math.max(0.1, rotX);
+                    let objLightVal = objLight;
+                    let isUnderground = !f.isWater && f.underground;
+                    if (isUnderground) objLightVal = 0.05;
+                    
+                    if (objLightVal < 1.0) {
+                        let lightIntensity = 0;
+                        let cz_val = f.cz + 0.5;
+                        if (isFlashlightOn) {
+                            let dx = cX - player.x, dy = cY - player.y, dz = cz_val - camZ;
+                            let lDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                            if (lDist > 0.1 && lDist < 45) {
+                                let dot = (dx/lDist)*aimX + (dy/lDist)*aimY + (dz/lDist)*aimZ;
+                                if (dot > 0.90) {
+                                    let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - lDist/45, 2);
+                                    lightIntensity += att * 1.5;
+                                }
+                            }
+                        }
+                        for (let c of visibleTorches) {
+                            let dist = Math.hypot(cX - c.x, cY - c.y, cz_val - c.z);
+                            if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
+                        }
+                        objLightVal = Math.min(1.0, objLightVal + lightIntensity);
+                    }
+                    
+                    let shade = f.shade * objLightVal;
+                    let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
+                    
+                    if (player.isSubmerged) {
+                        let wFog = Math.min(1, depth / (VIEW_DIST * 0.6));
+                        fr = fr * (1 - wFog) + 15 * wFog | 0;
+                        fg = fg * (1 - wFog) + 50 * wFog | 0;
+                        fb = fb * (1 - wFog) + 120 * wFog | 0;
+                    } else {
+                        let fog = Math.min(1, depth / VIEW_DIST);
+                        fr = fr * (1 - fog) + sky.r * fog | 0;
+                        fg = fg * (1 - fog) + sky.g * fog | 0;
+                        fb = fb * (1 - fog) + sky.b * fog | 0;
+                    }
+                    
+                    let colorKey;
+                    if (f.col.a !== undefined) {
+                        colorKey = `rgba(${fr}, ${fg}, ${fb}, ${f.col.a})`;
+                    } else {
+                        colorKey = `rgb(${fr}, ${fg}, ${fb})`;
+                    }
+                    
+                    visibleFaces.push({
+                        clipped: clipped,
+                        depth: depth,
+                        colorKey: colorKey,
+                        isWater: f.isWater
+                    });
+                }
+            }
+            
+            // Sort visible faces of this chunk back-to-front
+            visibleFaces.sort((a, b) => b.depth - a.depth);
+            
+            // Draw faces (batching consecutive solid faces of the same color, drawing water individually)
+            ctx.lineWidth = 2.0;
+            let currentStyle = null;
+            
+            let drawPoly = (poly) => {
+                let sx = canvas.width/2 + (poly[0].cx / poly[0].cz) * fov;
+                let sy = hY - (poly[0].cy / poly[0].cz) * fov;
+                ctx.moveTo(sx, sy);
+                for (let j = 1; j < poly.length; j++) {
+                    let sx_pt = canvas.width/2 + (poly[j].cx / poly[j].cz) * fov;
+                    let sy_pt = hY - (poly[j].cy / poly[j].cz) * fov;
+                    ctx.lineTo(sx_pt, sy_pt);
+                }
+                ctx.closePath();
+            };
+            
+            for (let i = 0; i < visibleFaces.length; i++) {
+                let vf = visibleFaces[i];
+                
+                if (vf.isWater) {
+                    // Flush current batch
+                    if (currentStyle !== null) {
+                        ctx.fillStyle = currentStyle;
+                        ctx.strokeStyle = currentStyle;
+                        ctx.fill();
+                        ctx.stroke();
+                        currentStyle = null;
+                    }
+                    // Draw water face individually
+                    ctx.fillStyle = vf.colorKey;
+                    ctx.beginPath();
+                    drawPoly(vf.clipped);
+                    ctx.fill();
+                    continue;
+                }
+                
+                if (vf.colorKey !== currentStyle) {
+                    // Flush current batch
+                    if (currentStyle !== null) {
+                        ctx.fillStyle = currentStyle;
+                        ctx.strokeStyle = currentStyle;
+                        ctx.fill();
+                        ctx.stroke();
+                    }
+                    currentStyle = vf.colorKey;
+                    ctx.beginPath();
+                }
+                
+                drawPoly(vf.clipped);
+            }
+            
+            // Flush final batch
+            if (currentStyle !== null) {
+                ctx.fillStyle = currentStyle;
+                ctx.strokeStyle = currentStyle;
+                ctx.fill();
+                ctx.stroke();
+            }
+        } else if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace' || o.type === 'cloudPoly') {
             let ptsArray = (o.type === 'objWorldFace') ? o.pts : (o.type === 'face' ? o.face.pts : o.pts);
             let camPts = [];
             for (let k = 0; k < ptsArray.length; k++) {
@@ -492,7 +642,12 @@ function render() {
                 let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
                 if (j===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
             }
-            ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.closePath(); 
+            ctx.fill(); 
+            // Stroke Culling: Avoid expensive strokes on far-away faces since seams are invisible at distance.
+            if (depth <= 35.0 || o.targeted) {
+                ctx.stroke();
+            }
             
         } else if (o.type === 'wall') {
             let p1 = project3D(o.p1.x, o.p1.y, 0), p2 = project3D(o.p2.x, o.p2.y, 0), p3 = project3D(o.p2.x, o.p2.y, activeBuilding.wallH), p4 = project3D(o.p1.x, o.p1.y, activeBuilding.wallH);
