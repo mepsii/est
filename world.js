@@ -502,11 +502,13 @@ function modifyTerrainJS(cx, cy, cz, radius, amount) {
 
 function getAimVoxel(range) {
     const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+    const waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
+    const camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
     let step = 0.2;
     for (let i = 0; i <= range / step; i++) {
         let rx = player.x + Math.cos(player.angle) * Math.cos(pitchAngle) * (i * step);
         let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
-        let rz = (player.z + player.baseHeight) + Math.sin(pitchAngle) * (i * step); 
+        let rz = camZ + Math.sin(pitchAngle) * (i * step); 
         
         if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
             return {
