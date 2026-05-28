@@ -165,7 +165,7 @@ function getVoxelJS(x, y, z, t = null) {
     if (z >= MAX_Z) return 0; 
     
     let mod = voxelMods.get(`${x},${y},${z}`);
-    if (mod !== undefined) return mod;
+    if (mod !== undefined) return mod <= 0 ? 0 : mod;
     
     if (!t) t = getTerrainFast(x, y);
     

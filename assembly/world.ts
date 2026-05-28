@@ -180,7 +180,8 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
 
   let modKey = (((x & 0xFFFFFF) as u32 as u64) << 40) | (((y & 0xFFFFFF) as u32 as u64) << 16) | ((z & 0xFFFF) as u32 as u64);
   if (voxelMods.has(modKey)) {
-    return voxelMods.get(modKey);
+    let mod = voxelMods.get(modKey);
+    return mod <= 0 ? 0 : mod;
   }
 
   let density = t.baseH - (z as f64);
