@@ -12,20 +12,53 @@ document.addEventListener('mousemove', (e) => {
 
 let lastTime = performance.now();
 let frames = 0;
+let physicsAccumulator = 0;
+const physicsTickRate = 1000 / 60; // 60 updates per second (16.67ms)
+let lastLoopTime = performance.now();
 
-function loop() { 
-    update(); 
-    render(); 
+// Rendering throttle helper
+let lastRenderTime = performance.now();
+const targetRenderInterval = 1000 / 30; // 33.33ms
+const pacingTolerance = 6; // 6ms tolerance window to align with display refresh boundaries
+
+function loop(timestamp) { 
+    requestAnimationFrame(loop); 
     
-    frames++;
-    const now = performance.now();
+    const now = timestamp || performance.now();
+    let dt = now - lastLoopTime;
+    if (dt > 250) dt = 250; // Cap dt to avoid "spiral of death" during lag spikes
+    lastLoopTime = now;
+
+    // Fixed timestep physics update
+    physicsAccumulator += dt;
+    while (physicsAccumulator >= physicsTickRate) {
+        update(); 
+        physicsAccumulator -= physicsTickRate;
+    }
+
+    // Render throttling with pacing tolerance
+    const elapsedRender = now - lastRenderTime;
+    if (lockFps30) {
+        if (elapsedRender >= (targetRenderInterval - pacingTolerance)) {
+            render(); 
+            if (elapsedRender > targetRenderInterval * 2) {
+                lastRenderTime = now;
+            } else {
+                lastRenderTime += targetRenderInterval;
+            }
+            frames++;
+        }
+    } else {
+        render(); 
+        lastRenderTime = now;
+        frames++;
+    }
+    
     if (now >= lastTime + 500) {
         const fps = Math.round((frames * 1000) / (now - lastTime));
         if (fpsValEl) fpsValEl.innerText = fps;
         frames = 0;
         lastTime = now;
     }
-    
-    requestAnimationFrame(loop); 
 }
 loop();

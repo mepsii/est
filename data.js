@@ -148,6 +148,7 @@ let flightMode = false, jumpPower = 0.28;
 let infiniteStamina = false, sprintMult = 1.5;
 let spawnEnemiesToggle = true, showDebugInfo = false;
 let isFlashlightOn = false;
+let lockFps30 = true;
 
 let score = 0, isPaused = true, tickCounter = 0;
 let baseZoom = 0.5 / Math.tan(40 * Math.PI / 180);

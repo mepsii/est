@@ -736,6 +736,7 @@ document.getElementById('dbg-jump').onchange = e => jumpPower = parseFloat(e.tar
 document.getElementById('dbg-flight').onchange = e => flightMode = e.target.checked;
 document.getElementById('dbg-spawnenemies').onchange = e => spawnEnemiesToggle = e.target.checked;
 document.getElementById('dbg-info').onchange = e => showDebugInfo = e.target.checked;
+document.getElementById('dbg-lock-fps').onchange = e => lockFps30 = e.target.checked;
 
 document.getElementById('dbg-fov').oninput = e => { 
     let fovDegrees = parseInt(e.target.value);
