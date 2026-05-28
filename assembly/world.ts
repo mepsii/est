@@ -306,18 +306,22 @@ export function getVoxelColorWasm(x: i32, y: i32, z: i32): u32 {
   return (col.r as u32) | ((col.g as u32) << 8) | ((col.b as u32) << 16);
 }
 
-export function modifyTerrainWasm(cx: i32, cy: i32, cz: i32, radius: f64, amount: i32): void {
-  let r = radius;
-  let r_int = Math.ceil(r) as i32;
+export function modifyTerrainWasm(cx: f64, cy: f64, cz: f64, radius: f64, amount: i32): void {
+  let x_start = Math.floor(cx - radius) as i32;
+  let x_end = Math.ceil(cx + radius) as i32;
+  let y_start = Math.floor(cy - radius) as i32;
+  let y_end = Math.ceil(cy + radius) as i32;
+  let z_start = Math.floor(cz - radius) as i32;
+  let z_end = Math.ceil(cz + radius) as i32;
 
-  for (let x = cx - r_int; x <= cx + r_int; x++) {
-    for (let y = cy - r_int; y <= cy + r_int; y++) {
-      for (let z = cz - r_int; z <= cz + r_int; z++) {
-        let dx = (x - cx) as f64;
-        let dy = (y - cy) as f64;
-        let dz = (z - cz) as f64;
+  for (let x = x_start; x <= x_end; x++) {
+    for (let y = y_start; y <= y_end; y++) {
+      for (let z = z_start; z <= z_end; z++) {
+        let dx = (x as f64) - cx;
+        let dy = (y as f64) - cy;
+        let dz = (z as f64) - cz;
         let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-        if (dist <= r && z >= 0 && z < 96) {
+        if (dist <= radius && z >= 0 && z < 96) {
           let modKey = (((x & 0xFFFFFF) as u32 as u64) << 40) | (((y & 0xFFFFFF) as u32 as u64) << 16) | ((z & 0xFFFF) as u32 as u64);
           voxelMods.set(modKey, amount);
         }
