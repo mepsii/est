@@ -92,7 +92,9 @@ const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
 
 // --- Game Data & Configs ---
 const RECIPES =[
-    { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 2 } }
+    { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 2 } },
+    { name: "Wood Block", result: { id: 'wood_block', type: 'block', emoji: '🪵', count: 1 }, req: { '🪵': 3 } },
+    { name: "Stone Block", result: { id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, req: { '🪨': 3 } }
 ];
 
 const ITEMS = { 
@@ -102,8 +104,10 @@ const ITEMS = {
     'axe': { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe', type: 'tool' },
     'pickaxe': { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe', type: 'tool' },
     'shovel': { name: "Shovel", fireRate: 15, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel', type: 'tool' },
-    'dirt': { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place', type: 'block' },
-    'cube': { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, toolType: 'place_cube', type: 'block' }
+    'dirt': { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 1 },
+    'cube': { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 3 },
+    'wood_block': { name: "Wood Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 4 },
+    'stone_block': { name: "Stone Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 5 }
 };
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };

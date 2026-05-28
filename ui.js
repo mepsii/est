@@ -23,6 +23,8 @@ const ITEM_DETAILS = {
     // Blocks
     '🟫': { name: 'Dirt Block', desc: 'A block of compressed soil. Right-Click in inventory to place.', category: 'block' },
     '🧊': { name: 'Cube Block', desc: 'A solid building cube. Right-Click in inventory to place.', category: 'block' },
+    'wood_block': { name: 'Wood Block', desc: 'A block of processed wood. Right-Click in inventory to place.', category: 'block', emoji: '🪵' },
+    'stone_block': { name: 'Stone Block', desc: 'A block crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
     // Weapons/Tools
     'pistol': { name: 'Pistol', desc: 'Semiautomatic handgun. Shoots fast, decent damage.', category: 'weapon' },
     'smg': { name: 'SMG', desc: 'Fully automatic submachine gun. High fire rate, high spread.', category: 'weapon' },
@@ -125,16 +127,18 @@ function renderRecipeTooltip(recipe) {
     let resourceCounts = {};
     for (let item of inventory) {
         if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch' || item.type === 'block')) {
-            resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
+            let key = item.id || item.emoji;
+            resourceCounts[key] = (resourceCounts[key] || 0) + (item.count || 1);
         }
     }
 
     let reqsHtml = '';
-    for (let reqEmoji in recipe.req) {
-        let reqAmt = recipe.req[reqEmoji];
-        let hasAmt = resourceCounts[reqEmoji] || 0;
+    for (let reqKey in recipe.req) {
+        let reqAmt = recipe.req[reqKey];
+        let hasAmt = resourceCounts[reqKey] || 0;
         let color = hasAmt >= reqAmt ? '#51cf66' : '#ff6b6b';
-        let ingredientName = ITEM_DETAILS[reqEmoji] ? ITEM_DETAILS[reqEmoji].name : reqEmoji;
+        let ingredientName = ITEM_DETAILS[reqKey] ? ITEM_DETAILS[reqKey].name : reqKey;
+        let reqEmoji = (ITEM_DETAILS[reqKey] && ITEM_DETAILS[reqKey].emoji) ? ITEM_DETAILS[reqKey].emoji : (reqKey.length <= 2 ? reqKey : '📦');
         reqsHtml += `<div style="color: ${color}; display: flex; justify-content: space-between;">
             <span>${reqEmoji} ${ingredientName}</span>
             <span>${hasAmt}/${reqAmt}</span>
@@ -333,21 +337,23 @@ function updateCraftingUI() {
     let resourceCounts = {};
     for (let item of inventory) {
         if (item && (item.type === 'resource' || item.type === 'building' || item.type === 'torch' || item.type === 'block')) {
-            resourceCounts[item.emoji] = (resourceCounts[item.emoji] || 0) + (item.count || 1);
+            let key = item.id || item.emoji;
+            resourceCounts[key] = (resourceCounts[key] || 0) + (item.count || 1);
         }
     }
     RECIPES.forEach((recipe, index) => {
         let canMake = true; let reqTextHtml = [];
-        for (let reqEmoji in recipe.req) {
-            let reqAmt = recipe.req[reqEmoji], hasAmt = resourceCounts[reqEmoji] || 0;
+        for (let reqKey in recipe.req) {
+            let reqAmt = recipe.req[reqKey], hasAmt = resourceCounts[reqKey] || 0;
             let color = hasAmt >= reqAmt ? '#8f8' : '#f88';
+            let reqEmoji = (ITEM_DETAILS[reqKey] && ITEM_DETAILS[reqKey].emoji) ? ITEM_DETAILS[reqKey].emoji : (reqKey.length <= 2 ? reqKey : '📦');
             reqTextHtml.push(`<span style="color:${color};">${hasAmt}/${reqAmt} ${reqEmoji}</span>`);
             if (hasAmt < reqAmt) canMake = false;
         }
         let btn = document.createElement('button');
         btn.className = 'craft-btn';
         btn.dataset.recipeIndex = index;
-        let hasSpace = inventory.some(i => i === null) || inventory.some(i => i && i.emoji === recipe.result.emoji);
+        let hasSpace = inventory.some(i => i === null) || inventory.some(i => i && (i.id || recipe.result.id ? i.id === recipe.result.id : i.emoji === recipe.result.emoji));
         if (!hasSpace) canMake = false;
         btn.disabled = !canMake;
         btn.innerHTML = `<div class="craft-title">${recipe.result.emoji} ${recipe.name}</div><div class="craft-reqs">${reqTextHtml.join(' &nbsp;|&nbsp; ')}</div>`;
@@ -358,13 +364,16 @@ function updateCraftingUI() {
 
 function craftRecipe(index) {
     let recipe = RECIPES[index];
-    for (let reqEmoji in recipe.req) {
-        let needed = recipe.req[reqEmoji];
+    for (let reqKey in recipe.req) {
+        let needed = recipe.req[reqKey];
         for (let i = 0; i < inventory.length; i++) {
             let item = inventory[i];
-            if (item && item.emoji === reqEmoji) {
-                if (item.count > needed) { item.count -= needed; needed = 0; break; }
-                else { needed -= item.count; inventory[i] = null; }
+            if (item) {
+                let itemKey = item.id || item.emoji;
+                if (itemKey === reqKey) {
+                    if (item.count > needed) { item.count -= needed; needed = 0; break; }
+                    else { needed -= item.count; inventory[i] = null; }
+                }
             }
         }
     }
@@ -373,7 +382,7 @@ function craftRecipe(index) {
 
 function giveItem(itemData) {
     if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch' || itemData.type === 'block') {
-        let existing = inventory.find(i => i && i.emoji === itemData.emoji);
+        let existing = inventory.find(i => i && (i.id || itemData.id ? i.id === itemData.id : i.emoji === itemData.emoji));
         if (existing) { 
             existing.count = (existing.count || 1) + (itemData.count || 1); 
             updateInventories(); 

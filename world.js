@@ -165,7 +165,7 @@ function getVoxelJS(x, y, z, t = null) {
     if (z >= MAX_Z) return 0; 
     
     let mod = voxelMods.get(`${x},${y},${z}`);
-    if (mod !== undefined) return mod === 1 ? 1 : (mod === 3 ? 3 : 0);
+    if (mod !== undefined) return mod;
     
     if (!t) t = getTerrainFast(x, y);
     
@@ -194,6 +194,14 @@ function getVoxelJS(x, y, z, t = null) {
     return 0; 
 }
 
+function isVoxelSolid(v) {
+    return v === 1 || v >= 3;
+}
+
+function isVoxelCube(v) {
+    return v >= 3;
+}
+
 function getSolidFast(x, y, z) {
     if (wasmLoaded) {
         return wasmExports.getSolidWasm(x, y, z) !== 0;
@@ -203,7 +211,7 @@ function getSolidFast(x, y, z) {
 
 function getSolidFastJS(x, y, z) { 
     let v = getVoxel(x, y, z);
-    return v === 1 || v === 3; 
+    return isVoxelSolid(v); 
 }
 function getSolid(x, y, z) { return getSolidFast(x, y, z); }
 
@@ -222,12 +230,14 @@ function getVoxelColor(x, y, z, vType = null) {
 function getVoxelColorJS(x, y, z, vType = null) {
     let v = vType || getVoxel(x, y, z);
     if (v === 3) return { r: 150, g: 150, b: 150 };
+    if (v === 4) return { r: 160, g: 110, b: 60 };
+    if (v === 5) return { r: 140, g: 140, b: 140 };
 
     let t = getTerrainFast(x, y);
     let depthFromMacro = t.baseH - z;
     let colorNoise = hash(x, y, z) * 15;
     
-    let isSurface = (getVoxel(x, y, z + 1) !== 1 && getVoxel(x, y, z + 1) !== 3); 
+    let isSurface = !isVoxelSolid(getVoxel(x, y, z + 1)); 
     let isUnderWater = (z <= t.oceanSurface) || (t.isLake && z <= t.lakeSurface);
     
     let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0; 
@@ -266,8 +276,8 @@ function getSmoothVertex(cx, cy, cz) {
         for (let dy = -1; dy <= 0; dy++) {
             for (let dz = -1; dz <= 0; dz++) {
                 let v = getVoxel(cx + dx, cy + dy, cz + dz);
-                if (v === 3) touchesCube = true; 
-                if (v === 1 || v === 3) {
+                if (isVoxelCube(v)) touchesCube = true; 
+                if (isVoxelSolid(v)) {
                     sumX += (cx + dx + 0.5);
                     sumY += (cy + dy + 0.5);
                     sumZ += (cz + dz + 0.5);
@@ -365,7 +375,7 @@ function buildChunkMeshJS(cx, cy) {
                 getWaterVertex(p3[0], p3[1], p3[2], p3[2] > z),
                 getWaterVertex(p4[0], p4[1], p4[2], p4[2] > z)
             ];
-        } else if (type === 3) {
+        } else if (isVoxelCube(type)) {
             pts = [
                 getCubeVertex(p1[0], p1[1], p1[2]),
                 getCubeVertex(p2[0], p2[1], p2[2]),
@@ -382,11 +392,11 @@ function buildChunkMeshJS(cx, cy) {
         }
         
         let isUnderground = false;
-        if (type === 1 || type === 3) {
+        if (isVoxelSolid(type)) {
             let airX = x + nx, airY = y + ny, airZ = z + nz;
             for (let checkZ = airZ; checkZ < MAX_Z; checkZ++) {
                 let checkV = getVoxel(airX, airY, checkZ);
-                if (checkV === 1 || checkV === 3) {
+                if (isVoxelSolid(checkV)) {
                     isUnderground = true;
                     break;
                 }
@@ -413,7 +423,7 @@ function buildChunkMeshJS(cx, cy) {
             
             for (let z = 0; z < MAX_Z; z++) {
                 let v = colVoxels[z];
-                if (v === 1 || v === 3) { 
+                if (isVoxelSolid(v)) { 
                     let col = getVoxelColor(x, y, z, v);
                     let up = z < MAX_Z - 1 ? colVoxels[z+1] : 0;
                     let dn = z > 0 ? colVoxels[z-1] : 1;
@@ -422,12 +432,12 @@ function buildChunkMeshJS(cx, cy) {
                     let py = getVoxel(x, y+1, z);
                     let ny = getVoxel(x, y-1, z);
 
-                    if (z === MAX_Z - 1 || (up !== 1 && up !== 3)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col, v);
-                    if (z === 0 || (dn !== 1 && dn !== 3)) addFace(x, y, z, [x, y+1, z], [x+1, y+1, z], [x+1, y, z], [x, y, z], 0, 0, -1, 0.3, col, v);
-                    if (px !== 1 && px !== 3) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, col, v);
-                    if (nx !== 1 && nx !== 3) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, col, v);
-                    if (py !== 1 && py !== 3) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col, v);
-                    if (ny !== 1 && ny !== 3) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, v);
+                    if (z === MAX_Z - 1 || !isVoxelSolid(up)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col, v);
+                    if (z === 0 || !isVoxelSolid(dn)) addFace(x, y, z, [x, y+1, z], [x+1, y+1, z], [x+1, y, z], [x, y, z], 0, 0, -1, 0.3, col, v);
+                    if (!isVoxelSolid(px)) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, col, v);
+                    if (!isVoxelSolid(nx)) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, col, v);
+                    if (!isVoxelSolid(py)) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col, v);
+                    if (!isVoxelSolid(ny)) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, v);
                 } 
                 else if (v === 2) { 
                     let wCol = { r: 30, g: 110, b: 200, a: 0.6 };

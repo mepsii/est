@@ -163,6 +163,16 @@ export function getTerrainOceanSurface(x: i32, y: i32): f64 { return getTerrainF
 export function getTerrainMoisture(x: i32, y: i32): f64 { return getTerrainFast(x, y).moisture; }
 export function getTerrainElevation(x: i32, y: i32): f64 { return getTerrainFast(x, y).elevation; }
 
+@inline
+function isVoxelSolid(v: i32): bool {
+  return v == 1 || v >= 3;
+}
+
+@inline
+function isVoxelCube(v: i32): bool {
+  return v >= 3;
+}
+
 // --- Voxel Storage ---
 function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
   if (z < 0) return 1;
@@ -170,8 +180,7 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
 
   let modKey = (((x & 0xFFFFFF) as u32 as u64) << 40) | (((y & 0xFFFFFF) as u32 as u64) << 16) | ((z & 0xFFFF) as u32 as u64);
   if (voxelMods.has(modKey)) {
-    let mod = voxelMods.get(modKey);
-    return mod == 1 ? 1 : (mod == 3 ? 3 : 0);
+    return voxelMods.get(modKey);
   }
 
   let density = t.baseH - (z as f64);
@@ -208,7 +217,7 @@ export function getVoxelWasm(x: i32, y: i32, z: i32): i32 {
 
 export function getSolidWasm(x: i32, y: i32, z: i32): bool {
   let v = getVoxelWasm(x, y, z);
-  return v == 1 || v == 3;
+  return isVoxelSolid(v);
 }
 
 class ColorData {
@@ -231,12 +240,22 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
     col.r = 150; col.g = 150; col.b = 150;
     return col;
   }
+  if (v == 4) {
+    let col = new ColorData();
+    col.r = 160; col.g = 110; col.b = 60;
+    return col;
+  }
+  if (v == 5) {
+    let col = new ColorData();
+    col.r = 140; col.g = 140; col.b = 140;
+    return col;
+  }
 
   let depthFromMacro = t.baseH - (z as f64);
   let colorNoise = hash(x as f64, y as f64, z as f64) * 15.0;
 
   let upV = getVoxel(x, y, z + 1, t);
-  let isSurface = (upV != 1 && upV != 3);
+  let isSurface = !isVoxelSolid(upV);
   let isUnderWater = (z <= (t.oceanSurface as i32)) || (t.isLake && z <= (t.lakeSurface as i32));
 
   let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0;
@@ -364,8 +383,8 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
     for (let dy = -1; dy <= 0; dy++) {
       for (let dz = -1; dz <= 0; dz++) {
         let v = getVoxelLocal(voxels, lx + dx, ly + dy, lz + dz);
-        if (v == 3) touchesCube = true;
-        if (v == 1 || v == 3) {
+        if (isVoxelCube(v)) touchesCube = true;
+        if (isVoxelSolid(v)) {
           sumX += ((gx + (dx as f32)) as f32) + 0.5;
           sumY += ((gy + (dy as f32)) as f32) + 0.5;
           sumZ += ((gz + (dz as f32)) as f32) + 0.5;
@@ -412,7 +431,7 @@ function addFace(
     v2.x = p2x; v2.y = p2y; v2.z = p2z > (gz as f32) ? p2z - 0.15 : p2z;
     v3.x = p3x; v3.y = p3y; v3.z = p3z > (gz as f32) ? p3z - 0.15 : p3z;
     v4.x = p4x; v4.y = p4y; v4.z = p4z > (gz as f32) ? p4z - 0.15 : p4z;
-  } else if (vType == 3) {
+  } else if (isVoxelCube(vType)) {
     v1.x = p1x; v1.y = p1y; v1.z = p1z;
     v2.x = p2x; v2.y = p2y; v2.z = p2z;
     v3.x = p3x; v3.y = p3y; v3.z = p3z;
@@ -429,13 +448,13 @@ function addFace(
 
   // Check if underground
   let isUnderground = false;
-  if (vType == 1 || vType == 3) {
+  if (isVoxelSolid(vType)) {
     let airX = gx + (nx as i32);
     let airY = gy + (ny as i32);
     let airZ = lz + (nz as i32);
     for (let checkZ = airZ; checkZ < 96; checkZ++) {
       let checkV = getVoxel(airX, airY, checkZ, getTerrainFast(airX, airY));
-      if (checkV == 1 || checkV == 3) {
+      if (isVoxelSolid(checkV)) {
         isUnderground = true;
         break;
       }
@@ -513,7 +532,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
       for (let lz = 0; lz < 96; lz++) {
         let idx = (lx + 1) + (ly + 1) * 10 + (lz + 1) * 100;
         let v = voxels[idx];
-        if (v == 1 || v == 3) {
+        if (isVoxelSolid(v)) {
           let col = getVoxelColor(gx, gy, lz, v, t);
 
           let up = voxels[idx + 100];
@@ -526,7 +545,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
           let fR = col.r, fG = col.g, fB = col.b, fA: u8 = 255;
 
           // up
-          if (lz == 95 || (up != 1 && up != 3)) {
+          if (lz == 95 || !isVoxelSolid(up)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy) as f32, (lz+1) as f32,
                     (gx+1) as f32, (gy) as f32, (lz+1) as f32,
@@ -535,7 +554,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 0, 1, 1.0, fR, fG, fB, fA, v, voxels, t);
           }
           // dn
-          if (lz == 0 || (dn != 1 && dn != 3)) {
+          if (lz == 0 || !isVoxelSolid(dn)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
@@ -544,7 +563,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 0, -1, 0.3, fR, fG, fB, fA, v, voxels, t);
           }
           // px
-          if (px != 1 && px != 3) {
+          if (!isVoxelSolid(px)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx+1) as f32, (gy) as f32, (lz) as f32,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
@@ -553,7 +572,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     1, 0, 0, 0.7, fR, fG, fB, fA, v, voxels, t);
           }
           // nx
-          if (nx != 1 && nx != 3) {
+          if (!isVoxelSolid(nx)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
                     (gx) as f32, (gy) as f32, (lz) as f32,
@@ -562,7 +581,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     -1, 0, 0, 0.5, fR, fG, fB, fA, v, voxels, t);
           }
           // py
-          if (py != 1 && py != 3) {
+          if (!isVoxelSolid(py)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
@@ -571,7 +590,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 1, 0, 0.8, fR, fG, fB, fA, v, voxels, t);
           }
           // ny
-          if (ny != 1 && ny != 3) {
+          if (!isVoxelSolid(ny)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy) as f32, (lz) as f32,
                     (gx+1) as f32, (gy) as f32, (lz) as f32,

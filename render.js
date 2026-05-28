@@ -234,14 +234,14 @@ function render() {
         let activeItem = inventory[hotbarSelection];
         let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
 
-        if (curW && (curW.toolType === 'place' || curW.toolType === 'place_cube' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
+        if (curW && (curW.type === 'block' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
             let aim = getAimVoxel(curW.range);
             if (aim) {
-                let isPlace = (curW.toolType === 'place' || curW.toolType === 'place_cube');
+                let isPlace = (curW.type === 'block');
                 let targetX = isPlace ? aim.placeX : aim.hitX;
                 let targetY = isPlace ? aim.placeY : aim.hitY;
                 let targetZ = isPlace ? aim.placeZ : aim.hitZ;
-                let isFine = (curW.toolType === 'place_cube' || curW.toolType === 'pickaxe');
+                let isFine = (curW.type === 'block' && isVoxelCube(curW.blockId)) || curW.toolType === 'pickaxe';
                 
                 let mx = isFine ? Math.floor(targetX) : targetX;
                 let my = isFine ? Math.floor(targetY) : targetY;
@@ -257,9 +257,16 @@ function render() {
                 let p001 = {x:cx, y:cy, z:cz+sz}, p101 = {x:cx+sz, y:cy, z:cz+sz}, p111 = {x:cx+sz, y:cy+sz, z:cz+sz}, p011 = {x:cx, y:cy+sz, z:cz+sz};
                 
                 let col;
-                if (curW.toolType === 'place_cube') col = {r: 200, g: 200, b: 200, a: 0.35};
-                else if (curW.toolType === 'place') col = {r: 120, g: 255, b: 120, a: 0.35};
-                else col = {r: 255, g: 80, b: 80, a: 0.35}; 
+                if (curW.type === 'block') {
+                    if (isVoxelCube(curW.blockId)) {
+                        let vCol = getVoxelColor(0, 0, 0, curW.blockId);
+                        col = { r: vCol.r, g: vCol.g, b: vCol.b, a: 0.35 };
+                    } else {
+                        col = { r: 120, g: 255, b: 120, a: 0.35 };
+                    }
+                } else {
+                    col = { r: 255, g: 80, b: 80, a: 0.35 };
+                } 
 
                 let addPF = (p1, p2, p3, p4) => {
                     let tCx = (p1.x+p3.x)/2, tCy = (p1.y+p3.y)/2, tCz = (p1.z+p3.z)/2;

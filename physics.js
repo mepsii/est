@@ -470,16 +470,16 @@ function update() {
                         if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
                         if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
                     }
-                } else if ((w.toolType === 'shovel' || w.toolType === 'place' || w.toolType === 'place_cube' || w.toolType === 'pickaxe') && gameState === 'overworld') {
+                } else if ((w.toolType === 'shovel' || w.type === 'block' || w.toolType === 'pickaxe') && gameState === 'overworld') {
                     let aim = getAimVoxel(w.range);
                     if (aim) {
-                        let isPlace = (w.toolType === 'place' || w.toolType === 'place_cube');
+                        let isPlace = (w.type === 'block');
                         let targetX = isPlace ? aim.placeX : aim.hitX;
                         let targetY = isPlace ? aim.placeY : aim.hitY;
                         let targetZ = isPlace ? aim.placeZ : aim.hitZ;
 
-                        let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe') ? -1 : (w.toolType === 'place_cube' ? 3 : 1); 
-                        let isFine = (w.toolType === 'place_cube' || w.toolType === 'pickaxe');
+                        let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe') ? -1 : w.blockId; 
+                        let isFine = (w.type === 'block' && isVoxelCube(w.blockId)) || w.toolType === 'pickaxe';
                         let rad = isFine ? 0.1 : 1.4;
                         
                         let mx = isFine ? Math.floor(targetX) : targetX;
