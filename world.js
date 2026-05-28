@@ -42,6 +42,11 @@ function hash(x, y, z) {
     return h - Math.floor(h);
 }
 
+function entityHash(x, y, z) {
+    let h = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + WORLD_SEED) * 43758.5453123;
+    return h - Math.floor(h);
+}
+
 function lerp(a, b, t) { return a + (b - a) * (3.0 - t * 2.0) * t * t; }
 
 function noise3D(x, y, z) {
@@ -526,28 +531,66 @@ function getEntityAt(gx, gy) {
     if (t.isLake || t.baseH <= t.oceanSurface) return null; 
 
     let cluster = fbm2D(gx * 0.1, gy * 0.1, 2);
-    let h = hash(gx, gy, 0);
+    let flowerCluster = fbm2D(gx * 0.08 + 200, gy * 0.08 + 200, 2);
+    let rockCluster = fbm2D(gx * 0.035 + 500, gy * 0.035 + 500, 2);
+    let h = entityHash(gx, gy, 0);
+    let fh_rock = entityHash(gx, gy, 8);
     
     if (t.elevation > 0.70) { 
         if (cluster > 0.5 && h < 0.05) return '🌲';
-        if (h < 0.08) return '🪨'; 
+        
+        if (rockCluster > 0.58) {
+            if (fh_rock < 0.18) return '🪨';
+        } else {
+            if (fh_rock < 0.015) return '🪨';
+        }
     } else if (t.moisture < 0.35) { 
         if (h < 0.01) return '💀'; 
-        if (h < 0.03) return '🌵'; 
-        if (h < 0.05) return '🪨'; 
+        
+        let cactusCluster = fbm2D(gx * 0.15 + 800, gy * 0.15 + 800, 2);
+        let fh_cactus = entityHash(gx, gy, 9);
+        if (cactusCluster > 0.68) {
+            if (fh_cactus < 0.20) return '🌵';
+        } else {
+            if (fh_cactus < 0.001) return '🌵';
+        }
+        
+        if (rockCluster > 0.58) {
+            if (fh_rock < 0.12) return '🪨';
+        } else {
+            if (fh_rock < 0.008) return '🪨';
+        }
     } else if (t.moisture > 0.6) { 
         if (cluster > 0.3) { 
             if (h < 0.20) return '🌳'; 
             if (h < 0.25) return '🪾'; 
-        } else { 
-            if (h < 0.05) return '🌹'; 
-            if (h < 0.08) return '🌻'; 
+        } else {
+            if (flowerCluster > 0.62) { 
+                let fh = entityHash(gx, gy, 5);
+                if (fh < 0.18) return '🌹'; 
+                if (fh < 0.30) return '🌻'; 
+            }
+            
+            if (rockCluster > 0.62) {
+                if (fh_rock < 0.08) return '🪨';
+            } else {
+                if (fh_rock < 0.004) return '🪨';
+            }
         }
     } else { 
         if (cluster > 0.6 && h < 0.05) return '🌳'; 
-        if (h < 0.05) return '🌼'; 
-        if (h < 0.08) return '🌷'; 
-        if (h < 0.10) return '🪨';
+        
+        if (flowerCluster > 0.62) {
+            let fh = entityHash(gx, gy, 5);
+            if (fh < 0.18) return '🌼'; 
+            if (fh < 0.30) return '🌷'; 
+        }
+        
+        if (rockCluster > 0.62) {
+            if (fh_rock < 0.12) return '🪨';
+        } else {
+            if (fh_rock < 0.006) return '🪨';
+        }
     }
     return null;
 }
@@ -558,10 +601,10 @@ function getEntityBaseInfo(x, y) {
     
     let em = getEntityAt(x, y), result = null;
     if (em) {
-        let v = hash(x, y, 10), finalSize = ENTITIES_DATA[em].baseSize, solid = ENTITIES_DATA[em].solid, plantOffset = 0.1; 
+        let v = entityHash(x, y, 10), finalSize = ENTITIES_DATA[em].baseSize, solid = ENTITIES_DATA[em].solid, plantOffset = 0.1; 
         if (em === '🪨') { 
-            if (v < 0.4) { finalSize = 0.25; solid = false; plantOffset = 0.05; } 
-            else if (v > 0.8) { finalSize = 1.6; plantOffset = 0.3; } 
+            if (v < 0.55) { finalSize = 0.25; solid = false; plantOffset = 0.05; } 
+            else if (v > 0.89) { finalSize = 1.6; plantOffset = 0.3; } 
             else { finalSize = 0.7; plantOffset = 0.15; } 
         } else if (TREE_EMOJIS.has(em)) { 
             finalSize += (v - 0.5) * 3.5; plantOffset = 0.4; 
@@ -585,16 +628,31 @@ function getMapChunk(cx, cy) {
             let info = getEntityBaseInfo(x, y); 
             let entKey = `${x},${y}`;
             if (info && !destroyedEntities.has(entKey)) {
+                let jx = 0, jy = 0;
+                if (FLOWER_EMOJIS.has(info.emoji)) {
+                    jx = (entityHash(x, y, 20) - 0.5) * 0.85;
+                    jy = (entityHash(x, y, 21) - 0.5) * 0.85;
+                } else if (info.emoji === '🪨' || info.emoji === '🌵' || info.emoji === '💀') {
+                    jx = (entityHash(x, y, 20) - 0.5) * 0.7;
+                    jy = (entityHash(x, y, 21) - 0.5) * 0.7;
+                } else if (TREE_EMOJIS.has(info.emoji)) {
+                    jx = (entityHash(x, y, 20) - 0.5) * 0.4;
+                    jy = (entityHash(x, y, 21) - 0.5) * 0.4;
+                }
+                
+                let wx = x + 0.5 + jx;
+                let wy = y + 0.5 + jy;
+                
                 let floorIntZ = MAX_Z - 1;
-                while(floorIntZ >= 0 && getVoxel(Math.floor(x + 0.5), Math.floor(y + 0.5), floorIntZ) !== 1) floorIntZ--;
+                while(floorIntZ >= 0 && getVoxel(Math.floor(wx), Math.floor(wy), floorIntZ) !== 1) floorIntZ--;
                 if (floorIntZ < 0) continue; 
                 
-                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: x + 0.5, wy: y + 0.5, h: (floorIntZ + 1.0) - info.plantOffset, hp: 4, entKey: entKey }); 
+                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: wx, wy: wy, h: (floorIntZ + 1.0) - info.plantOffset, hp: 4, entKey: entKey }); 
             }
         }
     }
     
-    let chunkHash = hash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
+    let chunkHash = entityHash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
     let bZInt = MAX_Z - 1;
     while (bZInt >= 0 && getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt) !== 1) bZInt--;
     let bZ = bZInt + 1.0;
@@ -602,7 +660,7 @@ function getMapChunk(cx, cy) {
     if (getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt + 1) !== 2) {
         if (chunkHash > 0.94) {
             let items = new Array(10).fill(null); 
-            for(let k = 0; k < Math.floor(hash(cx, cy, 7) * 4); k++) items[Math.floor(Math.random() * 10)] = { type: 'heal', emoji: '🩹', amount: 25 };
+            for(let k = 0; k < Math.floor(entityHash(cx, cy, 7) * 4); k++) items[Math.floor(Math.random() * 10)] = { type: 'heal', emoji: '🩹', amount: 25 };
             containers.push({ x: cx_offset, y: cy_offset, z: bZ, emoji: ['🧳', '🎒', '📦'][Math.floor(chunkHash * 1000) % 3], size: 0.9, items: items });
         } else if (chunkHash > 0.88 && chunkHash <= 0.94) {
             let def = ANIMAL_TYPES[Math.floor(chunkHash * 1000) % ANIMAL_TYPES.length];

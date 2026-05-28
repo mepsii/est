@@ -10,5 +10,22 @@ document.addEventListener('mousemove', (e) => {
     } 
 });
 
-function loop() { update(); render(); requestAnimationFrame(loop); }
+let lastTime = performance.now();
+let frames = 0;
+
+function loop() { 
+    update(); 
+    render(); 
+    
+    frames++;
+    const now = performance.now();
+    if (now >= lastTime + 500) {
+        const fps = Math.round((frames * 1000) / (now - lastTime));
+        if (fpsValEl) fpsValEl.innerText = fps;
+        frames = 0;
+        lastTime = now;
+    }
+    
+    requestAnimationFrame(loop); 
+}
 loop();

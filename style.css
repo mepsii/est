@@ -7,6 +7,16 @@ canvas { display: block; width: 100vw; height: 100vh; }
     color: white; font-family: 'Courier New', Courier, monospace;
     text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10;
 }
+#fps-counter {
+    position: absolute; top: 20px; right: 20px;
+    color: #00ff00; font-family: 'Courier New', Courier, monospace;
+    font-size: 24px; font-weight: bold;
+    text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10;
+    transition: right 0.2s ease-in-out;
+}
+#fps-counter.debug-open {
+    right: 280px;
+}
 #overlay {
     position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
     background: rgba(0, 0, 0, 0.8); display: flex; flex-direction: column;

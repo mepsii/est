@@ -589,6 +589,10 @@ document.addEventListener('pointerlockchange', () => {
         containerUI.style.display = (isInventoryOpen && activeContainer) ? 'flex' : 'none'; 
         debugMenu.style.display = isDebugOpen ? 'block' : 'none'; stairMenu.style.display = isStairMenuOpen ? 'block' : 'none';
         interactTooltip.style.display = 'none'; keys = {}; 
+        if (fpsCounterEl) {
+            if (isDebugOpen) fpsCounterEl.classList.add('debug-open');
+            else fpsCounterEl.classList.remove('debug-open');
+        }
     } else { 
         // Handles dropping an item back if UI is closed mid-drag
         if (dragItemData) {
@@ -602,6 +606,7 @@ document.addEventListener('pointerlockchange', () => {
         activeContainer = null; 
         overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; 
         updateInventories();
+        if (fpsCounterEl) fpsCounterEl.classList.remove('debug-open');
     }
 });
 
