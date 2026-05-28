@@ -1,5 +1,108 @@
 //THIS IS render.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+const zombieHeadImg = new Image();
+zombieHeadImg.src = 'textures/zombiehead.png';
+
+const ZombieHeadCache = {
+    sprites: new Map(),
+    get(flash, ambient) {
+        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20);
+        const key = `${flash}_${ambStep}`;
+        if (this.sprites.has(key)) return this.sprites.get(key);
+        
+        const c = document.createElement('canvas');
+        c.width = 128;
+        c.height = 128;
+        const cx = c.getContext('2d');
+        
+        if (zombieHeadImg.complete && zombieHeadImg.naturalWidth !== 0) {
+            cx.drawImage(zombieHeadImg, 0, 0, 128, 128);
+            
+            // Remove checkerboard background (flood-fill from borders/corners)
+            const imgData = cx.getImageData(0, 0, 128, 128);
+            const data = imgData.data;
+            const visited = new Uint8Array(128 * 128);
+            const queue = [];
+            
+            function isBg(r, g, b, a) {
+                if (a === 0) return true;
+                // Detect white (r,g,b > 230) or light grey checkerboard
+                let isWhite = (r > 230 && g > 230 && b > 230);
+                let isGrey = (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && Math.abs(r - b) < 8 && r > 180 && r < 220);
+                return isWhite || isGrey;
+            }
+            
+            // Push borders to queue
+            for (let x = 0; x < 128; x++) {
+                for (let y of [0, 127]) {
+                    let idx = (y * 128 + x) * 4;
+                    if (isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
+                        queue.push(x, y);
+                        visited[y * 128 + x] = 1;
+                    }
+                }
+            }
+            for (let y = 0; y < 128; y++) {
+                for (let x of [0, 127]) {
+                    let idx = (y * 128 + x) * 4;
+                    if (!visited[y * 128 + x] && isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
+                        queue.push(x, y);
+                        visited[y * 128 + x] = 1;
+                    }
+                }
+            }
+            
+            let head = 0;
+            const dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
+            while (head < queue.length) {
+                let qx = queue[head++];
+                let qy = queue[head++];
+                let idx = (qy * 128 + qx) * 4;
+                data[idx+3] = 0; // Transparent
+                
+                for (let d = 0; d < 8; d += 2) {
+                    let nx = qx + dirs[d];
+                    let ny = qy + dirs[d+1];
+                    if (nx >= 0 && nx < 128 && ny >= 0 && ny < 128) {
+                        let nidx = ny * 128 + nx;
+                        if (!visited[nidx]) {
+                            let pidx = nidx * 4;
+                            if (isBg(data[pidx], data[pidx+1], data[pidx+2], data[pidx+3])) {
+                                queue.push(nx, ny);
+                                visited[nidx] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+            cx.putImageData(imgData, 0, 0);
+        } else {
+            // Fallback while texture loads
+            cx.font = '96px sans-serif';
+            cx.textAlign = 'center';
+            cx.textBaseline = 'middle';
+            cx.fillText('🧟', 64, 64);
+        }
+        
+        if (flash) {
+            cx.globalCompositeOperation = 'source-atop';
+            cx.fillStyle = 'white';
+            cx.fillRect(0, 0, 128, 128);
+            cx.globalCompositeOperation = 'source-over';
+        } else if (ambStep < 1.0) {
+            cx.globalCompositeOperation = 'source-atop';
+            cx.fillStyle = `rgba(15, 20, 35, ${1.0 - ambStep})`;
+            cx.fillRect(0, 0, 128, 128);
+            cx.globalCompositeOperation = 'source-over';
+        }
+        
+        if (zombieHeadImg.complete && zombieHeadImg.naturalWidth !== 0) {
+            this.sprites.set(key, c);
+        }
+        return c;
+    }
+};
+
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
@@ -684,16 +787,29 @@ function render() {
             } else if (o.type === 'locationalEnemy') {
                 let e = o.obj, isFlash = e.flash > 0, isZombie = e.type === 'zombie';
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
-                let topLegs = sy - legH, topAbd = topLegs - abdH, topChest = topAbd - chestH;
                 
-                let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*objLight|0},${86*objLight|0},${34*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
+                let topLegs = sy - legH;
+                let topChest = topLegs - abdH - chestH;
+                
+                let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*objLight|0},${86*objLight|0},${34*objLight|0})` : `rgb(${100*objLight|0},${100*objLight|0},${100*objLight|0})`);
                 let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*objLight|0},${125*objLight|0},${50*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
                 
-                ctx.fillStyle = color1; ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
-                ctx.fillStyle = color2; ctx.fillRect(sx - (sz * 0.18)/2, topAbd, sz * 0.18, abdH + chestH);
-                const headSprite = SpriteCache.get(isZombie ? '🧟' : '👽', isFlash, false, objLight);
+                // Draw Legs block
+                ctx.fillStyle = color1;
+                ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
+                
+                // Draw Torso block (abdomen + chest)
+                ctx.fillStyle = color2;
+                ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                
+                // Draw Head
+                const headSprite = isZombie ? ZombieHeadCache.get(isFlash, objLight) : SpriteCache.get('👽', isFlash, false, objLight);
                 let headScale = (headR * 2) / 128;
-                ctx.drawImage(headSprite, sx - (headSprite.width*headScale)/2, (topChest - headR/2) - (headSprite.height - 20) * headScale, headSprite.width * headScale, headSprite.height * headScale);
+                let headW = headSprite.width * headScale;
+                let headH = headSprite.height * headScale;
+                let headX = sx - headW / 2;
+                let headY = topChest - (headSprite.height - 20) * headScale;
+                ctx.drawImage(headSprite, headX, headY, headW, headH);
             } else if (o.type === 'dmgText') {
                 ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/depth) + 'px sans-serif';
                 if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
