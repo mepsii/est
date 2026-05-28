@@ -316,7 +316,7 @@ function render() {
         for (let e of animals) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
         for (let b of buildings) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 8.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
         for (let d of damageTexts) { let dx=d.x-player.x, dy=d.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
-        for (let b of bloodParticles) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y;} }
+        for (let b of bloodParticles) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y; if (b.isLimb) { o.isLimb = true; o.limbType = b.limbType; o.vx = b.vx; o.vy = b.vy; o.vz = b.vz; o.landedAngle = b.landedAngle; } } }
         
         if (typeof placementItem !== 'undefined' && placementItem !== null) {
             let target = getPlacementTarget();
@@ -788,36 +788,239 @@ function render() {
                 let e = o.obj, isFlash = e.flash > 0, isZombie = e.type === 'zombie';
                 let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
                 
-                let topLegs = sy - legH;
-                let topChest = topLegs - abdH - chestH;
-                
                 let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*objLight|0},${86*objLight|0},${34*objLight|0})` : `rgb(${100*objLight|0},${100*objLight|0},${100*objLight|0})`);
                 let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*objLight|0},${125*objLight|0},${50*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
                 
-                // Draw Legs block
-                ctx.fillStyle = color1;
-                ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
-                
-                // Draw Torso block (abdomen + chest)
-                ctx.fillStyle = color2;
-                ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
-                
-                // Draw Head
-                const headSprite = isZombie ? ZombieHeadCache.get(isFlash, objLight) : SpriteCache.get('👽', isFlash, false, objLight);
-                let headScale = (headR * 2) / 128;
-                let headW = headSprite.width * headScale;
-                let headH = headSprite.height * headScale;
-                let headX = sx - headW / 2;
-                let headY = topChest - (headSprite.height - 20) * headScale;
-                ctx.drawImage(headSprite, headX, headY, headW, headH);
+                if (isZombie && e.hasHead !== undefined) {
+                    let redColor = `rgb(${150*objLight|0}, 0, 0)`;
+                    if (e.isCrawling) {
+                        // Crawling layout (low to the ground, legs dragged horizontally behind)
+                        let topChest = sy - (abdH + chestH);
+                        
+                        // Draw Torso
+                        ctx.fillStyle = color2;
+                        ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        
+                        // Draw Arms (dragging on ground)
+                        ctx.fillStyle = color1;
+                        if (e.hasLeftUpperArm) {
+                            ctx.fillRect(sx - sz * 0.15, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            if (e.hasLeftLowerArm) {
+                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.15);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx - sz * 0.12, topChest + chestH, sz * 0.04, sz * 0.04);
+                            ctx.fillStyle = color1;
+                        }
+                        
+                        if (e.hasRightUpperArm) {
+                            ctx.fillRect(sx + sz * 0.09, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            if (e.hasRightLowerArm) {
+                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.15);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx + sz * 0.08, topChest + chestH, sz * 0.04, sz * 0.04);
+                            ctx.fillStyle = color1;
+                        }
+
+                        // Draw Head or Neck Stump
+                        if (e.hasHead) {
+                            const headSprite = ZombieHeadCache.get(isFlash, objLight);
+                            let headScale = (headR * 2) / 128;
+                            let headW = headSprite.width * headScale;
+                            let headH = headSprite.height * headScale;
+                            let headX = sx - headW / 2;
+                            let headY = topChest - (headSprite.height - 20) * headScale;
+                            ctx.drawImage(headSprite, headX, headY, headW, headH);
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx - (sz * 0.06)/2, topChest - sz * 0.04, sz * 0.06, sz * 0.04);
+                        }
+
+                        // Draw Crawling Legs (horizontal)
+                        ctx.fillStyle = color1;
+                        // Left Leg
+                        if (e.hasLeftUpperLeg) {
+                            ctx.fillRect(sx - sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            if (e.hasLeftLowerLeg) {
+                                ctx.fillRect(sx - sz * 0.32, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx - sz * 0.23, sy - sz * 0.06, sz * 0.03, sz * 0.06);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx - sz * 0.09, sy - sz * 0.06, sz * 0.03, sz * 0.06);
+                            ctx.fillStyle = color1;
+                        }
+                        // Right Leg
+                        if (e.hasRightUpperLeg) {
+                            ctx.fillRect(sx + sz * 0.08, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            if (e.hasRightLowerLeg) {
+                                ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.03, sz * 0.06);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx + sz * 0.06, sy - sz * 0.06, sz * 0.03, sz * 0.06);
+                            ctx.fillStyle = color1;
+                        }
+                    } else {
+                        // Standing layout (upper and lower segments)
+                        let topLegs = sy - legH;
+                        let topChest = topLegs - (abdH + chestH);
+
+                        // Draw Legs separately (standing)
+                        ctx.fillStyle = color1;
+                        // Left Leg
+                        if (e.hasLeftUpperLeg) {
+                            ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.5);
+                            if (e.hasLeftLowerLeg) {
+                                ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.1);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.1);
+                            ctx.fillStyle = color1;
+                        }
+                        
+                        // Right Leg
+                        if (e.hasRightUpperLeg) {
+                            ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.5);
+                            if (e.hasRightLowerLeg) {
+                                ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.1);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.1);
+                            ctx.fillStyle = color1;
+                        }
+
+                        // Draw Torso
+                        ctx.fillStyle = color2;
+                        ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+
+                        // Draw Arms (standing)
+                        ctx.fillStyle = color1;
+                        // Left Arm
+                        if (e.hasLeftUpperArm) {
+                            ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            if (e.hasLeftLowerArm) {
+                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.15);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx - sz * 0.12, topChest + chestH * 0.2, sz * 0.04, sz * 0.04);
+                            ctx.fillStyle = color1;
+                        }
+                        
+                        // Right Arm
+                        if (e.hasRightUpperArm) {
+                            ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            if (e.hasRightLowerArm) {
+                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                            } else {
+                                ctx.fillStyle = redColor;
+                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.15);
+                                ctx.fillStyle = color1;
+                            }
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx + sz * 0.08, topChest + chestH * 0.2, sz * 0.04, sz * 0.04);
+                            ctx.fillStyle = color1;
+                        }
+
+                        // Draw Head or Neck Stump
+                        if (e.hasHead) {
+                            const headSprite = ZombieHeadCache.get(isFlash, objLight);
+                            let headScale = (headR * 2) / 128;
+                            let headW = headSprite.width * headScale;
+                            let headH = headSprite.height * headScale;
+                            let headX = sx - headW / 2;
+                            let headY = topChest - (headSprite.height - 20) * headScale;
+                            ctx.drawImage(headSprite, headX, headY, headW, headH);
+                        } else {
+                            ctx.fillStyle = redColor;
+                            ctx.fillRect(sx - (sz * 0.06)/2, topChest - sz * 0.04, sz * 0.06, sz * 0.04);
+                        }
+                    }
+
+                } else {
+                    // Fallback for non-zombies (experimental/alien)
+                    let topLegs = sy - legH;
+                    let topChest = topLegs - abdH - chestH;
+                    ctx.fillStyle = color1;
+                    ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
+                    ctx.fillStyle = color2;
+                    ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                    const headSprite = isZombie ? ZombieHeadCache.get(isFlash, objLight) : SpriteCache.get('👽', isFlash, false, objLight);
+                    let headScale = (headR * 2) / 128;
+                    let headW = headSprite.width * headScale;
+                    let headH = headSprite.height * headScale;
+                    let headX = sx - headW / 2;
+                    let headY = topChest - (headSprite.height - 20) * headScale;
+                    ctx.drawImage(headSprite, headX, headY, headW, headH);
+                }
             } else if (o.type === 'dmgText') {
                 ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/depth) + 'px sans-serif';
                 if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                 ctx.fillText(o.text, sx, sy);
             } else if (o.type === 'blood') {
                 let bsz = Math.max(2, (fov/depth) * o.size);
-                ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, ${Math.min(1.0, o.life / 20.0)})`;
-                ctx.fillRect(sx - bsz/2, sy - bsz/2, bsz, bsz);
+                if (o.isLimb) {
+                    ctx.save();
+                    ctx.translate(sx, sy);
+                    let isMoving = (o.vx !== 0 || o.vy !== 0 || o.vz !== 0);
+                    let spinAngle = isMoving ? (o.life * 0.15) : (o.landedAngle !== undefined ? o.landedAngle : Math.PI / 2);
+                    ctx.rotate(spinAngle);
+                    
+                    if (o.limbType === 'head') {
+                        const headSprite = ZombieHeadCache.get(false, objLight);
+                        ctx.drawImage(headSprite, -bsz/2, -bsz/2, bsz, bsz);
+                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
+                        ctx.fillRect(-bsz/4, bsz/3, bsz/2, bsz/6);
+                    } else if (o.limbType === 'upperArm' || o.limbType === 'lowerArm') {
+                        ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
+                        ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz);
+                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
+                        ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz/4);
+                    } else {
+                        ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
+                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
+                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
+                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz/4);
+                    }
+                    ctx.restore();
+                } else {
+                    ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, ${Math.min(1.0, o.life / 20.0)})`;
+                    ctx.fillRect(sx - bsz/2, sy - bsz/2, bsz, bsz);
+                }
             } else if (o.type === 'emoji' || o.type === 'animal' || o.type === 'droppedItem') {
                 const sprite = SpriteCache.get(o.emoji, o.targeted || (o.flash > 0), o.dead, objLight);
                 let scale = sz / 128;

@@ -287,8 +287,45 @@ function update() {
 
     for(let i = damageTexts.length - 1; i >= 0; i--) { damageTexts[i].z += 0.02; damageTexts[i].life--; if(damageTexts[i].life <= 0) damageTexts.splice(i, 1); }
     for(let i = bloodParticles.length - 1; i >= 0; i--) { 
-        let b = bloodParticles[i]; b.x += b.vx; b.y += b.vy; b.z += b.vz; b.vz -= 0.02; 
-        if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) { b.z = Math.floor(b.z) + 1.02; b.vx = 0; b.vy = 0; b.vz = 0; } 
+        let b = bloodParticles[i];
+        if (!b.onGround) {
+            b.x += b.vx; b.y += b.vy; b.z += b.vz; b.vz -= 0.02; 
+            if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) { 
+                b.z = Math.floor(b.z) + 1.02; 
+                b.vx = 0; b.vy = 0; b.vz = 0; 
+                b.onGround = true;
+            } 
+        }
+        
+        if (b.isLimb) {
+            let zBlood = getBloodColor('zombie') || {r: 92, g: 64, b: 51};
+            if (b.onGround) {
+                // If it is on the ground, spray blood out the side of it occasionally!
+                if (b.life > 1200) {
+                    let progress = (b.life - 1200) / 1800; // 1.0 down to 0.0
+                    if (Math.random() < progress * 0.15) {
+                        let angle = b.sprayAngle + (Math.random() - 0.5) * 0.5;
+                        let speed = Math.random() * 0.08 + 0.04;
+                        let vz = Math.random() * 0.06 + 0.04;
+                        bloodParticles.push({
+                            x: b.x, y: b.y, z: b.z + 0.05,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            vz: vz,
+                            color: zBlood,
+                            life: 40 + Math.random() * 20,
+                            size: Math.random() * 0.06 + 0.03
+                        });
+                    }
+                }
+            } else {
+                // While flying in the air, leave blood trail
+                if (b.life > 10 && Math.random() < 0.35) {
+                    spawnBlood(b.x, b.y, b.z, zBlood, 1);
+                }
+            }
+        }
+        
         b.life--; if (b.life <= 0) bloodParticles.splice(i, 1); 
     }
 
@@ -364,9 +401,194 @@ function update() {
         for (let ei = enemies.length - 1; ei >= 0; ei--) {
             let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); 
             if (e.flash && e.flash > 0) e.flash--; if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
+
+            // Initialize zombie limbs dynamically if undefined
+            if (e.type === 'zombie' && e.hasHead === undefined) {
+                e.hasHead = true;
+                e.hasLeftUpperArm = true;
+                e.hasLeftLowerArm = true;
+                e.hasRightUpperArm = true;
+                e.hasRightLowerArm = true;
+                e.hasLeftUpperLeg = true;
+                e.hasLeftLowerLeg = true;
+                e.hasRightUpperLeg = true;
+                e.hasRightLowerLeg = true;
+                e.limbsHP = {
+                    head: 4,
+                    leftUpperArm: 3,
+                    leftLowerArm: 2,
+                    rightUpperArm: 3,
+                    rightLowerArm: 2,
+                    leftUpperLeg: 3,
+                    leftLowerLeg: 2,
+                    rightUpperLeg: 3,
+                    rightLowerLeg: 2
+                };
+                e.isCrawling = false;
+            }
+
+            // Handle decapitation bleed-out timer
+            if (e.type === 'zombie' && e.bleedOutTimer !== undefined) {
+                e.bleedOutTimer--;
+                if (e.bleedOutTimer <= 0) {
+                    e.hp = 0;
+                    spawnBlood(e.x, e.y, e.z + e.size * 0.5, getBloodColor('zombie') || {r: 92, g: 64, b: 51}, 30);
+                    if (e.hasHead) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head');
+                    if (e.hasLeftUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'upperArm');
+                    if (e.hasLeftLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'lowerArm');
+                    if (e.hasRightUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'upperArm');
+                    if (e.hasRightLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'lowerArm');
+                    if (e.hasLeftUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'upperLeg');
+                    if (e.hasLeftLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'lowerLeg');
+                    if (e.hasRightUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'upperLeg');
+                    if (e.hasRightLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'lowerLeg');
+                    enemies.splice(ei, 1);
+                    score += 150;
+                    scoreEl.innerText = score;
+                    continue;
+                }
+            }
+
+            // Handle stump sprays (if alive and has missing limbs)
+            if (e.type === 'zombie' && e.hasHead !== undefined && e.hp > 0) {
+                let zBlood = getBloodColor('zombie') || {r: 92, g: 64, b: 51};
+                // Neck spray
+                if (!e.hasHead && tickCounter % 2 === 0) {
+                    let speed = Math.random() * 0.04 + 0.01;
+                    let vz = Math.random() * 0.05 + 0.06;
+                    let angle = Math.random() * Math.PI * 2;
+                    bloodParticles.push({
+                        x: e.x, y: e.y, z: e.z + (e.isCrawling ? e.size * 0.44 : e.size * 0.88),
+                        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz,
+                        color: zBlood, life: 25 + Math.random() * 15, size: Math.random() * 0.05 + 0.02
+                    });
+                }
+                
+                // Left Arm sprays
+                if (!e.hasLeftUpperArm) {
+                    // Spray from shoulder
+                    if (tickCounter % 3 === 0) {
+                        let jx = e.x + Math.sin(player.angle) * 0.15;
+                        let jy = e.y - Math.cos(player.angle) * 0.15;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.18 : e.size * 0.72);
+                        let sprayAngle = player.angle - Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+                        let speed = Math.random() * 0.03 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.03 + 0.01,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                } else if (!e.hasLeftLowerArm) {
+                    // Spray from elbow
+                    if (tickCounter % 3 === 0) {
+                        let jx = e.x + Math.sin(player.angle) * 0.15;
+                        let jy = e.y - Math.cos(player.angle) * 0.15;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.05 : e.size * 0.5);
+                        let sprayAngle = player.angle - Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+                        let speed = Math.random() * 0.03 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.03 + 0.01,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                }
+                
+                // Right Arm sprays
+                if (!e.hasRightUpperArm) {
+                    // Spray from shoulder
+                    if (tickCounter % 3 === 0) {
+                        let jx = e.x - Math.sin(player.angle) * 0.15;
+                        let jy = e.y + Math.cos(player.angle) * 0.15;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.18 : e.size * 0.72);
+                        let sprayAngle = player.angle + Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+                        let speed = Math.random() * 0.03 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.03 + 0.01,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                } else if (!e.hasRightLowerArm) {
+                    // Spray from elbow
+                    if (tickCounter % 3 === 0) {
+                        let jx = e.x - Math.sin(player.angle) * 0.15;
+                        let jy = e.y + Math.cos(player.angle) * 0.15;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.05 : e.size * 0.5);
+                        let sprayAngle = player.angle + Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+                        let speed = Math.random() * 0.03 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.03 + 0.01,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                }
+                
+                // Left Leg sprays
+                if (!e.hasLeftUpperLeg) {
+                    if (tickCounter % 4 === 0) {
+                        let jx = e.x + Math.sin(player.angle) * 0.08;
+                        let jy = e.y - Math.cos(player.angle) * 0.08;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.05 : e.size * 0.44);
+                        let sprayAngle = player.angle + Math.PI + (Math.random() - 0.5) * 1.0;
+                        let speed = Math.random() * 0.02 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.02,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                } else if (!e.hasLeftLowerLeg) {
+                    if (tickCounter % 4 === 0) {
+                        let jx = e.x + Math.sin(player.angle) * 0.08;
+                        let jy = e.y - Math.cos(player.angle) * 0.08;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.05 : e.size * 0.2);
+                        let sprayAngle = player.angle + Math.PI + (Math.random() - 0.5) * 1.0;
+                        let speed = Math.random() * 0.02 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.02,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                }
+                
+                // Right Leg sprays
+                if (!e.hasRightUpperLeg) {
+                    if (tickCounter % 4 === 0) {
+                        let jx = e.x - Math.sin(player.angle) * 0.08;
+                        let jy = e.y + Math.cos(player.angle) * 0.08;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.05 : e.size * 0.44);
+                        let sprayAngle = player.angle + Math.PI + (Math.random() - 0.5) * 1.0;
+                        let speed = Math.random() * 0.02 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.02,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                } else if (!e.hasRightLowerLeg) {
+                    if (tickCounter % 4 === 0) {
+                        let jx = e.x - Math.sin(player.angle) * 0.08;
+                        let jy = e.y + Math.cos(player.angle) * 0.08;
+                        let jz = e.z + (e.isCrawling ? e.size * 0.05 : e.size * 0.2);
+                        let sprayAngle = player.angle + Math.PI + (Math.random() - 0.5) * 1.0;
+                        let speed = Math.random() * 0.02 + 0.01;
+                        bloodParticles.push({
+                            x: jx, y: jy, z: jz,
+                            vx: Math.cos(sprayAngle) * speed, vy: Math.sin(sprayAngle) * speed, vz: Math.random() * 0.02,
+                            color: zBlood, life: 15 + Math.random() * 10, size: Math.random() * 0.04 + 0.02
+                        });
+                    }
+                }
+            }
+
             if (d < 40) { 
                 if (d > 0.8) { 
-                    let nx = e.x + (player.x-e.x)/d * 0.02, ny = e.y + (player.y-e.y)/d * 0.02;
+                    let moveSpeed = (e.type === 'zombie' && e.isCrawling) ? 0.006 : 0.02;
+                    let nx = e.x + (player.x-e.x)/d * moveSpeed, ny = e.y + (player.y-e.y)/d * moveSpeed;
                     if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) e.x = nx;
                     else if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + 1.1))) { e.x = nx; e.z += 1.1; }
 
@@ -377,7 +599,9 @@ function update() {
                 else if (getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))) e.z += 0.5; 
                 
                 if (e.type === 'zombie') {
-                    if (d < 1.5) { if (--e.cooldown <= 0) { takeDamage(5); e.cooldown = 60; } } else e.cooldown = Math.max(0, e.cooldown - 1);
+                    let attackCooldown = 60;
+                    if (!e.hasLeftUpperArm && !e.hasRightUpperArm) attackCooldown = 100;
+                    if (d < 1.5) { if (--e.cooldown <= 0) { takeDamage(5); e.cooldown = attackCooldown; } } else e.cooldown = Math.max(0, e.cooldown - 1);
                 } else {
                     if (--e.cooldown <= 0) { let projZ = (e.type === 'experimental' ? e.z + e.size * 0.8 : e.z + 0.6); projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:projZ, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-projZ)/d*0.6, life:100, dmg:10 }); e.cooldown = 120; } 
                 }
@@ -462,9 +686,16 @@ function update() {
 
                 if (hitTarget) {
                     if (hitTarget.type === 'enemy') {
-                        hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
-                        let bCol = getBloodColor(hitTarget.obj.type); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
-                        if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
+                        if (hitTarget.obj.type === 'zombie') {
+                            let died = damageZombieLimb(hitTarget.obj, w.dmg, hitTarget.obj.z + hitTarget.obj.size * 0.6, hitTarget.obj.x, hitTarget.obj.y, Math.cos(player.angle), Math.sin(player.angle));
+                            if (died) {
+                                enemies.splice(enemies.indexOf(hitTarget.obj), 1);
+                            }
+                        } else {
+                            hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
+                            let bCol = getBloodColor(hitTarget.obj.type); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
+                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
+                        }
                     } else if (hitTarget.type === 'animal') {
                         hitTarget.obj.hp -= w.dmg; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
                         let bCol = getBloodColor('animal'); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
@@ -518,13 +749,23 @@ function update() {
         if (p.owner === 'player' && gameState === 'overworld') {
             for (let ei = enemies.length - 1; ei >= 0; ei--) { 
                 let e = enemies[ei], isLocational = (e.type === 'experimental' || e.type === 'zombie'), rad = isLocational ? 0.4 : 0.6;
-                let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, e.x, e.y, e.z, e.size, rad);
+                let cylHeight = (e.type === 'zombie' && e.isCrawling) ? 0.7 : e.size;
+                let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, e.x, e.y, e.z, cylHeight, rad);
                 if (hitZ !== false) {
                     if (isLocational) {
-                        let relZ = hitZ - e.z, mult = (relZ > e.size * 0.88) ? 2.0 : ((relZ > e.size * 0.72) ? 1.2 : ((relZ > e.size * 0.44) ? 1.0 : 0.5)), totalDmg = p.dmg * mult;
-                        e.hp -= totalDmg; hit = true; e.flash = 5; addDamageText(e.x, e.y, hitZ, totalDmg);
-                        let bCol = getBloodColor(e.type); if (bCol) spawnBlood(p.x, p.y, hitZ, bCol, mult === 2.0 ? 25 : 8);
-                        if (e.hp <= 0) { enemies.splice(ei, 1); score += 150; scoreEl.innerText = score; } break;
+                        if (e.type === 'zombie') {
+                            let died = damageZombieLimb(e, p.dmg, hitZ, p.x, p.y, p.vx, p.vy);
+                            hit = true;
+                            if (died) {
+                                enemies.splice(ei, 1);
+                            }
+                        } else {
+                            let relZ = hitZ - e.z, mult = (relZ > e.size * 0.88) ? 2.0 : ((relZ > e.size * 0.72) ? 1.2 : ((relZ > e.size * 0.44) ? 1.0 : 0.5)), totalDmg = p.dmg * mult;
+                            e.hp -= totalDmg; hit = true; e.flash = 5; addDamageText(e.x, e.y, hitZ, totalDmg);
+                            let bCol = getBloodColor(e.type); if (bCol) spawnBlood(p.x, p.y, hitZ, bCol, mult === 2.0 ? 25 : 8);
+                            if (e.hp <= 0) { enemies.splice(ei, 1); score += 150; scoreEl.innerText = score; }
+                        }
+                        break;
                     } else {
                         e.hp -= p.dmg; hit = true; e.flash = 5; addDamageText(e.x, e.y, hitZ, p.dmg); let bCol = getBloodColor(e.type || 'alien'); if(bCol) spawnBlood(p.x, p.y, hitZ, bCol, 10);
                         if (e.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; } break; 
@@ -547,3 +788,203 @@ function update() {
         if (hit || p.life <= 0) projectiles.splice(i, 1);
     }
 }
+
+function spawnFlyingLimb(x, y, z, type) {
+    let angle = Math.random() * Math.PI * 2;
+    let speed = Math.random() * 0.05 + 0.03;
+    let vz = Math.random() * 0.05 + 0.08;
+    bloodParticles.push({
+        x: x, y: y, z: z,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz,
+        color: {r: 30, g: 86, b: 34}, // Zombie skin green
+        life: 3000 + Math.random() * 600, // Remain on ground for ~1 minute
+        size: (type === 'head') ? 0.20 : ((type === 'upperArm' || type === 'upperLeg') ? 0.16 : 0.12),
+        isLimb: true,
+        limbType: type,
+        sprayAngle: Math.random() * Math.PI * 2,
+        landedAngle: (Math.random() < 0.5 ? Math.PI/2 : -Math.PI/2) + (Math.random() - 0.5) * 0.3
+    });
+}
+
+function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy) {
+    if (e.hasHead === undefined) {
+        e.hasHead = true;
+        e.hasLeftUpperArm = true;
+        e.hasLeftLowerArm = true;
+        e.hasRightUpperArm = true;
+        e.hasRightLowerArm = true;
+        e.hasLeftUpperLeg = true;
+        e.hasLeftLowerLeg = true;
+        e.hasRightUpperLeg = true;
+        e.hasRightLowerLeg = true;
+        e.limbsHP = {
+            head: 4,
+            leftUpperArm: 3,
+            leftLowerArm: 2,
+            rightUpperArm: 3,
+            rightLowerArm: 2,
+            leftUpperLeg: 3,
+            leftLowerLeg: 2,
+            rightUpperLeg: 3,
+            rightLowerLeg: 2
+        };
+        e.isCrawling = false;
+    }
+
+    let relZ = hitZ - e.z;
+    let len = Math.hypot(dx, dy);
+    let hOffset = 0;
+    if (len > 0) {
+        let sdx = dx / len;
+        let sdy = dy / len;
+        let vx = px - e.x;
+        let vy = py - e.y;
+        hOffset = vy * sdx - vx * sdy;
+        if (vx === 0 && vy === 0) {
+            hOffset = (Math.random() - 0.5) * 0.4; // randomize melee
+        }
+    }
+
+    let hitLimb = null;
+    let mult = 1.0;
+
+    // Check hit segment based on height (relZ)
+    if (relZ > e.size * 0.88) {
+        // Head
+        if (e.hasHead) {
+            hitLimb = 'head';
+            mult = 2.0;
+        } else {
+            mult = 1.0; // Neck stump hit
+        }
+    } else if (relZ > e.size * 0.44) {
+        // Torso height (chest/abdomen)
+        if (Math.abs(hOffset) > 0.12) {
+            // Arm! hOffset > 0 is player's right (screen-right, i.e. zombie's right arm in visual/billboard space)
+            if (hOffset > 0) {
+                // Right Arm
+                if (relZ <= e.size * 0.62) {
+                    if (e.hasRightLowerArm) hitLimb = 'rightLowerArm';
+                    else if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
+                } else {
+                    if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
+                }
+            } else {
+                // Left Arm
+                if (relZ <= e.size * 0.62) {
+                    if (e.hasLeftLowerArm) hitLimb = 'leftLowerArm';
+                    else if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                } else {
+                    if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                }
+            }
+        }
+        if (!hitLimb) {
+            mult = (relZ > e.size * 0.72) ? 1.2 : 1.0;
+        }
+    } else {
+        // Leg height
+        if (e.isCrawling) {
+            mult = 0.5; // Torso/stumps hit while crawling
+        } else {
+            // Legs
+            if (hOffset > 0) {
+                // Right Leg
+                if (relZ <= e.size * 0.22) {
+                    if (e.hasRightLowerLeg) hitLimb = 'rightLowerLeg';
+                    else if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
+                } else {
+                    if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
+                }
+            } else {
+                // Left Leg
+                if (relZ <= e.size * 0.22) {
+                    if (e.hasLeftLowerLeg) hitLimb = 'leftLowerLeg';
+                    else if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                } else {
+                    if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                }
+            }
+            mult = 0.5;
+        }
+    }
+
+    let totalDmg = dmg * mult;
+    e.hp -= totalDmg;
+    e.flash = 5;
+    addDamageText(e.x, e.y, hitZ, totalDmg);
+
+    let bCol = getBloodColor('zombie') || {r: 92, g: 64, b: 51};
+    spawnBlood(px, py, hitZ, bCol, mult === 2.0 ? 25 : 8);
+
+    if (hitLimb) {
+        e.limbsHP[hitLimb] -= totalDmg;
+        if (e.limbsHP[hitLimb] <= 0) {
+            if (hitLimb === 'head') {
+                e.hasHead = false;
+                spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head');
+                e.bleedOutTimer = 35;
+            } else if (hitLimb === 'leftLowerArm') {
+                e.hasLeftLowerArm = false;
+                spawnFlyingLimb(e.x + Math.sin(player.angle)*0.15, e.y - Math.cos(player.angle)*0.15, e.z + e.size * 0.5, 'lowerArm');
+            } else if (hitLimb === 'leftUpperArm') {
+                e.hasLeftUpperArm = false;
+                spawnFlyingLimb(e.x + Math.sin(player.angle)*0.15, e.y - Math.cos(player.angle)*0.15, e.z + e.size * 0.72, 'upperArm');
+                if (e.hasLeftLowerArm) {
+                    e.hasLeftLowerArm = false;
+                    spawnFlyingLimb(e.x + Math.sin(player.angle)*0.15, e.y - Math.cos(player.angle)*0.15, e.z + e.size * 0.5, 'lowerArm');
+                }
+            } else if (hitLimb === 'rightLowerArm') {
+                e.hasRightLowerArm = false;
+                spawnFlyingLimb(e.x - Math.sin(player.angle)*0.15, e.y + Math.cos(player.angle)*0.15, e.z + e.size * 0.5, 'lowerArm');
+            } else if (hitLimb === 'rightUpperArm') {
+                e.hasRightUpperArm = false;
+                spawnFlyingLimb(e.x - Math.sin(player.angle)*0.15, e.y + Math.cos(player.angle)*0.15, e.z + e.size * 0.72, 'upperArm');
+                if (e.hasRightLowerArm) {
+                    e.hasRightLowerArm = false;
+                    spawnFlyingLimb(e.x - Math.sin(player.angle)*0.15, e.y + Math.cos(player.angle)*0.15, e.z + e.size * 0.5, 'lowerArm');
+                }
+            } else if (hitLimb === 'leftLowerLeg') {
+                e.hasLeftLowerLeg = false;
+                spawnFlyingLimb(e.x + Math.sin(player.angle)*0.08, e.y - Math.cos(player.angle)*0.08, e.z + e.size * 0.1, 'lowerLeg');
+                e.isCrawling = true;
+            } else if (hitLimb === 'leftUpperLeg') {
+                e.hasLeftUpperLeg = false;
+                spawnFlyingLimb(e.x + Math.sin(player.angle)*0.08, e.y - Math.cos(player.angle)*0.08, e.z + e.size * 0.3, 'upperLeg');
+                if (e.hasLeftLowerLeg) {
+                    e.hasLeftLowerLeg = false;
+                    spawnFlyingLimb(e.x + Math.sin(player.angle)*0.08, e.y - Math.cos(player.angle)*0.08, e.z + e.size * 0.1, 'lowerLeg');
+                }
+                e.isCrawling = true;
+            } else if (hitLimb === 'rightLowerLeg') {
+                e.hasRightLowerLeg = false;
+                spawnFlyingLimb(e.x - Math.sin(player.angle)*0.08, e.y + Math.cos(player.angle)*0.08, e.z + e.size * 0.1, 'lowerLeg');
+                e.isCrawling = true;
+            } else if (hitLimb === 'rightUpperLeg') {
+                e.hasRightUpperLeg = false;
+                spawnFlyingLimb(e.x - Math.sin(player.angle)*0.08, e.y + Math.cos(player.angle)*0.08, e.z + e.size * 0.3, 'upperLeg');
+                if (e.hasRightLowerLeg) {
+                    e.hasRightLowerLeg = false;
+                    spawnFlyingLimb(e.x - Math.sin(player.angle)*0.08, e.y + Math.cos(player.angle)*0.08, e.z + e.size * 0.1, 'lowerLeg');
+                }
+                e.isCrawling = true;
+            }
+        }
+    }
+
+    if (e.hp <= 0) {
+        spawnBlood(e.x, e.y, e.z + e.size * 0.5, getBloodColor('zombie') || {r: 92, g: 64, b: 51}, 30);
+        if (e.hasHead) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head');
+        if (e.hasLeftUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'upperArm');
+        if (e.hasLeftLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'lowerArm');
+        if (e.hasRightUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'upperArm');
+        if (e.hasRightLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'lowerArm');
+        if (e.hasLeftUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'upperLeg');
+        if (e.hasLeftLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'lowerLeg');
+        if (e.hasRightUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'upperLeg');
+        if (e.hasRightLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'lowerLeg');
+        return true;
+    }
+    return false;
+}
+

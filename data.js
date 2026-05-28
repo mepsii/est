@@ -71,6 +71,7 @@ function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
     let o = renderPool[renderCount++];
     o.flash = 0; o.targeted = false; o.dead = false; o.hp = undefined; o.wX = undefined; o.wY = undefined; o.flicker = 1.0; o.obj = null; o.ghost = false; o.spinScaleX = undefined;
+    o.isLimb = false; o.limbType = undefined; o.vx = undefined; o.vy = undefined; o.vz = undefined; o.landedAngle = undefined;
     return o;
 }
 
