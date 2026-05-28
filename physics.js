@@ -387,7 +387,7 @@ function update() {
         let physRad = 4;
         for(let x = pxC - physRad; x <= pxC + physRad; x++) for(let y = pyC - physRad; y <= pyC + physRad; y++) getMapChunk(x, y);
 
-        let isNight = gameTime < 6 || gameTime >= 19, spawnChance = isNight ? 0.001 : 0.0002;
+        let isNight = gameTime < 6 || gameTime >= 18, spawnChance = isNight ? 0.001 : 0.0002;
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
             let angle = Math.random() * Math.PI * 2, dist = 20 + Math.random() * 10, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
             let ez = getSafeFloorZ(ex, ey, player.z) + 1;

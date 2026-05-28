@@ -483,7 +483,8 @@ function render() {
     // Draw Budgeting: Scale budget dynamically from 5,000 at VIEW_DIST=80 up to 30,000 at VIEW_DIST=600
     let drawBudget = Math.max(5000, Math.floor(5000 + (VIEW_DIST - 80) * 100));
     if (activeRenderList.length > drawBudget) {
-        activeRenderList = activeRenderList.slice(activeRenderList.length - drawBudget);
+        let celestials = activeRenderList.filter(o => o.type === 'celestial');
+        activeRenderList = celestials.concat(activeRenderList.slice(activeRenderList.length - drawBudget).filter(o => o.type !== 'celestial'));
     }
 
     if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
@@ -779,6 +780,7 @@ function render() {
                 ctx.fillStyle = aGrad; ctx.fillRect(-airRad, -airRad, airRad*2, airRad*2); ctx.restore();
                 ctx.globalCompositeOperation = 'source-over';
             } else if (o.type === 'celestial') {
+                ctx.fillStyle = o.emoji === '☀️' ? '#ffd700' : '#fff';
                 ctx.font = sz + 'px sans-serif';
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'center';

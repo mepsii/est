@@ -2,7 +2,7 @@
 
 // --- Game Helper Functions ---
 function getSkyColor(t) {
-    const stops = [ [0, 5, 5, 20], [5, 5, 5, 30], [6.5, 255, 120, 80], [8, 135, 206, 235], [18, 135, 206, 235], [19.5, 255, 100, 50], [21, 5, 5, 20], [24, 5, 5, 20] ];
+    const stops = [ [0, 5, 5, 20], [4.5, 5, 5, 20], [6.0, 255, 120, 80], [7.5, 135, 206, 235], [16.5, 135, 206, 235], [18.0, 255, 100, 50], [19.5, 5, 5, 20], [24, 5, 5, 20] ];
     for (let i = 0; i < stops.length - 1; i++) {
         if (t >= stops[i][0] && t <= stops[i+1][0]) {
             let s1 = stops[i], s2 = stops[i+1];
@@ -14,10 +14,10 @@ function getSkyColor(t) {
 }
 
 function getAmbientLight(t) {
-    if (t < 5 || t > 21) return 0.2;
-    if (t >= 8 && t <= 18) return 1.0;
-    if (t >= 5 && t < 8) return 0.2 + 0.8 * ((t - 5) / 3);
-    if (t > 18 && t <= 21) return 1.0 - 0.8 * ((t - 18) / 3);
+    if (t < 4.5 || t > 19.5) return 0.2;
+    if (t >= 7.5 && t <= 16.5) return 1.0;
+    if (t >= 4.5 && t < 7.5) return 0.2 + 0.8 * ((t - 4.5) / 3);
+    if (t > 16.5 && t <= 19.5) return 1.0 - 0.8 * ((t - 16.5) / 3);
     return 1.0;
 }
 
