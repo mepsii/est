@@ -471,6 +471,21 @@ function getChunkMesh(cx, cy) {
 }
 
 function modifyTerrain(cx, cy, cz, radius, amount) {
+    if (amount <= 0) {
+        for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
+            for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
+                for (let z = Math.floor(cz - radius); z <= Math.ceil(cz + radius); z++) {
+                    if (Math.hypot(x - cx, y - cy, z - cz) <= radius && z >= 0 && z < MAX_Z) {
+                        let v = getVoxel(x, y, z);
+                        if (isVoxelSolid(v)) {
+                            dropMinedItem(x, y, z, v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (wasmLoaded) {
         wasmExports.modifyTerrainWasm(cx, cy, cz, radius, amount);
         let modifiedChunks = new Set();
@@ -736,4 +751,28 @@ function getInteriorWalls() {
     function addSegWall(p1x, p1y, p2x, p2y, color) { let dx = p2x - p1x, dy = p2y - p1y, len = Math.hypot(dx, dy), steps = Math.ceil(len / 2); for(let i=0; i<steps; i++) walls.push({ p1: {x: p1x + dx*(i/steps), y: p1y + dy*(i/steps)}, p2: {x: p1x + dx*((i+1)/steps), y: p1y + dy*((i+1)/steps)}, color: color }); }
     addSegWall(0, h, totalW, h, '#9c4a4a'); addSegWall(0, 0, totalW, 0, '#8b3a3a'); addSegWall(0, 0, 0, h, '#7a2a2a'); addSegWall(totalW, 0, totalW, h, '#7a2a2a');
     for(let r = 1; r < b.rooms; r++) { let rx = r * b.roomW; addSegWall(rx, 0, rx, h/2 - 1.5, '#6a1a1a'); addSegWall(rx, h/2 + 1.5, rx, h, '#6a1a1a'); } return walls;
+}
+
+function dropMinedItem(x, y, z, v) {
+    if (v === 3) {
+        spawnDroppedItemAt({ id: 'cube', type: 'block', emoji: '🧊', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+    } else if (v === 4) {
+        spawnDroppedItemAt({ id: 'wood_block', type: 'block', emoji: '🪵', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+    } else if (v === 5) {
+        spawnDroppedItemAt({ id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+    } else if (v === 1) {
+        let t = getTerrainFast(x, y);
+        let depthFromMacro = t.baseH - z;
+        let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0;
+        let isSurface = !isVoxelSolid(getVoxel(x, y, z + 1));
+        let isStone = (depthFromMacro > rockDepth || (isSurface && depthFromMacro > 15.0));
+
+        if (isStone) {
+            for (let i = 0; i < 4; i++) {
+                spawnDroppedItemAt({ type: 'resource', emoji: '🪨', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+            }
+        } else {
+            spawnDroppedItemAt({ id: 'dirt', type: 'block', emoji: '🟫', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+        }
+    }
 }

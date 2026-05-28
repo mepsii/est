@@ -428,6 +428,10 @@ function update() {
         if (vehicles.includes(interactTarget)) interactTooltip.innerText = "[E] Drive Truck";
         else if (interactTarget.rooms) interactTooltip.innerText = "[E] Enter " + interactTarget.emoji; 
         else if (interactTarget.label) interactTooltip.innerText = "[E] " + interactTarget.label; 
+        else if (droppedItems.includes(interactTarget)) {
+            let details = resolveItemDetails(interactTarget.item);
+            interactTooltip.innerText = `[E] Pick up ${details ? details.name : 'Item'}`;
+        }
         else interactTooltip.innerText = "[E] Loot";
         interactTooltip.style.display = 'block';
     } else interactTooltip.style.display = 'none';

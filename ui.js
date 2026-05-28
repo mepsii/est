@@ -24,7 +24,7 @@ const ITEM_DETAILS = {
     '🟫': { name: 'Dirt Block', desc: 'A block of compressed soil. Right-Click in inventory to place.', category: 'block' },
     '🧊': { name: 'Cube Block', desc: 'A solid building cube. Right-Click in inventory to place.', category: 'block' },
     'wood_block': { name: 'Wood Block', desc: 'A block of processed wood. Right-Click in inventory to place.', category: 'block', emoji: '🪵' },
-    'stone_block': { name: 'Stone Block', desc: 'A block crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
+    'stone_block': { name: 'Stone Cube', desc: 'A cube crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
     // Weapons/Tools
     'pistol': { name: 'Pistol', desc: 'Semiautomatic handgun. Shoots fast, decent damage.', category: 'weapon' },
     'smg': { name: 'SMG', desc: 'Fully automatic submachine gun. High fire rate, high spread.', category: 'weapon' },
@@ -439,6 +439,26 @@ function spawnDroppedItem(itemData, thrownForward = true) {
     });
 }
 
+function spawnDroppedItemAt(itemData, x, y, z) {
+    let randAngle = Math.random() * Math.PI * 2;
+    let force = 0.02 + Math.random() * 0.04;
+    let vx = Math.cos(randAngle) * force;
+    let vy = Math.sin(randAngle) * force;
+    let vz = 0.08 + Math.random() * 0.08;
+
+    droppedItems.push({
+        x: x,
+        y: y,
+        z: z,
+        vx: vx,
+        vy: vy,
+        vz: vz,
+        item: { ...itemData },
+        hoverTime: Math.random() * 100,
+        cooldown: 40
+    });
+}
+
 function getPlacementTarget() {
     const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
     const waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
@@ -737,7 +757,7 @@ function getSafeFloorZ(x, y, startZ) {
     for(let z = Math.floor(startZ + 2); z >= 0; z--) {
         if (getSolid(Math.floor(x), Math.floor(y), z)) return z + 1.0;
     }
-    return player.z;
+    return startZ;
 }
 
 window.killAll = () => enemies.length = 0;

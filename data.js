@@ -70,7 +70,7 @@ let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
     let o = renderPool[renderCount++];
-    o.flash = 0; o.targeted = false; o.dead = false; o.hp = undefined; o.wX = undefined; o.wY = undefined; o.flicker = 1.0; o.obj = null; o.ghost = false;
+    o.flash = 0; o.targeted = false; o.dead = false; o.hp = undefined; o.wX = undefined; o.wY = undefined; o.flicker = 1.0; o.obj = null; o.ghost = false; o.spinScaleX = undefined;
     return o;
 }
 
@@ -94,7 +94,7 @@ const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
 const RECIPES =[
     { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 2 } },
     { name: "Wood Block", result: { id: 'wood_block', type: 'block', emoji: '🪵', count: 1 }, req: { '🪵': 3 } },
-    { name: "Stone Block", result: { id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, req: { '🪨': 3 } }
+    { name: "Stone Cube", result: { id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, req: { '🪨': 4 } }
 ];
 
 const ITEMS = { 
@@ -107,7 +107,7 @@ const ITEMS = {
     'dirt': { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 1 },
     'cube': { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 3 },
     'wood_block': { name: "Wood Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 4 },
-    'stone_block': { name: "Stone Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 5 }
+    'stone_block': { name: "Stone Cube", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 5 }
 };
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };
@@ -150,8 +150,8 @@ let spawnEnemiesToggle = true, showDebugInfo = false;
 let isFlashlightOn = false;
 
 let score = 0, isPaused = true, tickCounter = 0;
-let baseZoom = 0.8;
-let isMouseDown = false, isZooming = false, currentZoom = 0.8, fireCooldown = 0, keys = {};
+let baseZoom = 0.5 / Math.tan(40 * Math.PI / 180);
+let isMouseDown = false, isZooming = false, currentZoom = 0.5 / Math.tan(40 * Math.PI / 180), fireCooldown = 0, keys = {};
 let gameState = 'overworld', activeBuilding = null, activeFloor = 0, savedOverworld = { x: 0, y: 0, z: 0, angle: 0, pitch: 0 };
 
 const torches = [];
