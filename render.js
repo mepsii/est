@@ -550,7 +550,7 @@ minecraftZombieSkinImg.onload = () => {
     checkedSkinLimbs = false;
     checkSkinTransparency();
 };
-minecraftZombieSkinImg.src = 'textures/minecraft_zombie_skin.png';
+minecraftZombieSkinImg.src = 'textures/zombie_skin.png';
 
 function render() {
     if (isLoading) return;
