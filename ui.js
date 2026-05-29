@@ -615,7 +615,12 @@ document.addEventListener('pointerlockchange', () => {
     isPaused = document.pointerLockElement !== canvas; 
     if (isPaused) { 
         placementItem = null; 
-        overlay.style.display = (isInventoryOpen || isDebugOpen || isStairMenuOpen) ? 'none' : 'flex'; 
+        if (isLoading) {
+            overlay.style.display = 'none';
+            document.getElementById('loading-screen').style.display = 'flex';
+        } else {
+            overlay.style.display = (isInventoryOpen || isDebugOpen || isStairMenuOpen) ? 'none' : 'flex'; 
+        }
         invScreen.style.display = isInventoryOpen ? 'flex' : 'none'; 
         containerUI.style.display = (isInventoryOpen && activeContainer) ? 'flex' : 'none'; 
         debugMenu.style.display = isDebugOpen ? 'block' : 'none'; stairMenu.style.display = isStairMenuOpen ? 'block' : 'none';
@@ -625,19 +630,35 @@ document.addEventListener('pointerlockchange', () => {
             else fpsCounterEl.classList.remove('debug-open');
         }
     } else { 
-        // Handles dropping an item back if UI is closed mid-drag
-        if (dragItemData) {
-            let sourceInv = dragSourceType === 'player' ? inventory : activeContainer.items;
-            sourceInv[dragSourceIndex] = dragItemData;
-            if (dragEl) { dragEl.remove(); dragEl = null; }
-            dragItemData = null;
+        if (!hasLoaded) {
+            isLoading = true;
+            document.getElementById('loading-screen').style.display = 'flex';
+            overlay.style.display = 'none';
+            if (typeof startPreloading === 'function') {
+                startPreloading();
+            }
+        } else {
+            // Handles dropping an item back if UI is closed mid-drag
+            if (dragItemData) {
+                let sourceInv = dragSourceType === 'player' ? inventory : activeContainer.items;
+                sourceInv[dragSourceIndex] = dragItemData;
+                if (dragEl) { dragEl.remove(); dragEl = null; }
+                dragItemData = null;
+            }
+            
+            isInventoryOpen = isDebugOpen = isStairMenuOpen = false; 
+            activeContainer = null; 
+            overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; 
+            updateInventories();
+            if (fpsCounterEl) fpsCounterEl.classList.remove('debug-open');
         }
-        
-        isInventoryOpen = isDebugOpen = isStairMenuOpen = false; 
-        activeContainer = null; 
-        overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; 
-        updateInventories();
-        if (fpsCounterEl) fpsCounterEl.classList.remove('debug-open');
+    }
+});
+
+// Resumes pointer lock on click during loading
+document.getElementById('loading-screen').addEventListener('click', () => {
+    if (isLoading) {
+        canvas.requestPointerLock();
     }
 });
 
@@ -676,7 +697,9 @@ window.addEventListener('mousedown', e => {
 window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = false; if (e.button === 2) { isZooming = false; adsEl.innerText = "OFF"; } });
 
 window.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
+    if (e.target.tagName === 'INPUT') return;
+    if (isLoading) return;
+    keys[e.code] = true;
     if (e.key >= '1' && e.key <= '8') selectHotbar(parseInt(e.key) - 1);
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     

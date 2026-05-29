@@ -2,7 +2,7 @@
 
 // --- Update Physics & Logic ---
 function update() {
-    if (isPaused) return;
+    if (isPaused || isLoading) return;
 
     gameTime += (24 / 54000) * timeSpeed; if (gameTime >= 24) gameTime %= 24; 
     if (isDebugOpen && tickCounter % 10 === 0) { dbgTimeEl.value = gameTime; dbgTimeValEl.innerText = gameTime.toFixed(1); }

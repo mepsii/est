@@ -553,6 +553,7 @@ minecraftZombieSkinImg.onload = () => {
 minecraftZombieSkinImg.src = 'textures/minecraft_zombie_skin.png';
 
 function render() {
+    if (isLoading) return;
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
     meshesBuiltThisFrame = 0;

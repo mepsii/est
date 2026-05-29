@@ -151,7 +151,7 @@ let spawnEnemiesToggle = true, showDebugInfo = false;
 let isFlashlightOn = false;
 let lockFps30 = true;
 
-let score = 0, isPaused = true, tickCounter = 0;
+let score = 0, isPaused = true, tickCounter = 0, isLoading = false, hasLoaded = false;
 let baseZoom = 0.5 / Math.tan(40 * Math.PI / 180);
 let isMouseDown = false, isZooming = false, currentZoom = 0.5 / Math.tan(40 * Math.PI / 180), fireCooldown = 0, keys = {};
 let gameState = 'overworld', activeBuilding = null, activeFloor = 0, savedOverworld = { x: 0, y: 0, z: 0, angle: 0, pitch: 0 };

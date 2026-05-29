@@ -62,3 +62,75 @@ function loop(timestamp) {
     }
 }
 loop();
+
+// Chunk preloading manager
+let preloadedCount = 0;
+let chunksToPreload = [];
+let totalChunksToPreload = 0;
+let preloadStarted = false;
+
+function startPreloading() {
+    if (preloadStarted) return;
+    preloadStarted = true;
+    
+    const chunkRadius = Math.ceil(VIEW_DIST / CHUNK_SIZE);
+    chunksToPreload = [];
+    
+    for (let cx = -chunkRadius; cx <= chunkRadius; cx++) {
+        for (let cy = -chunkRadius; cy <= chunkRadius; cy++) {
+            const dist = Math.hypot((cx + 0.5) * CHUNK_SIZE, (cy + 0.5) * CHUNK_SIZE);
+            if (dist <= VIEW_DIST + CHUNK_SIZE) {
+                chunksToPreload.push({ cx, cy });
+            }
+        }
+    }
+    totalChunksToPreload = chunksToPreload.length;
+    preloadedCount = 0;
+    
+    processPreload();
+}
+
+function processPreload() {
+    if (!wasmLoaded) {
+        requestAnimationFrame(processPreload);
+        return;
+    }
+    
+    const progress = preloadedCount / totalChunksToPreload;
+    
+    const bar = document.getElementById('loading-bar');
+    if (bar) {
+        bar.style.width = `${progress * 100}%`;
+    }
+    
+    if (preloadedCount < totalChunksToPreload) {
+        const batchSize = 45; 
+        const end = Math.min(preloadedCount + batchSize, totalChunksToPreload);
+        for (let i = preloadedCount; i < end; i++) {
+            const { cx, cy } = chunksToPreload[i];
+            getMapChunk(cx, cy);
+            
+            const mesh = buildChunkMesh(cx, cy);
+            chunkMeshes.set(`${cx},${cy}`, mesh);
+        }
+        preloadedCount = end;
+        requestAnimationFrame(processPreload);
+    } else {
+        let startZ = MAX_Z - 1;
+        while (startZ > 0 && getVoxel(0, 0, startZ) !== 1) startZ--;
+        player.z = startZ + 1.5;
+        
+        if (bar) {
+            bar.style.width = "100%";
+        }
+        
+        const loadingScreen = document.getElementById('loading-screen');
+        loadingScreen.classList.add('fade-out');
+        
+        setTimeout(() => {
+            loadingScreen.style.display = 'none';
+            isLoading = false;
+            hasLoaded = true;
+        }, 500);
+    }
+}
