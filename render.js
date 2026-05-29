@@ -563,6 +563,7 @@ function render() {
     const fov = canvas.width * currentZoom, hY = canvas.height/2 + player.pitch;
     const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
     const pitchAngle = Math.atan2(player.pitch, fov);
+    const cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
     const aimX = cosA * Math.cos(pitchAngle), aimY = sinA * Math.cos(pitchAngle), aimZ = Math.sin(pitchAngle);
 
     renderCount = 0; 
@@ -576,13 +577,24 @@ function render() {
 
     function project3D(px, py, pz) {
         let dx = px - player.x, dy = py - player.y, dz = pz - camZ;
-        let rotX = dx * cosA + dy * sinA;
-        if (rotX < 0.1) return null; 
-        let rotY = dx * -sinA + dy * cosA;
-        let sx = canvas.width/2 + (rotY / rotX) * fov;
-        let sy = hY - (dz / rotX) * fov;
-        return { sx, sy, depth: rotX };
+        let rx = dx * cosA + dy * sinA;
+        let ry = dx * -sinA + dy * cosA;
+        let rz = dz;
+        let cx = ry;
+        let cy = rz * cosP - rx * sinP;
+        let cz = rz * sinP + rx * cosP;
+        if (cz < 0.1) return null; 
+        let sx = canvas.width/2 + (cx / cz) * fov;
+        let sy = canvas.height/2 - (cy / cz) * fov;
+        return { sx, sy, depth: cz };
     }
+
+    const getDepth = (x, y, z) => {
+        let dx = x - player.x, dy = y - player.y, dz = z - camZ;
+        let rx = dx * cosA + dy * sinA;
+        let rz = dz;
+        return rz * sinP + rx * cosP;
+    };
 
     let fovMult = 0.7 / currentZoom; 
 
@@ -682,36 +694,57 @@ function render() {
                 if (Math.abs(cRotY) > cRotX * fovMult + CHUNK_SIZE * 1.5) continue;
                 
                 let faces = getChunkMesh(cx, cy);
-                if (faces.length > 0) {
-                    let o = getRenderItem();
-                    o.type = 'chunk_mesh';
-                    o.cx = cx; o.cy = cy;
-                    // depthSq is the distance from the player to the chunk center
-                    o.depthSq = cRotX * cRotX;
-                    o.wX = cx * CHUNK_SIZE + CHUNK_SIZE/2;
-                    o.wY = cy * CHUNK_SIZE + CHUNK_SIZE/2;
-                    o.h = 48; // mid height of chunk
-                    o.faces = faces;
+                for (let i = 0; i < faces.length; i++) {
+                    let f = faces[i];
+                    let cX = f.cx, cY = f.cy, cZ = f.cz;
+                    let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
+                    
+                    let rx = dX * cosA + dY * sinA;
+                    let ry = dX * -sinA + dY * cosA;
+                    let rz = dZ;
+                    let cz = rz * sinP + rx * cosP;
+                    
+                    if (cz > 0.1 && cz < VIEW_DIST) {
+                        let cx_cam = ry;
+                        if (Math.abs(cx_cam) > cz * fovMult + 3.0) continue;
+                        
+                        let nx = f.norm.x, ny = f.norm.y, nz = f.norm.z;
+                        if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
+                        
+                        let distSq = dX*dX + dY*dY + dZ*dZ;
+                        if (distSq >= VIEW_DIST * VIEW_DIST * 0.90) continue;
+                        
+                        let o = getRenderItem();
+                        o.type = 'chunk_face';
+                        o.face = f;
+                        o.depthSq = cz * cz;
+                        o.wX = cX; o.wY = cY; o.h = cZ;
+                    }
                 }
                 
                 let chunk = getMapChunk(cx, cy);
                 for (let i = 0; i < chunk.length; i++) {
-                    let obj = chunk[i], dX = obj.wx - player.x, dY = obj.wy - player.y, rotX = dX * cosA + dY * sinA;
-                    if (rotX > 0.2 && rotX < VIEW_DIST) {
-                        let fRotY = dX * -sinA + dY * cosA;
-                        if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
-                        let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = rotX*rotX; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
+                    let obj = chunk[i];
+                    let cz = getDepth(obj.wx, obj.wy, obj.h);
+                    if (cz > 0.2 && cz < VIEW_DIST) {
+                        let dx = obj.wx - player.x, dy = obj.wy - player.y;
+                        let rx = dx * cosA + dy * sinA;
+                        let ry = dx * -sinA + dy * cosA;
+                        if (Math.abs(ry) < cz * fovMult + 3.0) {
+                            let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = cz*cz; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
+                        }
                     }
                 }
             }
         }
 
         for (let v of vehicles) {
+            let cz = getDepth(v.x, v.y, v.z);
+            if (cz < -10 || cz > VIEW_DIST * 1.5) continue;
             let dx = v.x - player.x, dy = v.y - player.y;
-            let rotX = dx * cosA + dy * sinA;
-            if (rotX < -10 || rotX > VIEW_DIST * 1.5) continue;
-            let rotY = dx * -sinA + dy * cosA;
-            if (Math.abs(rotY) > Math.max(0, rotX) * fovMult + 10.0) continue;
+            let rx = dx * cosA + dy * sinA;
+            let ry = dx * -sinA + dy * cosA;
+            if (Math.abs(ry) > cz * fovMult + 10.0) continue;
             if (player.inVehicle === v && player.vehicleView === '1st') continue; 
             
             let model = WEAPON_MODELS[v.type];
@@ -749,70 +782,135 @@ function render() {
                     if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
                     
                     let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
-                    let fRotX = (cX - player.x) * cosA + (cY - player.y) * sinA;
+                    let czFace = getDepth(cX, cY, cZ);
                     
-                    let o = getRenderItem();
-                    o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = fRotX * fRotX;
-                    o.wX = cX; o.wY = cY; o.h = cZ; o.norm = {x: nx, y: ny, z: nz};
+                    if (czFace > 0.1) {
+                        let o = getRenderItem();
+                        o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = czFace * czFace;
+                        o.wX = cX; o.wY = cY; o.h = cZ; o.norm = {x: nx, y: ny, z: nz};
+                    }
                 }
             } else {
-                let o = getRenderItem(); o.type = 'emoji'; o.emoji = '🚚'; o.size = 4; o.depthSq = rotX*rotX; o.h = v.z; o.wX = v.x; o.wY = v.y; o.targeted = (v === interactTarget);
+                let o = getRenderItem(); o.type = 'emoji'; o.emoji = '🚚'; o.size = 4; o.depthSq = cz*cz; o.h = v.z; o.wX = v.x; o.wY = v.y; o.targeted = (v === interactTarget);
             }
         }
         
         for (let e of enemies) {
-            let dx = e.x - player.x, dy = e.y - player.y, rotX = dx * cosA + dy * sinA;
-            if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx * -sinA + dy * cosA) < rotX * fovMult + 4.0) {
-                if (e.type === 'zombie3d') {
-                    add3DZombieFaces(e, ambient);
-                } else {
-                    let o = getRenderItem();
-                    o.hp = e.hp;
-                    o.flash = e.flash;
-                    o.depthSq = rotX * rotX;
-                    o.size = e.size;
-                    o.h = e.z;
-                    o.wX = e.x;
-                    o.wY = e.y;
-                    if (e.type === 'experimental' || e.type === 'zombie') {
-                        o.type = 'locationalEnemy';
-                        o.obj = e;
+            let cz = getDepth(e.x, e.y, e.z);
+            if (cz > 0.2 && cz < VIEW_DIST) {
+                let dx = e.x - player.x, dy = e.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 4.0) {
+                    if (e.type === 'zombie3d') {
+                        add3DZombieFaces(e, ambient);
                     } else {
-                        o.type = 'emoji';
-                        o.emoji = e.emoji || '👽';
+                        let o = getRenderItem();
+                        o.hp = e.hp;
+                        o.flash = e.flash;
+                        o.depthSq = cz * cz;
+                        o.size = e.size;
+                        o.h = e.z;
+                        o.wX = e.x;
+                        o.wY = e.y;
+                        if (e.type === 'experimental' || e.type === 'zombie') {
+                            o.type = 'locationalEnemy';
+                            o.obj = e;
+                        } else {
+                            o.type = 'emoji';
+                            o.emoji = e.emoji || '👽';
+                        }
                     }
                 }
             }
         }
-        for (let c of torches) { let dx=c.x-player.x, dy=c.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'torchBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
-        for (let e of containers) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
-        for (let e of animals) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
-        for (let b of buildings) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 8.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
-        for (let d of damageTexts) { let dx=d.x-player.x, dy=d.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
+        for (let c of torches) {
+            let cz = getDepth(c.x, c.y, c.z);
+            if (cz > 0.2 && cz < VIEW_DIST) {
+                let dx = c.x - player.x, dy = c.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 4.0) {
+                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = cz*cz; o.h = c.z; o.wX = c.x; o.wY = c.y;
+                    if (ambient < 1.0) {
+                        let g = getRenderItem(); g.type = 'torchBloom'; g.depthSq = cz*cz - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;
+                    }
+                }
+            }
+        }
+        for (let e of containers) {
+            let cz = getDepth(e.x, e.y, e.z);
+            if (cz > 0.2 && cz < VIEW_DIST) {
+                let dx = e.x - player.x, dy = e.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 4.0) {
+                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y;
+                }
+            }
+        }
+        for (let e of animals) {
+            let cz = getDepth(e.x, e.y, e.z);
+            if (cz > 0.2 && cz < VIEW_DIST) {
+                let dx = e.x - player.x, dy = e.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 4.0) {
+                    let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y;
+                }
+            }
+        }
+        for (let b of buildings) {
+            let cz = getDepth(b.x, b.y, b.z);
+            if (cz > 0.2 && cz < VIEW_DIST) {
+                let dx = b.x - player.x, dy = b.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 8.0) {
+                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = cz*cz; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y;
+                }
+            }
+        }
+        for (let d of damageTexts) {
+            let cz = getDepth(d.x, d.y, d.z);
+            if (cz > 0.2 && cz < VIEW_DIST) {
+                let dx = d.x - player.x, dy = d.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 2.0) {
+                    let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = cz*cz; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;
+                }
+            }
+        }
         for (let b of bloodParticles) {
-            let dx = b.x - player.x, dy = b.y - player.y, rotX = dx * cosA + dy * sinA;
-            if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx * -sinA + dy * cosA) < rotX * fovMult + 2.0) {
-                if (b.isLimb && b.is3D) {
-                    add3DLimbFaces(b, ambient);
-                } else {
-                    let o = getRenderItem();
-                    o.type = 'blood';
-                    o.color = b.color;
-                    o.size = b.size;
-                    o.depthSq = rotX * rotX;
-                    o.h = b.z;
-                    o.life = b.life;
-                    o.wX = b.x;
-                    o.wY = b.y;
-                    o.onGround = b.onGround;
-                    o.isPooling = b.isPooling;
-                    if (b.isLimb) {
-                        o.isLimb = true;
-                        o.limbType = b.limbType;
-                        o.vx = b.vx;
-                        o.vy = b.vy;
-                        o.vz = b.vz;
-                        o.landedAngle = b.landedAngle;
+            let cz = getDepth(b.x, b.y, b.z);
+            if (cz > 0.1 && cz < VIEW_DIST) {
+                let dx = b.x - player.x, dy = b.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 2.0) {
+                    if (b.isLimb && b.is3D) {
+                        add3DLimbFaces(b, ambient);
+                    } else {
+                        let o = getRenderItem();
+                        o.type = 'blood';
+                        o.color = b.color;
+                        o.size = b.size;
+                        o.depthSq = cz * cz;
+                        o.h = b.z;
+                        o.life = b.life;
+                        o.wX = b.x;
+                        o.wY = b.y;
+                        o.onGround = b.onGround;
+                        o.isPooling = b.isPooling;
+                        if (b.isLimb) {
+                            o.isLimb = true;
+                            o.limbType = b.limbType;
+                            o.vx = b.vx;
+                            o.vy = b.vy;
+                            o.vz = b.vz;
+                            o.landedAngle = b.landedAngle;
+                        }
                     }
                 }
             }
@@ -820,17 +918,22 @@ function render() {
         
         if (typeof placementItem !== 'undefined' && placementItem !== null) {
             let target = getPlacementTarget();
-            let dx = target.x - player.x, dy = target.y - player.y, rotX = dx*cosA + dy*sinA;
-            if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) {
-                let o = getRenderItem(); 
-                o.type = 'emoji'; 
-                o.emoji = placementItem.emoji; 
-                o.size = placementItem.type === 'torch' ? 0.4 : 4.5; 
-                o.depthSq = rotX*rotX; 
-                o.h = target.z; 
-                o.wX = target.x; 
-                o.wY = target.y; 
-                o.ghost = true;
+            let cz = getDepth(target.x, target.y, target.z);
+            if (cz > 0.1 && cz < VIEW_DIST) {
+                let dx = target.x - player.x, dy = target.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 4.0) {
+                    let o = getRenderItem(); 
+                    o.type = 'emoji'; 
+                    o.emoji = placementItem.emoji; 
+                    o.size = placementItem.type === 'torch' ? 0.4 : 4.5; 
+                    o.depthSq = cz*cz; 
+                    o.h = target.z; 
+                    o.wX = target.x; 
+                    o.wY = target.y; 
+                    o.ghost = true;
+                }
             }
         }
 
@@ -873,12 +976,11 @@ function render() {
 
                 let addPF = (p1, p2, p3, p4) => {
                     let tCx = (p1.x+p3.x)/2, tCy = (p1.y+p3.y)/2, tCz = (p1.z+p3.z)/2;
-                    let dx = tCx - player.x, dy = tCy - player.y, dz = tCz - camZ;
-                    let rotX = dx * cosA + dy * sinA;
-                    if (rotX > 0.1 && rotX < VIEW_DIST) {
+                    let czDepth = getDepth(tCx, tCy, tCz);
+                    if (czDepth > 0.1 && czDepth < VIEW_DIST) {
                         let o = getRenderItem(); o.type = 'face'; 
                         o.face = { pts: [p1,p2,p3,p4], col: col, shade: 1.0, isWater: false };
-                        o.depthSq = rotX * rotX;
+                        o.depthSq = czDepth * czDepth;
                         o.wX = tCx; o.wY = tCy; o.h = tCz;
                     }
                 };
@@ -893,88 +995,115 @@ function render() {
     } else {
         ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
         let interiorEnts = getInteriorEntities();
-        for (let e of interiorEnts) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
+        for (let e of interiorEnts) {
+            let cz = getDepth(e.x, e.y, e.z);
+            if (cz > 0.2) {
+                let dx = e.x - player.x, dy = e.y - player.y;
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                if (Math.abs(ry) < cz * fovMult + 4.0) {
+                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y;
+                }
+            }
+        }
         let walls = getInteriorWalls();
         for (let w of walls) {
             if (w.pts) {
-                let dx=w.pts[0].x-player.x, dy=w.pts[0].y-player.y, rotX = dx*cosA + dy*sinA; 
-                if (rotX > 0.1) { let o = getRenderItem(); o.type = 'wallPoly'; o.pts = w.pts; o.color = w.color; o.depthSq = rotX*rotX; }
+                let cX = (w.pts[0].x + w.pts[2].x)/2, cY = (w.pts[0].y + w.pts[2].y)/2, cZ = (w.pts[0].z + w.pts[2].z)/2;
+                let cz = getDepth(cX, cY, cZ);
+                if (cz > 0.1) {
+                    let o = getRenderItem(); o.type = 'wallPoly'; o.pts = w.pts; o.color = w.color; o.depthSq = cz*cz;
+                }
             } else {
-                let r1 = (w.p1.x-player.x)*cosA + (w.p1.y-player.y)*sinA, r2 = (w.p2.x-player.x)*cosA + (w.p2.y-player.y)*sinA;
-                if (r1 > 0.1 || r2 > 0.1) { let o = getRenderItem(); o.type = 'wall'; o.p1 = w.p1; o.p2 = w.p2; o.color = w.color; o.depthSq = Math.min(r1, r2)**2; }
+                let r1 = getDepth(w.p1.x, w.p1.y, 0), r2 = getDepth(w.p2.x, w.p2.y, 0);
+                if (r1 > 0.1 || r2 > 0.1) {
+                    let o = getRenderItem(); o.type = 'wall'; o.p1 = w.p1; o.p2 = w.p2; o.color = w.color; o.depthSq = Math.min(r1, r2)**2;
+                }
             }
         }
     }
 
     // Render Dropped Items (in both overworld & interior states)
     for (let e of droppedItems) {
-        let dx = e.x - player.x, dy = e.y - player.y, rotX = dx*cosA + dy*sinA;
-        if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) {
-            let itemId = e.item.id;
-            let model = itemId ? WEAPON_MODELS[itemId] : null;
-            
-            // Bobbing hover effect
-            let bobZ = Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
-            let itemZ = e.z + bobZ;
-
-            if (model) {
-                // Render as 3D Model
-                let conf = WEAPON_MODEL_CONFIG[itemId] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
-                let scale = conf.scale * 1.5;
-                let spinAngle = e.hoverTime * 0.012;
+        let cz = getDepth(e.x, e.y, e.z);
+        if (cz > 0.2 && cz < VIEW_DIST) {
+            let dx = e.x - player.x, dy = e.y - player.y;
+            let rx = dx * cosA + dy * sinA;
+            let ry = dx * -sinA + dy * cosA;
+            if (Math.abs(ry) < cz * fovMult + 4.0) {
+                let itemId = e.item.id;
+                let model = itemId ? WEAPON_MODELS[itemId] : null;
                 
-                // Spin around vertical axis (yaw)
-                let ryaw = conf.rotZ + spinAngle;
+                // Bobbing hover effect
+                let bobZ = Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
+                let itemZ = e.z + bobZ;
 
-                for (let f of model.faces) {
-                    let wPts = [];
-                    for (let pt of f.pts) {
-                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, ryaw);
+                if (model) {
+                    // Render as 3D Model
+                    let conf = WEAPON_MODEL_CONFIG[itemId] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
+                    let scale = conf.scale * 1.5;
+                    let spinAngle = e.hoverTime * 0.012;
+                    let ryaw = conf.rotZ + spinAngle;
+
+                    for (let f of model.faces) {
+                        let wPts = [];
+                        for (let pt of f.pts) {
+                            let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, ryaw);
+                            let wx = p1.x * scale;
+                            let wy = p1.y * scale;
+                            let wz = p1.z * scale;
+                            wPts.push({ x: e.x + wx, y: e.y + wy, z: itemZ + wz + 0.15 });
+                        }
                         
-                        let wx = p1.x * scale;
-                        let wy = p1.y * scale;
-                        let wz = p1.z * scale;
+                        let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
+                        let w = { x: wPts[2].x - wPts[0].x, y: wPts[2].y - wPts[0].y, z: wPts[2].z - wPts[0].z };
+                        let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
                         
-                        wPts.push({ x: e.x + wx, y: e.y + wy, z: itemZ + wz + 0.15 });
+                        if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
+                        
+                        let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
+                        let czFace = getDepth(cX, cY, cZ);
+                        
+                        if (czFace > 0.1) {
+                            let o = getRenderItem();
+                            o.type = 'objWorldFace'; 
+                            o.pts = wPts; 
+                            o.color = f.color; 
+                            o.depthSq = czFace * czFace;
+                            o.wX = cX; 
+                            o.wY = cY; 
+                            o.h = cZ; 
+                            o.norm = {x: nx, y: ny, z: nz};
+                            o.targeted = (e === interactTarget);
+                        }
                     }
-                    
-                    let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
-                    let w = { x: wPts[2].x - wPts[0].x, y: wPts[2].y - wPts[0].y, z: wPts[2].z - wPts[0].z };
-                    let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
-                    
-                    if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
-                    
-                    let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
-                    let fRotX = (cX - player.x) * cosA + (cY - player.y) * sinA;
-                    
+                } else {
                     let o = getRenderItem();
-                    o.type = 'objWorldFace'; 
-                    o.pts = wPts; 
-                    o.color = f.color; 
-                    o.depthSq = fRotX * fRotX;
-                    o.wX = cX; 
-                    o.wY = cY; 
-                    o.h = cZ; 
-                    o.norm = {x: nx, y: ny, z: nz};
+                    o.type = 'droppedItem';
+                    o.emoji = e.item.emoji;
+                    o.size = 0.55;
+                    o.depthSq = cz * cz;
+                    o.h = itemZ;
                     o.targeted = (e === interactTarget);
+                    o.wX = e.x;
+                    o.wY = e.y;
+                    o.spinScaleX = Math.cos(e.hoverTime * 0.012);
                 }
-            } else {
-                // Fallback to Emoji Sprite
-                let o = getRenderItem();
-                o.type = 'droppedItem';
-                o.emoji = e.item.emoji;
-                o.size = 0.55;
-                o.depthSq = rotX*rotX;
-                o.h = itemZ;
-                o.targeted = (e === interactTarget);
-                o.wX = e.x;
-                o.wY = e.y;
-                o.spinScaleX = Math.cos(e.hoverTime * 0.012);
             }
         }
     }
 
-    for (let p of projectiles) { let dx=p.x-player.x, dy=p.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = rotX*rotX; o.h = p.z; o.wX = p.x; o.wY = p.y;} }
+    for (let p of projectiles) {
+        let cz = getDepth(p.x, p.y, p.z);
+        if (cz > 0.1 && cz < VIEW_DIST) {
+            let dx = p.x - player.x, dy = p.y - player.y;
+            let rx = dx * cosA + dy * sinA;
+            let ry = dx * -sinA + dy * cosA;
+            if (Math.abs(ry) < cz * fovMult + 2.0) {
+                let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = cz*cz; o.h = p.z; o.wX = p.x; o.wY = p.y;
+            }
+        }
+    }
 
     activeRenderList.length = renderCount;
     for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
@@ -1022,170 +1151,112 @@ function render() {
             objLight = Math.min(1.0, objLight + lightIntensity);
         }
 
-        if (o.type === 'chunk_mesh') {
-            let faces = o.faces;
-            let visibleFaces = [];
+        if (o.type === 'chunk_face') {
+            let f = o.face;
+            let ptsArray = f.pts;
+            let camPts = [];
+            for (let k = 0; k < ptsArray.length; k++) {
+                let dx_pt = ptsArray[k].x - player.x, dy_pt = ptsArray[k].y - player.y, dz_pt = ptsArray[k].z - camZ;
+                let rx = dx_pt * cosA + dy_pt * sinA;
+                let ry = dx_pt * -sinA + dy_pt * cosA;
+                let rz = dz_pt;
+                let cx = ry;
+                let cy = rz * cosP - rx * sinP;
+                let cz = rz * sinP + rx * cosP;
+                camPts.push({ cx, cy, cz });
+            }
             
-            for (let i = 0; i < faces.length; i++) {
-                let f = faces[i];
-                let cX = f.cx, cY = f.cy, cZ = f.cz;
-                let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
-                let rotX = dX * cosA + dY * sinA;
-                
-                if (rotX > -2 && rotX < VIEW_DIST) {
-                    let fRotY = dX * -sinA + dY * cosA;
-                    if (Math.abs(fRotY) > rotX * fovMult + 3.0) continue;
-                    
-                    let nx = f.norm.x, ny = f.norm.y, nz = f.norm.z;
-                    if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
-                    
-                    let distSq = dX*dX + dY*dY + dZ*dZ;
-                    if (distSq >= VIEW_DIST * VIEW_DIST * 0.90) continue;
-                    
-                    let ptsArray = f.pts;
-                    let camPts = [];
-                    for (let k = 0; k < ptsArray.length; k++) {
-                        let dx_pt = ptsArray[k].x - player.x, dy_pt = ptsArray[k].y - player.y, dz_pt = ptsArray[k].z - camZ;
-                        camPts.push({ cx: dx_pt * -sinA + dy_pt * cosA, cy: dz_pt, cz: dx_pt * cosA + dy_pt * sinA });
-                    }
-                    
-                    let clipped = [];
-                    let zNear = 0.1;
-                    for (let j = 0; j < camPts.length; j++) {
-                        let p1 = camPts[j], p2 = camPts[(j + 1) % camPts.length];
-                        if (p1.cz >= zNear) clipped.push(p1);
-                        if ((p1.cz >= zNear) !== (p2.cz >= zNear)) {
-                            let t = (zNear - p1.cz) / (p2.cz - p1.cz);
-                            clipped.push({ cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear });
-                        }
-                    }
-                    
-                    if (clipped.length < 3) continue;
-                    
-                    let depth = Math.max(0.1, rotX);
-                    let objLightVal = objLight;
-                    let isUnderground = !f.isWater && f.underground;
-                    if (isUnderground) objLightVal = 0.05;
-                    
-                    if (objLightVal < 1.0) {
-                        let lightIntensity = 0;
-                        let cz_val = f.cz + 0.5;
-                        if (isFlashlightOn) {
-                            let dx = cX - player.x, dy = cY - player.y, dz = cz_val - camZ;
-                            let lDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                            if (lDist > 0.1 && lDist < 45) {
-                                let dot = (dx/lDist)*aimX + (dy/lDist)*aimY + (dz/lDist)*aimZ;
-                                if (dot > 0.90) {
-                                    let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - lDist/45, 2);
-                                    lightIntensity += att * 1.5;
-                                }
-                            }
-                        }
-                        for (let c of visibleTorches) {
-                            let dist = Math.hypot(cX - c.x, cY - c.y, cz_val - c.z);
-                            if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
-                        }
-                        objLightVal = Math.min(1.0, objLightVal + lightIntensity);
-                    }
-                    
-                    let shade = f.shade * objLightVal;
-                    let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
-                    
-                    if (player.isSubmerged) {
-                        let wFog = Math.min(1, depth / (VIEW_DIST * 0.6));
-                        fr = fr * (1 - wFog) + 15 * wFog | 0;
-                        fg = fg * (1 - wFog) + 50 * wFog | 0;
-                        fb = fb * (1 - wFog) + 120 * wFog | 0;
-                    } else {
-                        let fog = Math.min(1, depth / VIEW_DIST);
-                        fr = fr * (1 - fog) + sky.r * fog | 0;
-                        fg = fg * (1 - fog) + sky.g * fog | 0;
-                        fb = fb * (1 - fog) + sky.b * fog | 0;
-                    }
-                    
-                    let colorKey;
-                    if (f.col.a !== undefined) {
-                        colorKey = `rgba(${fr}, ${fg}, ${fb}, ${f.col.a})`;
-                    } else {
-                        colorKey = `rgb(${fr}, ${fg}, ${fb})`;
-                    }
-                    
-                    visibleFaces.push({
-                        clipped: clipped,
-                        depth: depth,
-                        colorKey: colorKey,
-                        isWater: f.isWater
-                    });
+            let clipped = [];
+            let zNear = 0.1;
+            for (let j = 0; j < camPts.length; j++) {
+                let p1 = camPts[j], p2 = camPts[(j + 1) % camPts.length];
+                if (p1.cz >= zNear) clipped.push(p1);
+                if ((p1.cz >= zNear) !== (p2.cz >= zNear)) {
+                    let t = (zNear - p1.cz) / (p2.cz - p1.cz);
+                    clipped.push({ cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear });
                 }
             }
             
-            // Sort visible faces of this chunk back-to-front
-            visibleFaces.sort((a, b) => b.depth - a.depth);
-            
-            // Draw faces (batching consecutive solid faces of the same color, drawing water individually)
-            ctx.lineWidth = 2.0;
-            let currentStyle = null;
-            
-            let drawPoly = (poly) => {
-                let sx = canvas.width/2 + (poly[0].cx / poly[0].cz) * fov;
-                let sy = hY - (poly[0].cy / poly[0].cz) * fov;
+            if (clipped.length >= 3) {
+                let depth = Math.max(0.1, Math.sqrt(o.depthSq));
+                let objLightVal = objLight;
+                let isUnderground = !f.isWater && f.underground;
+                if (isUnderground) objLightVal = 0.05;
+                
+                if (objLightVal < 1.0) {
+                    let lightIntensity = 0;
+                    let cz_val = f.cz + 0.5;
+                    if (isFlashlightOn) {
+                        let dx = f.cx - player.x, dy = f.cy - player.y, dz = cz_val - camZ;
+                        let lDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        if (lDist > 0.1 && lDist < 45) {
+                            let dot = (dx/lDist)*aimX + (dy/lDist)*aimY + (dz/lDist)*aimZ;
+                            if (dot > 0.90) {
+                                let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - lDist/45, 2);
+                                lightIntensity += att * 1.5;
+                            }
+                        }
+                    }
+                    for (let c of visibleTorches) {
+                        let dist = Math.hypot(f.cx - c.x, f.cy - c.y, cz_val - c.z);
+                        if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
+                    }
+                    objLightVal = Math.min(1.0, objLightVal + lightIntensity);
+                }
+                
+                let shade = f.shade * objLightVal;
+                let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
+                
+                if (player.isSubmerged) {
+                    let wFog = Math.min(1, depth / (VIEW_DIST * 0.6));
+                    fr = fr * (1 - wFog) + 15 * wFog | 0;
+                    fg = fg * (1 - wFog) + 50 * wFog | 0;
+                    fb = fb * (1 - wFog) + 120 * wFog | 0;
+                } else {
+                    let fog = Math.min(1, depth / VIEW_DIST);
+                    fr = fr * (1 - fog) + sky.r * fog | 0;
+                    fg = fg * (1 - fog) + sky.g * fog | 0;
+                    fb = fb * (1 - fog) + sky.b * fog | 0;
+                }
+                
+                let colorKey;
+                if (f.col.a !== undefined) {
+                    colorKey = `rgba(${fr}, ${fg}, ${fb}, ${f.col.a})`;
+                } else {
+                    colorKey = `rgb(${fr}, ${fg}, ${fb})`;
+                }
+                
+                ctx.lineWidth = 2.0;
+                ctx.fillStyle = colorKey;
+                ctx.strokeStyle = colorKey;
+                ctx.beginPath();
+                
+                let sx = canvas.width/2 + (clipped[0].cx / clipped[0].cz) * fov;
+                let sy = canvas.height/2 - (clipped[0].cy / clipped[0].cz) * fov;
                 ctx.moveTo(sx, sy);
-                for (let j = 1; j < poly.length; j++) {
-                    let sx_pt = canvas.width/2 + (poly[j].cx / poly[j].cz) * fov;
-                    let sy_pt = hY - (poly[j].cy / poly[j].cz) * fov;
+                for (let j = 1; j < clipped.length; j++) {
+                    let sx_pt = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
+                    let sy_pt = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
                     ctx.lineTo(sx_pt, sy_pt);
                 }
                 ctx.closePath();
-            };
-            
-            for (let i = 0; i < visibleFaces.length; i++) {
-                let vf = visibleFaces[i];
-                
-                if (vf.isWater) {
-                    // Flush current batch
-                    if (currentStyle !== null) {
-                        ctx.fillStyle = currentStyle;
-                        ctx.strokeStyle = currentStyle;
-                        ctx.fill();
-                        ctx.stroke();
-                        currentStyle = null;
-                    }
-                    // Draw water face individually
-                    ctx.fillStyle = vf.colorKey;
-                    ctx.beginPath();
-                    drawPoly(vf.clipped);
-                    ctx.fill();
-                    continue;
-                }
-                
-                if (vf.colorKey !== currentStyle) {
-                    // Flush current batch
-                    if (currentStyle !== null) {
-                        ctx.fillStyle = currentStyle;
-                        ctx.strokeStyle = currentStyle;
-                        ctx.fill();
-                        ctx.stroke();
-                    }
-                    currentStyle = vf.colorKey;
-                    ctx.beginPath();
-                }
-                
-                drawPoly(vf.clipped);
-            }
-            
-            // Flush final batch
-            if (currentStyle !== null) {
-                ctx.fillStyle = currentStyle;
-                ctx.strokeStyle = currentStyle;
                 ctx.fill();
-                ctx.stroke();
+                if (depth <= 35.0) {
+                    ctx.stroke();
+                }
             }
         } else if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace' || o.type === 'cloudPoly') {
             let ptsArray = (o.type === 'objWorldFace') ? o.pts : (o.type === 'face' ? o.face.pts : o.pts);
             let camPts = [];
             for (let k = 0; k < ptsArray.length; k++) {
                 let dx = ptsArray[k].x - player.x, dy = ptsArray[k].y - player.y, dz = ptsArray[k].z - camZ;
-                let cp = { cx: dx * -sinA + dy * cosA, cy: dz, cz: dx * cosA + dy * sinA };
+                let rx = dx * cosA + dy * sinA;
+                let ry = dx * -sinA + dy * cosA;
+                let rz = dz;
+                let cx = ry;
+                let cy = rz * cosP - rx * sinP;
+                let cz = rz * sinP + rx * cosP;
+                let cp = { cx, cy, cz };
                 if (o.uvs && o.uvs[k]) {
                     cp.u = o.uvs[k].u;
                     cp.v = o.uvs[k].v;
@@ -1247,11 +1318,11 @@ function render() {
                         let p2 = clipped[j+1];
 
                         let sx0 = canvas.width/2 + (p0.cx / p0.cz) * fov;
-                        let sy0 = hY - (p0.cy / p0.cz) * fov;
+                        let sy0 = canvas.height/2 - (p0.cy / p0.cz) * fov;
                         let sx1 = canvas.width/2 + (p1.cx / p1.cz) * fov;
-                        let sy1 = hY - (p1.cy / p1.cz) * fov;
+                        let sy1 = canvas.height/2 - (p1.cy / p1.cz) * fov;
                         let sx2 = canvas.width/2 + (p2.cx / p2.cz) * fov;
-                        let sy2 = hY - (p2.cy / p2.cz) * fov;
+                        let sy2 = canvas.height/2 - (p2.cy / p2.cz) * fov;
 
                         drawTexturedTriangle(
                             ctx, o.texture,
@@ -1268,7 +1339,7 @@ function render() {
                         ctx.beginPath();
                         for (let j = 0; j < clipped.length; j++) {
                             let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                            let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                            let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
                             if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
                         }
                         ctx.closePath();
@@ -1294,7 +1365,7 @@ function render() {
                     ctx.beginPath();
                     for (let j = 0; j < clipped.length; j++) {
                         let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                        let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                        let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
                         if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
                     }
                     ctx.closePath();
@@ -1316,7 +1387,7 @@ function render() {
                 ctx.beginPath();
                 for (let j = 0; j < clipped.length; j++) {
                     let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                    let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                    let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
                     if (j===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
                 }
                 ctx.closePath(); 
@@ -1964,16 +2035,21 @@ function add3DZombieFaces(e, ambient) {
             let cz = (pt0.z + pt1.z + pt2.z + pt3.z) / 4;
 
             // Depth check
-            let dx = cx - player.x, dy = cy - player.y;
+            let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
             let cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
-            let rotX = dx * cosA + dy * sinA;
+            let rx = dx * cosA + dy * sinA;
+            let rz = dz;
+            let fov = canvas.width * currentZoom;
+            let pitchAngle = Math.atan2(player.pitch, fov);
+            let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
+            let cz_depth = rz * sinP + rx * cosP;
 
-            if (rotX > 0.1 && rotX < VIEW_DIST) {
+            if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
                 let o = getRenderItem();
                 o.type = 'objWorldFace';
                 o.pts = [pt0, pt1, pt2, pt3];
                 o.color = part.color;
-                o.depthSq = rotX * rotX;
+                o.depthSq = cz_depth * cz_depth;
                 o.wX = cx;
                 o.wY = cy;
                 o.h = cz;
@@ -2092,16 +2168,21 @@ function add3DLimbFaces(b, ambient) {
         let cz = (pt0.z + pt1.z + pt2.z + pt3.z) / 4;
 
         // Depth check
-        let dx = cx - player.x, dy = cy - player.y;
+        let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
         let cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
-        let rotX = dx * cosA + dy * sinA;
+        let rx = dx * cosA + dy * sinA;
+        let rz = dz;
+        let fov = canvas.width * currentZoom;
+        let pitchAngle = Math.atan2(player.pitch, fov);
+        let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
+        let cz_depth = rz * sinP + rx * cosP;
 
-        if (rotX > 0.1 && rotX < VIEW_DIST) {
+        if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
             let o = getRenderItem();
             o.type = 'objWorldFace';
             o.pts = [pt0, pt1, pt2, pt3];
             o.color = color;
-            o.depthSq = rotX * rotX;
+            o.depthSq = cz_depth * cz_depth;
             o.wX = cx;
             o.wY = cy;
             o.h = cz;
