@@ -4,7 +4,7 @@
 // --- 3D Model Support ---
 const WEAPON_MODELS = {};
 const WEAPON_MODEL_CONFIG = {
-    'pistol':  { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 },
+    'pistol':  { scale: 0.2, rotX: Math.PI / 2, rotY: Math.PI / 2 + 0.011, rotZ: Math.PI / 2, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2, zoomOffsetX: 0.0, zoomOffsetY: 0.4, zoomOffsetZ: -0.145 },
     'smg':     { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 },
     'shotgun': { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 }
 };
@@ -16,34 +16,69 @@ const VEHICLE_MODEL_CONFIG = {
 async function loadObjModel(name) {
     try {
         const objRes = await fetch(`models/${name}.obj`);
-        if (!objRes.ok) return;
+        if (!objRes.ok) {
+            console.warn(`Failed to load OBJ file: models/${name}.obj (Status: ${objRes.status})`);
+            return;
+        }
         const objText = await objRes.text();
         
         let mtlText = '';
         try {
             const mtlRes = await fetch(`models/${name}.mtl`);
-            if (mtlRes.ok) mtlText = await mtlRes.text();
-        } catch(e) {}
+            if (mtlRes.ok) {
+                mtlText = await mtlRes.text();
+            } else {
+                console.warn(`Failed to load MTL file: models/${name}.mtl (Status: ${mtlRes.status})`);
+            }
+        } catch(e) {
+            console.error(`Error fetching MTL file for ${name}:`, e);
+        }
         
         const materials = {};
         let currentMtl = null;
         if (mtlText) {
             const lines = mtlText.split('\n');
+            let maxKdVal = 0;
+            const parsedMtls = [];
+            
             for (let line of lines) {
                 line = line.trim();
-                if (line.startsWith('newmtl ')) {
-                    currentMtl = line.substring(7).trim();
-                    materials[currentMtl] = { r: 200, g: 200, b: 200 };
-                } else if (line.startsWith('Kd ')) {
-                    const parts = line.split(/\s+/);
-                    if (currentMtl && parts.length >= 4) {
-                        materials[currentMtl] = {
-                            r: parseFloat(parts[1]) * 255,
-                            g: parseFloat(parts[2]) * 255,
-                            b: parseFloat(parts[3]) * 255
-                        };
+                if (!line || line.startsWith('#')) continue;
+                const parts = line.split(/\s+/);
+                const cmd = parts[0].toLowerCase();
+                
+                if (cmd === 'newmtl') {
+                    currentMtl = parts.slice(1).join(' ').trim();
+                    parsedMtls.push({ name: currentMtl, kd: [0.78, 0.78, 0.78] });
+                } else if (cmd === 'kd' && parts.length >= 4) {
+                    const r = parseFloat(parts[1]);
+                    const g = parseFloat(parts[2]);
+                    const b = parseFloat(parts[3]);
+                    maxKdVal = Math.max(maxKdVal, r, g, b);
+                    if (parsedMtls.length > 0) {
+                        parsedMtls[parsedMtls.length - 1].kd = [r, g, b];
                     }
                 }
+            }
+            
+            // If all Kd values are extremely dark (max < 0.25), it's likely a linear export from Blender.
+            // Apply gamma correction (v ^ (1/2.2)) to convert it to sRGB.
+            const applyGamma = maxKdVal > 0 && maxKdVal < 0.25;
+            
+            for (const mtl of parsedMtls) {
+                let r = mtl.kd[0];
+                let g = mtl.kd[1];
+                let b = mtl.kd[2];
+                if (applyGamma) {
+                    r = Math.pow(r, 1 / 2.2);
+                    g = Math.pow(g, 1 / 2.2);
+                    b = Math.pow(b, 1 / 2.2);
+                }
+                materials[mtl.name] = {
+                    r: r * 255,
+                    g: g * 255,
+                    b: b * 255
+                };
             }
         }
 
@@ -54,15 +89,18 @@ async function loadObjModel(name) {
         const lines = objText.split('\n');
         for (let line of lines) {
             line = line.trim();
-            if (line.startsWith('v ')) {
-                const parts = line.split(/\s+/);
+            if (!line || line.startsWith('#')) continue;
+            const parts = line.split(/\s+/);
+            const cmd = parts[0].toLowerCase();
+            
+            if (cmd === 'v') {
                 vertices.push({ x: parseFloat(parts[1]), y: parseFloat(parts[2]), z: parseFloat(parts[3]) });
-            } else if (line.startsWith('usemtl ')) {
-                currentMtl = line.substring(7).trim();
-            } else if (line.startsWith('f ')) {
-                const parts = line.split(/\s+/).slice(1);
+            } else if (cmd === 'usemtl') {
+                currentMtl = parts.slice(1).join(' ').trim();
+            } else if (cmd === 'f') {
                 const faceVerts = [];
-                for (let p of parts) {
+                for (let i = 1; i < parts.length; i++) {
+                    const p = parts[i];
                     if (!p) continue;
                     const vIdx = parseInt(p.split('/')[0]);
                     faceVerts.push(vIdx > 0 ? vIdx - 1 : vertices.length + vIdx);
@@ -76,7 +114,9 @@ async function loadObjModel(name) {
             }
         }
         WEAPON_MODELS[name] = { vertices, faces };
-    } catch (e) {}
+    } catch (e) {
+        console.error(`Error parsing OBJ/MTL model ${name}:`, e);
+    }
 }
 
 loadObjModel('pistol');
@@ -114,9 +154,9 @@ function renderWeaponModel() {
     
     let recoilOffset = fireCooldown > 0 ? (fireCooldown / wData.fireRate) * 0.1 : 0;
 
-    let targetOffsetX = isZooming ? 0 : conf.offsetX;
-    let targetOffsetY = isZooming ? conf.offsetY - 0.1 : conf.offsetY;
-    let targetOffsetZ = isZooming ? conf.offsetZ + 0.05 : conf.offsetZ;
+    let targetOffsetX = isZooming ? (conf.zoomOffsetX !== undefined ? conf.zoomOffsetX : 0) : conf.offsetX;
+    let targetOffsetY = isZooming ? (conf.zoomOffsetY !== undefined ? conf.zoomOffsetY : conf.offsetY - 0.1) : conf.offsetY;
+    let targetOffsetZ = isZooming ? (conf.zoomOffsetZ !== undefined ? conf.zoomOffsetZ : conf.offsetZ + 0.05) : conf.offsetZ;
 
     let ox = targetOffsetX + bobX;
     let oy = targetOffsetY - recoilOffset; 
