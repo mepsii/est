@@ -626,8 +626,13 @@ document.addEventListener('pointerlockchange', () => {
         debugMenu.style.display = isDebugOpen ? 'block' : 'none'; stairMenu.style.display = isStairMenuOpen ? 'block' : 'none';
         interactTooltip.style.display = 'none'; keys = {}; 
         if (fpsCounterEl) {
-            if (isDebugOpen) fpsCounterEl.classList.add('debug-open');
-            else fpsCounterEl.classList.remove('debug-open');
+            if (isDebugOpen) {
+                fpsCounterEl.classList.add('debug-open');
+                if (timeCounterEl) timeCounterEl.classList.add('debug-open');
+            } else {
+                fpsCounterEl.classList.remove('debug-open');
+                if (timeCounterEl) timeCounterEl.classList.remove('debug-open');
+            }
         }
     } else { 
         if (!hasLoaded) {
@@ -651,6 +656,7 @@ document.addEventListener('pointerlockchange', () => {
             overlay.style.display = invScreen.style.display = debugMenu.style.display = stairMenu.style.display = 'none'; 
             updateInventories();
             if (fpsCounterEl) fpsCounterEl.classList.remove('debug-open');
+            if (timeCounterEl) timeCounterEl.classList.remove('debug-open');
         }
     }
 });
@@ -745,7 +751,15 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { if (e.target.tagName !== 'INPUT') keys[e.code] = false; });
 
 // --- Debug Menu Hooks ---
-dbgTimeEl.oninput = e => { gameTime = parseFloat(e.target.value); dbgTimeValEl.innerText = gameTime.toFixed(1); };
+dbgTimeEl.oninput = e => {
+    gameTime = parseFloat(e.target.value);
+    dbgTimeValEl.innerText = gameTime.toFixed(1);
+    if (timeValEl) {
+        let hours = Math.floor(gameTime);
+        let minutes = Math.floor((gameTime - hours) * 60);
+        timeValEl.innerText = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
+};
 dbgTimeSpeedEl.oninput = e => { timeSpeed = parseFloat(e.target.value) || 1.0; };
 document.getElementById('btn-hp').onclick = () => { player.hp = parseInt(document.getElementById('dbg-hp').value); hpEl.innerText = player.hp; };
 document.getElementById('btn-stam').onclick = () => { player.stamina = parseInt(document.getElementById('dbg-stam').value); staminaEl.innerText = Math.floor(player.stamina); };

@@ -6,6 +6,11 @@ function update() {
 
     gameTime += (24 / 54000) * timeSpeed; if (gameTime >= 24) gameTime %= 24; 
     if (isDebugOpen && tickCounter % 10 === 0) { dbgTimeEl.value = gameTime; dbgTimeValEl.innerText = gameTime.toFixed(1); }
+    if (timeValEl) {
+        let hours = Math.floor(gameTime);
+        let minutes = Math.floor((gameTime - hours) * 60);
+        timeValEl.innerText = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
 
     if (!godMode) { tickCounter++; if (tickCounter % 120 === 0) { if (player.food > 0) { player.food -= 1; foodEl.innerText = player.food; } else takeDamage(1); } } 
     else { hpEl.innerText = player.hp; foodEl.innerText = player.food; tickCounter++; }
@@ -397,14 +402,14 @@ function update() {
         let physRad = 4;
         for(let x = pxC - physRad; x <= pxC + physRad; x++) for(let y = pyC - physRad; y <= pyC + physRad; y++) getMapChunk(x, y);
 
-        let isNight = gameTime < 6 || gameTime >= 18, spawnChance = isNight ? 0.001 : 0.0002;
+        let isNight = gameTime < 6 || gameTime >= 18, spawnChance = isNight ? 0.002 : 0.0002;
         if (spawnEnemiesToggle && enemies.length < 20 && Math.random() < spawnChance) { 
             let angle = Math.random() * Math.PI * 2, dist = 20 + Math.random() * 10, ex = player.x + Math.cos(angle) * dist, ey = player.y + Math.sin(angle) * dist;
             let ez = getSafeFloorZ(ex, ey, player.z) + 1;
             if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez)) && getVoxel(Math.floor(ex), Math.floor(ey), Math.floor(ez - 1)) !== 2) { 
                 let biome = getBiome(ex, ey), alienChance = biome >= 0.65 ? 0.05 : 0.01;
                 if (Math.random() < alienChance) { enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 }); } 
-                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getSafeFloorZ(zx,zy,player.z)+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && getVoxel(Math.floor(zx), Math.floor(zy), Math.floor(zez - 1)) !== 2 && enemies.length < 20) enemies.push({ type: 'zombie', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.4, flash: 0 }); } }
+                else { let clusterSize = biome < 0.35 ? Math.floor(Math.random() * 3) + 3 : (biome < 0.65 ? Math.floor(Math.random() * 3) + 1 : 1); for (let k = 0; k < clusterSize; k++) { let zx = ex + (Math.random() - 0.5) * 4, zy = ey + (Math.random() - 0.5) * 4; let zez = getSafeFloorZ(zx,zy,player.z)+1; if (!getSolid(Math.floor(zx), Math.floor(zy), Math.floor(zez)) && getVoxel(Math.floor(zx), Math.floor(zy), Math.floor(zez - 1)) !== 2 && enemies.length < 20) enemies.push({ type: 'zombie3d', x: zx, y: zy, z: zez, hp: 15, cooldown: 60 + Math.random()*30, size: 1.8, flash: 0 }); } }
             }
         }
 
@@ -466,15 +471,24 @@ function update() {
             if ((e.type === 'zombie' || e.type === 'zombie3d') && e.hasHead !== undefined && e.hp > 0) {
                 let zBlood = getBloodColor('zombie') || {r: 92, g: 64, b: 51};
                 // Neck spray
-                if (!e.hasHead && tickCounter % 2 === 0) {
-                    let speed = Math.random() * 0.04 + 0.01;
-                    let vz = Math.random() * 0.05 + 0.06;
-                    let angle = Math.random() * Math.PI * 2;
-                    bloodParticles.push({
-                        x: e.x, y: e.y, z: e.z + (e.isCrawling ? e.size * 0.44 : e.size * 0.88),
-                        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz,
-                        color: zBlood, life: 25 + Math.random() * 15, size: (Math.random() * 0.05 + 0.02) * 0.25
-                    });
+                if (!e.hasHead) {
+                    let isBleedingOut = e.bleedOutTimer !== undefined;
+                    let shouldSpawn = isBleedingOut || (tickCounter % 2 === 0);
+                    if (shouldSpawn) {
+                        let count = isBleedingOut ? 3 : 1;
+                        for (let bIdx = 0; bIdx < count; bIdx++) {
+                            let speed = Math.random() * 0.03 + 0.01;
+                            let vz = Math.random() * 0.12 + 0.18;
+                            let angle = Math.random() * Math.PI * 2;
+                            bloodParticles.push({
+                                x: e.x + (Math.random() - 0.5) * 0.1,
+                                y: e.y + (Math.random() - 0.5) * 0.1,
+                                z: e.z + (e.isCrawling ? e.size * 0.44 : e.size * 0.88),
+                                vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz,
+                                color: zBlood, life: 40 + Math.random() * 20, size: (Math.random() * 0.08 + 0.04) * 0.25
+                            });
+                        }
+                    }
                 }
                 
                 // Left Arm sprays
@@ -601,7 +615,14 @@ function update() {
             if (d < 40) { 
                 if (d > 0.8) { 
                     let moveSpeed = ((e.type === 'zombie' || e.type === 'zombie3d') && e.isCrawling) ? 0.006 : 0.02;
-                    let nx = e.x + (player.x-e.x)/d * moveSpeed, ny = e.y + (player.y-e.y)/d * moveSpeed;
+                    let nx, ny;
+                    if (e.bleedOutTimer !== undefined) {
+                        nx = e.x + Math.cos(e.angle) * moveSpeed;
+                        ny = e.y + Math.sin(e.angle) * moveSpeed;
+                    } else {
+                        nx = e.x + (player.x-e.x)/d * moveSpeed;
+                        ny = e.y + (player.y-e.y)/d * moveSpeed;
+                    }
                     if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) e.x = nx;
                     else if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + 1.1))) { e.x = nx; e.z += 1.1; }
 
@@ -609,7 +630,9 @@ function update() {
                     else if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z + 1.1))) { e.y = ny; e.z += 1.1; }
                     
                     if (e.type === 'zombie3d' || e.type === 'zombie') {
-                        e.angle = Math.atan2(player.y - e.y, player.x - e.x);
+                        if (e.bleedOutTimer === undefined) {
+                            e.angle = Math.atan2(player.y - e.y, player.x - e.x);
+                        }
                         e.animTime = (e.animTime || 0) + moveSpeed * 8.0;
                     }
                 } else {
@@ -623,7 +646,9 @@ function update() {
                 if (e.type === 'zombie' || e.type === 'zombie3d') {
                     let attackCooldown = 60;
                     if (!e.hasLeftUpperArm && !e.hasRightUpperArm) attackCooldown = 100;
-                    if (d < 1.5) { if (--e.cooldown <= 0) { takeDamage(5); e.cooldown = attackCooldown; } } else e.cooldown = Math.max(0, e.cooldown - 1);
+                    if (e.bleedOutTimer === undefined) {
+                        if (d < 1.5) { if (--e.cooldown <= 0) { takeDamage(5); e.cooldown = attackCooldown; } } else e.cooldown = Math.max(0, e.cooldown - 1);
+                    }
                 } else {
                     if (--e.cooldown <= 0) { let projZ = (e.type === 'experimental' ? e.z + e.size * 0.8 : e.z + 0.6); projectiles.push({ owner:'enemy', x:e.x, y:e.y, z:projZ, vx:(player.x-e.x)/d*0.6, vy:(player.y-e.y)/d*0.6, vz:(player.z-0.6-projZ)/d*0.6, life:100, dmg:10 }); e.cooldown = 120; } 
                 }
@@ -1016,6 +1041,9 @@ function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy) {
             if (hitLimb === 'head') {
                 e.hasHead = false;
                 spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head', is3D, e.size);
+                if (e.bleedOutTimer === undefined) {
+                    e.bleedOutTimer = 120 + Math.random() * 60; // 2 to 3 seconds of movement
+                }
             } else if (hitLimb === 'leftLowerArm') {
                 e.hasLeftLowerArm = false;
                 spawnFlyingLimb(e.x + Math.sin(player.angle)*0.15, e.y - Math.cos(player.angle)*0.15, e.z + e.size * 0.5, 'leftLowerArm', is3D, e.size);

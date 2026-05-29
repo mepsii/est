@@ -7,6 +7,7 @@ const scoreEl = document.getElementById('score'), hpEl = document.getElementById
 const weaponEl = document.getElementById('weapon-name'), adsEl = document.getElementById('ads-status'), coordsEl = document.getElementById('coords');
 const overlay = document.getElementById('overlay'), damageFlash = document.getElementById('damage-flash'), healFlash = document.getElementById('heal-flash');
 const fpsCounterEl = document.getElementById('fps-counter'), fpsValEl = document.getElementById('fps-val');
+const timeCounterEl = document.getElementById('time-counter'), timeValEl = document.getElementById('time-val');
 
 const invScreen = document.getElementById('inventory-screen'), containerUI = document.getElementById('container-ui');
 const playerInvGrid = document.getElementById('player-inv-grid'), containerInvGrid = document.getElementById('container-inv-grid');
