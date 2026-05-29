@@ -25,14 +25,15 @@ function addDamageText(x, y, z, amt) { if(showDebugInfo) damageTexts.push({ x: x
 
 function getBloodColor(type) { 
     if (type === 'alien' || type === 'experimental') return {r: 51, g: 255, b: 51}; 
-    if (type === 'zombie') return {r: 92, g: 64, b: 51};
+    if (type === 'zombie' || type === 'zombie3d') return {r: 92, g: 64, b: 51};
     if (type === 'animal') return {r: 255, g: 51, b: 51};
     return null; 
 }
 function spawnBlood(x, y, z, colorObj, count) {
-    for (let i = 0; i < count; i++) {
+    let finalCount = Math.round(count * 1.6);
+    for (let i = 0; i < finalCount; i++) {
         let angle = Math.random() * Math.PI * 2, speed = Math.random() * 0.15 + 0.05, vz = Math.random() * 0.15 + 0.05;
-        bloodParticles.push({ x: x, y: y, z: z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz, color: colorObj, life: 60 + Math.random() * 30, size: Math.random() * 0.08 + 0.04 });
+        bloodParticles.push({ x: x, y: y, z: z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz, color: colorObj, life: 60 + Math.random() * 30, size: (Math.random() * 0.08 + 0.04) * 0.25 });
     }
 }
 

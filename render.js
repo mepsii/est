@@ -1,88 +1,108 @@
 //THIS IS render.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
-const zombieHeadImg = new Image();
-zombieHeadImg.src = 'textures/zombiehead.png';
-
-const ZombieHeadCache = {
-    sprites: new Map(),
+class ZombiePartCache {
+    constructor(img, fallbackEmoji = null, trimPadding = true) {
+        this.img = img;
+        this.fallbackEmoji = fallbackEmoji;
+        this.trimPadding = trimPadding;
+        this.sprites = new Map();
+    }
+    
     get(flash, ambient) {
         let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20);
         const key = `${flash}_${ambStep}`;
         if (this.sprites.has(key)) return this.sprites.get(key);
         
+        if (!this.img.complete || this.img.naturalWidth === 0) {
+            if (this.fallbackEmoji) {
+                const c = document.createElement('canvas');
+                c.width = 128;
+                c.height = 128;
+                const cx = c.getContext('2d');
+                cx.font = '96px sans-serif';
+                cx.textAlign = 'center';
+                cx.textBaseline = 'middle';
+                cx.fillText(this.fallbackEmoji, 64, 64);
+                
+                if (flash) {
+                    cx.globalCompositeOperation = 'source-atop';
+                    cx.fillStyle = 'white';
+                    cx.fillRect(0, 0, 128, 128);
+                    cx.globalCompositeOperation = 'source-over';
+                } else if (ambStep < 1.0) {
+                    cx.globalCompositeOperation = 'source-atop';
+                    cx.fillStyle = `rgba(15, 20, 35, ${1.0 - ambStep})`;
+                    cx.fillRect(0, 0, 128, 128);
+                    cx.globalCompositeOperation = 'source-over';
+                }
+                return c;
+            }
+            return null;
+        }
+        
         const c = document.createElement('canvas');
         c.width = 128;
         c.height = 128;
         const cx = c.getContext('2d');
+        cx.drawImage(this.img, 0, 0, 128, 128);
         
-        if (zombieHeadImg.complete && zombieHeadImg.naturalWidth !== 0) {
-            cx.drawImage(zombieHeadImg, 0, 0, 128, 128);
-            
-            // Remove checkerboard background (flood-fill from borders/corners)
-            const imgData = cx.getImageData(0, 0, 128, 128);
-            const data = imgData.data;
-            const visited = new Uint8Array(128 * 128);
-            const queue = [];
-            
-            function isBg(r, g, b, a) {
-                if (a === 0) return true;
-                // Detect white (r,g,b > 230) or light grey checkerboard
-                let isWhite = (r > 230 && g > 230 && b > 230);
-                let isGrey = (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && Math.abs(r - b) < 8 && r > 180 && r < 220);
-                return isWhite || isGrey;
-            }
-            
-            // Push borders to queue
-            for (let x = 0; x < 128; x++) {
-                for (let y of [0, 127]) {
-                    let idx = (y * 128 + x) * 4;
-                    if (isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
-                        queue.push(x, y);
-                        visited[y * 128 + x] = 1;
-                    }
+        // Remove checkerboard background (flood-fill from borders/corners)
+        const imgData = cx.getImageData(0, 0, 128, 128);
+        const data = imgData.data;
+        const visited = new Uint8Array(128 * 128);
+        const queue = [];
+        
+        function isBg(r, g, b, a) {
+            if (a === 0) return true;
+            let isWhite = (r > 230 && g > 230 && b > 230);
+            let isGrey = (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && Math.abs(r - b) < 8 && r > 180 && r < 220);
+            return isWhite || isGrey;
+        }
+        
+        // Push borders to queue
+        for (let x = 0; x < 128; x++) {
+            for (let y of [0, 127]) {
+                let idx = (y * 128 + x) * 4;
+                if (isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
+                    queue.push(x, y);
+                    visited[y * 128 + x] = 1;
                 }
             }
-            for (let y = 0; y < 128; y++) {
-                for (let x of [0, 127]) {
-                    let idx = (y * 128 + x) * 4;
-                    if (!visited[y * 128 + x] && isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
-                        queue.push(x, y);
-                        visited[y * 128 + x] = 1;
-                    }
+        }
+        for (let y = 0; y < 128; y++) {
+            for (let x of [0, 127]) {
+                let idx = (y * 128 + x) * 4;
+                if (!visited[y * 128 + x] && isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
+                    queue.push(x, y);
+                    visited[y * 128 + x] = 1;
                 }
             }
+        }
+        
+        let head = 0;
+        const dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
+        while (head < queue.length) {
+            let qx = queue[head++];
+            let qy = queue[head++];
+            let idx = (qy * 128 + qx) * 4;
+            data[idx+3] = 0; // Transparent
             
-            let head = 0;
-            const dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
-            while (head < queue.length) {
-                let qx = queue[head++];
-                let qy = queue[head++];
-                let idx = (qy * 128 + qx) * 4;
-                data[idx+3] = 0; // Transparent
-                
-                for (let d = 0; d < 8; d += 2) {
-                    let nx = qx + dirs[d];
-                    let ny = qy + dirs[d+1];
-                    if (nx >= 0 && nx < 128 && ny >= 0 && ny < 128) {
-                        let nidx = ny * 128 + nx;
-                        if (!visited[nidx]) {
-                            let pidx = nidx * 4;
-                            if (isBg(data[pidx], data[pidx+1], data[pidx+2], data[pidx+3])) {
-                                queue.push(nx, ny);
-                                visited[nidx] = 1;
-                            }
+            for (let d = 0; d < 8; d += 2) {
+                let nx = qx + dirs[d];
+                let ny = qy + dirs[d+1];
+                if (nx >= 0 && nx < 128 && ny >= 0 && ny < 128) {
+                    let nidx = ny * 128 + nx;
+                    if (!visited[nidx]) {
+                        let pidx = nidx * 4;
+                        if (isBg(data[pidx], data[pidx+1], data[pidx+2], data[pidx+3])) {
+                            queue.push(nx, ny);
+                            visited[nidx] = 1;
                         }
                     }
                 }
             }
-            cx.putImageData(imgData, 0, 0);
-        } else {
-            // Fallback while texture loads
-            cx.font = '96px sans-serif';
-            cx.textAlign = 'center';
-            cx.textBaseline = 'middle';
-            cx.fillText('🧟', 64, 64);
         }
+        cx.putImageData(imgData, 0, 0);
         
         if (flash) {
             cx.globalCompositeOperation = 'source-atop';
@@ -96,12 +116,441 @@ const ZombieHeadCache = {
             cx.globalCompositeOperation = 'source-over';
         }
         
-        if (zombieHeadImg.complete && zombieHeadImg.naturalWidth !== 0) {
-            this.sprites.set(key, c);
+        let finalCanvas = c;
+        if (this.trimPadding) {
+            let minX = 128, maxX = 0, minY = 128, maxY = 0;
+            let foundContent = false;
+            // Get updated image data after transparency mask applied
+            const cleanData = cx.getImageData(0, 0, 128, 128).data;
+            for (let y = 0; y < 128; y++) {
+                for (let x = 0; x < 128; x++) {
+                    let idx = (y * 128 + x) * 4;
+                    if (cleanData[idx+3] > 0) {
+                        foundContent = true;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+            if (foundContent) {
+                let croppedW = maxX - minX + 1;
+                let croppedH = maxY - minY + 1;
+                const croppedCanvas = document.createElement('canvas');
+                croppedCanvas.width = croppedW;
+                croppedCanvas.height = croppedH;
+                const croppedCx = croppedCanvas.getContext('2d');
+                croppedCx.drawImage(c, minX, minY, croppedW, croppedH, 0, 0, croppedW, croppedH);
+                finalCanvas = croppedCanvas;
+            }
         }
-        return c;
+        
+        if (this.img.complete && this.img.naturalWidth !== 0) {
+            this.sprites.set(key, finalCanvas);
+        }
+        return finalCanvas;
     }
+}
+
+const zombieHeadImg = new Image();
+zombieHeadImg.src = 'textures/zombiehead.png';
+const ZombieHeadCache = new ZombiePartCache(zombieHeadImg, '🧟', false);
+
+const zombieTorsoImg = new Image();
+zombieTorsoImg.src = 'textures/zombietorso.png';
+const ZombieTorsoCache = new ZombiePartCache(zombieTorsoImg, null, true);
+
+const zombieArmUpperImg = new Image();
+zombieArmUpperImg.src = 'textures/zombiearmupper.png';
+const ZombieArmUpperCache = new ZombiePartCache(zombieArmUpperImg, null, true);
+
+const zombieArmLowerImg = new Image();
+zombieArmLowerImg.src = 'textures/zombiearmlower.png';
+const ZombieArmLowerCache = new ZombiePartCache(zombieArmLowerImg, null, true);
+
+const zombieLegUpperImg = new Image();
+zombieLegUpperImg.src = 'textures/zombielegupper.png';
+const ZombieLegUpperCache = new ZombiePartCache(zombieLegUpperImg, null, true);
+
+const zombieLegLowerImg = new Image();
+zombieLegLowerImg.src = 'textures/zombieleglower.png';
+const ZombieLegLowerCache = new ZombiePartCache(zombieLegLowerImg, null, true);
+
+function generateDefaultZombieSkin() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 64, 64);
+
+    function fill(x, y, w, h, color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+    }
+
+    // Classic Zombie Skin Texture layout in 64x64
+    // Head (0,0 to 32,16)
+    fill(8, 0, 8, 8, '#3c5a3c'); // Hair top
+    fill(16, 0, 8, 8, '#3c5a3c'); // Hair bottom/neck
+    fill(0, 8, 8, 8, '#507d50'); // Right head
+    fill(8, 8, 8, 8, '#5a8c5a'); // Front head
+    fill(16, 8, 8, 8, '#507d50'); // Left head
+    fill(24, 8, 8, 8, '#466e46'); // Back head
+    
+    // Face features
+    fill(9, 12, 2, 1, '#ffffff'); // Left eye white
+    fill(13, 12, 2, 1, '#ffffff'); // Right eye white
+    fill(10, 12, 1, 1, '#3c3c78'); // Left pupil
+    fill(13, 12, 1, 1, '#3c3c78'); // Right pupil
+    fill(10, 14, 4, 1, '#2c402c'); // Mouth
+    
+    // Torso (16,16 to 40,32)
+    fill(20, 16, 8, 4, '#2e8b9a'); // Torso top
+    fill(28, 16, 8, 4, '#2e8b9a'); // Torso bottom
+    fill(16, 20, 4, 12, '#287a87'); // Torso right
+    fill(20, 20, 8, 12, '#2e8b9a'); // Torso front
+    fill(28, 20, 4, 12, '#287a87'); // Torso left
+    fill(32, 20, 8, 12, '#246b76'); // Torso back
+    
+    // Right Arm (40,16 to 56,32)
+    fill(44, 16, 4, 4, '#2e8b9a'); // Shoulder top
+    fill(48, 16, 4, 4, '#5a8c5a'); // Hand bottom
+    fill(40, 20, 4, 12, '#287a87'); // Right arm right
+    fill(44, 20, 4, 12, '#2e8b9a'); // Right arm front
+    fill(48, 20, 4, 12, '#287a87'); // Right arm left
+    fill(52, 20, 4, 12, '#246b76'); // Right arm back
+    fill(40, 26, 16, 6, '#5a8c5a'); // Sleeve skin bottom
+    
+    // Right Leg (0,16 to 16,32)
+    fill(4, 16, 4, 4, '#3c3c78'); // Leg top
+    fill(8, 16, 4, 4, '#3c3c78'); // Leg bottom
+    fill(0, 20, 4, 12, '#323264'); // Leg right
+    fill(4, 20, 4, 12, '#3c3c78'); // Leg front
+    fill(8, 20, 4, 12, '#323264'); // Leg left
+    fill(12, 20, 4, 12, '#282850'); // Leg back
+    
+    // Left Arm (32,48 to 48,64)
+    fill(36, 48, 4, 4, '#2e8b9a'); // Shoulder top
+    fill(40, 48, 4, 4, '#5a8c5a'); // Hand bottom
+    fill(32, 52, 4, 12, '#287a87'); // Left arm right
+    fill(36, 52, 4, 12, '#2e8b9a'); // Left arm front
+    fill(40, 52, 4, 12, '#287a87'); // Left arm left
+    fill(44, 52, 4, 12, '#246b76'); // Left arm back
+    fill(32, 58, 16, 6, '#5a8c5a'); // Hand skin
+    
+    // Left Leg (16,48 to 32,64)
+    fill(20, 48, 4, 4, '#3c3c78'); // Leg top
+    fill(24, 48, 4, 4, '#3c3c78'); // Leg bottom
+    fill(16, 52, 4, 12, '#323264'); // Leg right
+    fill(20, 52, 4, 12, '#3c3c78'); // Leg front
+    fill(24, 52, 4, 12, '#323264'); // Leg left
+    fill(28, 52, 4, 12, '#282850'); // Leg back
+    
+    return canvas;
+}
+
+let leftLimbsTransparent = false;
+let checkedSkinLimbs = false;
+
+function checkSkinTransparency() {
+    if (checkedSkinLimbs) return;
+    let img = minecraftZombieSkinImg;
+    if (!img.complete || img.naturalWidth === 0) return;
+    
+    checkedSkinLimbs = true;
+    try {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.naturalWidth;
+        tempCanvas.height = img.naturalHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(img, 0, 0);
+        
+        if (tempCanvas.width === 64 && tempCanvas.height === 64) {
+            const imgData = tempCtx.getImageData(16, 48, 32, 16);
+            let allTransparent = true;
+            for (let i = 3; i < imgData.data.length; i += 4) {
+                if (imgData.data[i] > 0) {
+                    allTransparent = false;
+                    break;
+                }
+            }
+            if (allTransparent) {
+                leftLimbsTransparent = true;
+                console.log("Detected transparent left limbs in skin, enabling mirroring fallback.");
+            }
+        }
+    } catch (e) {
+        console.warn("Could not check skin transparency:", e);
+    }
+}
+
+function getMinecraftUVs(partName, faceIndex, skinHeight) {
+    if (minecraftZombieSkinImg.complete && !checkedSkinLimbs) {
+        checkSkinTransparency();
+    }
+
+    if (partName === 'upperArm') partName = 'rightUpperArm';
+    if (partName === 'lowerArm') partName = 'rightLowerArm';
+    if (partName === 'upperLeg') partName = 'rightUpperLeg';
+    if (partName === 'lowerLeg') partName = 'rightLowerLeg';
+
+    // Stump checks
+    if ((partName.endsWith('UpperArm') || partName.endsWith('UpperLeg')) && faceIndex === 5) return null;
+    if ((partName.endsWith('LowerArm') || partName.endsWith('LowerLeg')) && faceIndex === 4) return null;
+
+    let isOldSkin = (skinHeight === 32) || leftLimbsTransparent;
+
+    if (partName === 'head') {
+        const uvs = [
+            [8, 8, 16, 16],  // Front (+Y)
+            [24, 8, 32, 16], // Back (-Y)
+            [16, 8, 24, 16], // Left (-X)
+            [0, 8, 8, 16],   // Right (+X)
+            [8, 0, 16, 8],   // Top (+Z)
+            [16, 0, 24, 8]   // Bottom (-Z)
+        ];
+        return uvs[faceIndex];
+    }
+    if (partName === 'torso') {
+        const uvs = [
+            [20, 20, 28, 32], // Front
+            [32, 20, 40, 32], // Back
+            [28, 20, 32, 32], // Left
+            [16, 20, 20, 32], // Right
+            [20, 16, 28, 20], // Top
+            [28, 16, 36, 20]  // Bottom
+        ];
+        return uvs[faceIndex];
+    }
+
+    // Right Arm
+    if (partName === 'rightUpperArm') {
+        const uvs = [
+            [44, 20, 48, 26], // Front
+            [52, 20, 56, 26], // Back
+            [48, 20, 52, 26], // Left
+            [40, 20, 44, 26], // Right
+            [44, 16, 48, 20]  // Top
+        ];
+        return uvs[faceIndex];
+    }
+    if (partName === 'rightLowerArm') {
+        const uvs = [
+            [44, 26, 48, 32], // Front
+            [52, 26, 56, 32], // Back
+            [48, 26, 52, 32], // Left
+            [40, 26, 44, 32], // Right
+            null,
+            [48, 16, 52, 20]  // Bottom
+        ];
+        return uvs[faceIndex];
+    }
+
+    // Left Arm
+    if (partName === 'leftUpperArm') {
+        if (isOldSkin) return getMinecraftUVs('rightUpperArm', faceIndex, skinHeight);
+        const uvs = [
+            [36, 52, 40, 58], // Front
+            [44, 52, 48, 58], // Back
+            [40, 52, 44, 58], // Left
+            [32, 52, 36, 58], // Right
+            [36, 48, 40, 52]  // Top
+        ];
+        return uvs[faceIndex];
+    }
+    if (partName === 'leftLowerArm') {
+        if (isOldSkin) return getMinecraftUVs('rightLowerArm', faceIndex, skinHeight);
+        const uvs = [
+            [36, 58, 40, 64], // Front
+            [44, 58, 48, 64], // Back
+            [40, 58, 44, 64], // Left
+            [32, 58, 36, 64], // Right
+            null,
+            [40, 48, 44, 52]  // Bottom
+        ];
+        return uvs[faceIndex];
+    }
+
+    // Right Leg
+    if (partName === 'rightUpperLeg') {
+        const uvs = [
+            [4, 20, 8, 26],   // Front
+            [12, 20, 16, 26], // Back
+            [8, 20, 12, 26],  // Left
+            [0, 20, 4, 26],   // Right
+            [4, 16, 8, 20]    // Top
+        ];
+        return uvs[faceIndex];
+    }
+    if (partName === 'rightLowerLeg') {
+        const uvs = [
+            [4, 26, 8, 32],   // Front
+            [12, 26, 16, 32], // Back
+            [8, 26, 12, 32],  // Left
+            [0, 26, 4, 32],   // Right
+            null,
+            [8, 16, 12, 20]   // Bottom
+        ];
+        return uvs[faceIndex];
+    }
+
+    // Left Leg
+    if (partName === 'leftUpperLeg') {
+        if (isOldSkin) return getMinecraftUVs('rightUpperLeg', faceIndex, skinHeight);
+        const uvs = [
+            [20, 52, 24, 58], // Front
+            [28, 52, 32, 58], // Back
+            [24, 52, 28, 58], // Left
+            [16, 52, 20, 58], // Right
+            [20, 48, 24, 52]  // Top
+        ];
+        return uvs[faceIndex];
+    }
+    if (partName === 'leftLowerLeg') {
+        if (isOldSkin) return getMinecraftUVs('rightLowerLeg', faceIndex, skinHeight);
+        const uvs = [
+            [20, 58, 24, 64], // Front
+            [28, 58, 32, 64], // Back
+            [24, 58, 28, 64], // Left
+            [16, 58, 20, 64], // Right
+            null,
+            [24, 48, 28, 52]  // Bottom
+        ];
+        return uvs[faceIndex];
+    }
+
+    return null;
+}
+
+function getFaceCornerUVs(faceIndex, uMin, vMin, uMax, vMax) {
+    if (faceIndex === 0) { // Front
+        return [
+            { u: uMin, v: vMax },
+            { u: uMax, v: vMax },
+            { u: uMax, v: vMin },
+            { u: uMin, v: vMin }
+        ];
+    }
+    if (faceIndex === 1) { // Back
+        return [
+            { u: uMax, v: vMax },
+            { u: uMin, v: vMax },
+            { u: uMin, v: vMin },
+            { u: uMax, v: vMin }
+        ];
+    }
+    if (faceIndex === 2) { // Left
+        return [
+            { u: uMin, v: vMax },
+            { u: uMax, v: vMax },
+            { u: uMax, v: vMin },
+            { u: uMin, v: vMin }
+        ];
+    }
+    if (faceIndex === 3) { // Right
+        return [
+            { u: uMin, v: vMax },
+            { u: uMax, v: vMax },
+            { u: uMax, v: vMin },
+            { u: uMin, v: vMin }
+        ];
+    }
+    if (faceIndex === 4) { // Top
+        return [
+            { u: uMin, v: vMax },
+            { u: uMax, v: vMax },
+            { u: uMax, v: vMin },
+            { u: uMin, v: vMin }
+        ];
+    }
+    if (faceIndex === 5) { // Bottom
+        return [
+            { u: uMin, v: vMin },
+            { u: uMax, v: vMin },
+            { u: uMax, v: vMax },
+            { u: uMin, v: vMax }
+        ];
+    }
+    return null;
+}
+
+function drawTexturedTriangle(ctx, img, x0, y0, x1, y1, x2, y2, u0, v0, u1, v1, u2, v2, light, isFlash, fog, sky, alpha = 1.0) {
+    if (isFlash) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.fill();
+        ctx.restore();
+        return;
+    }
+
+    let den = u0 * (v1 - v2) + u1 * (v2 - v0) + u2 * (v0 - v1);
+    if (Math.abs(den) < 1e-5) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = `rgb(${90 * light | 0}, ${140 * light | 0}, ${90 * light | 0})`;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.fill();
+        ctx.restore();
+        return;
+    }
+
+    let a = (x0 * (v1 - v2) + x1 * (v2 - v0) + x2 * (v0 - v1)) / den;
+    let c = (x0 * (u2 - u1) + x1 * (u0 - u2) + x2 * (u1 - u0)) / den;
+    let e = (x0 * (u1 * v2 - u2 * v1) + x1 * (u2 * v0 - u0 * v2) + x2 * (u0 * v1 - u1 * v0)) / den;
+    let b = (y0 * (v1 - v2) + y1 * (v2 - v0) + y2 * (v0 - v1)) / den;
+    let d = (y0 * (u2 - u1) + y1 * (u0 - u2) + y2 * (u1 - u0)) / den;
+    let f = (y0 * (u1 * v2 - u2 * v1) + y1 * (u2 * v0 - u0 * v2) + y2 * (u0 * v1 - u1 * v0)) / den;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.transform(a, b, c, d, e, f);
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+
+    if (light < 1.0 || fog > 0) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.closePath();
+        
+        if (light < 1.0) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${1.0 - light})`;
+            ctx.fill();
+        }
+        if (fog > 0) {
+            ctx.fillStyle = `rgba(${sky.r | 0}, ${sky.g | 0}, ${sky.b | 0}, ${fog})`;
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
+const fallbackSkinCanvas = generateDefaultZombieSkin();
+const minecraftZombieSkinImg = new Image();
+minecraftZombieSkinImg.onload = () => {
+    checkedSkinLimbs = false;
+    checkSkinTransparency();
 };
+minecraftZombieSkinImg.src = 'textures/minecraft_zombie_skin.png';
 
 function render() {
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
@@ -121,6 +570,7 @@ function render() {
     let ambient = getAmbientLight(gameTime);
     let visibleTorches = torches.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST);
 
+    ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = `rgb(${sky.r|0}, ${sky.g|0}, ${sky.b|0})`; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -310,13 +760,63 @@ function render() {
             }
         }
         
-        for (let e of enemies) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.hp = e.hp; o.flash = e.flash; o.depthSq = rotX*rotX; o.size = e.size; o.h = e.z; o.wX = e.x; o.wY = e.y; if (e.type === 'experimental' || e.type === 'zombie') { o.type = 'locationalEnemy'; o.obj = e; } else { o.type = 'emoji'; o.emoji = e.emoji || '👽'; } } }
+        for (let e of enemies) {
+            let dx = e.x - player.x, dy = e.y - player.y, rotX = dx * cosA + dy * sinA;
+            if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx * -sinA + dy * cosA) < rotX * fovMult + 4.0) {
+                if (e.type === 'zombie3d') {
+                    add3DZombieFaces(e, ambient);
+                } else {
+                    let o = getRenderItem();
+                    o.hp = e.hp;
+                    o.flash = e.flash;
+                    o.depthSq = rotX * rotX;
+                    o.size = e.size;
+                    o.h = e.z;
+                    o.wX = e.x;
+                    o.wY = e.y;
+                    if (e.type === 'experimental' || e.type === 'zombie') {
+                        o.type = 'locationalEnemy';
+                        o.obj = e;
+                    } else {
+                        o.type = 'emoji';
+                        o.emoji = e.emoji || '👽';
+                    }
+                }
+            }
+        }
         for (let c of torches) { let dx=c.x-player.x, dy=c.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = rotX*rotX; o.h = c.z; o.wX = c.x; o.wY = c.y; if (ambient < 1.0) { let g = getRenderItem(); g.type = 'torchBloom'; g.depthSq = rotX*rotX - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;} } }
         for (let e of containers) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y; } }
         for (let e of animals) { let dx=e.x-player.x, dy=e.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 4.0) { let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = rotX*rotX; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y; } }
         for (let b of buildings) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 8.0) { let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = rotX*rotX; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y; } }
         for (let d of damageTexts) { let dx=d.x-player.x, dy=d.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.2 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = rotX*rotX; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;} }
-        for (let b of bloodParticles) { let dx=b.x-player.x, dy=b.y-player.y, rotX = dx*cosA + dy*sinA; if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx*-sinA + dy*cosA) < rotX*fovMult + 2.0) { let o = getRenderItem(); o.type = 'blood'; o.color = b.color; o.size = b.size; o.depthSq = rotX*rotX; o.h = b.z; o.life = b.life; o.wX = b.x; o.wY = b.y; if (b.isLimb) { o.isLimb = true; o.limbType = b.limbType; o.vx = b.vx; o.vy = b.vy; o.vz = b.vz; o.landedAngle = b.landedAngle; } } }
+        for (let b of bloodParticles) {
+            let dx = b.x - player.x, dy = b.y - player.y, rotX = dx * cosA + dy * sinA;
+            if (rotX > 0.1 && rotX < VIEW_DIST && Math.abs(dx * -sinA + dy * cosA) < rotX * fovMult + 2.0) {
+                if (b.isLimb && b.is3D) {
+                    add3DLimbFaces(b, ambient);
+                } else {
+                    let o = getRenderItem();
+                    o.type = 'blood';
+                    o.color = b.color;
+                    o.size = b.size;
+                    o.depthSq = rotX * rotX;
+                    o.h = b.z;
+                    o.life = b.life;
+                    o.wX = b.x;
+                    o.wY = b.y;
+                    o.onGround = b.onGround;
+                    o.isPooling = b.isPooling;
+                    if (b.isLimb) {
+                        o.isLimb = true;
+                        o.limbType = b.limbType;
+                        o.vx = b.vx;
+                        o.vy = b.vy;
+                        o.vz = b.vz;
+                        o.landedAngle = b.landedAngle;
+                    }
+                }
+            }
+        }
         
         if (typeof placementItem !== 'undefined' && placementItem !== null) {
             let target = getPlacementTarget();
@@ -685,7 +1185,12 @@ function render() {
             let camPts = [];
             for (let k = 0; k < ptsArray.length; k++) {
                 let dx = ptsArray[k].x - player.x, dy = ptsArray[k].y - player.y, dz = ptsArray[k].z - camZ;
-                camPts.push({ cx: dx * -sinA + dy * cosA, cy: dz, cz: dx * cosA + dy * sinA });
+                let cp = { cx: dx * -sinA + dy * cosA, cy: dz, cz: dx * cosA + dy * sinA };
+                if (o.uvs && o.uvs[k]) {
+                    cp.u = o.uvs[k].u;
+                    cp.v = o.uvs[k].v;
+                }
+                camPts.push(cp);
             }
 
             let clipped = [];
@@ -695,7 +1200,12 @@ function render() {
                 if(p1.cz >= zNear) clipped.push(p1);
                 if((p1.cz >= zNear) !== (p2.cz >= zNear)) {
                     let t = (zNear - p1.cz) / (p2.cz - p1.cz);
-                    clipped.push({ cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear });
+                    let cp = { cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear };
+                    if (o.uvs) {
+                        cp.u = p1.u + t * (p2.u - p1.u);
+                        cp.v = p1.v + t * (p2.v - p1.v);
+                    }
+                    clipped.push(cp);
                 }
             }
             
@@ -728,16 +1238,71 @@ function render() {
                 let sunDot = Math.max(0, nx*0.3 + ny*0.5 + nz*0.8);
                 let shade = (0.4 + sunDot * 0.6) * objLight;
                 let fog = Math.min(1, depth / VIEW_DIST);
-                let fr = o.color.r * shade * (1-fog) + sky.r * fog | 0;
-                let fg = o.color.g * shade * (1-fog) + sky.g * fog | 0;
-                let fb = o.color.b * shade * (1-fog) + sky.b * fog | 0;
-                if (o.targeted) {
-                    fr = Math.min(255, fr + 40);
-                    fg = Math.min(255, fg + 40);
-                    fb = Math.min(255, fb + 40);
+                
+                if (o.texture && o.uvs) {
+                    // Render textured triangles
+                    for (let j = 1; j < clipped.length - 1; j++) {
+                        let p0 = clipped[0];
+                        let p1 = clipped[j];
+                        let p2 = clipped[j+1];
+
+                        let sx0 = canvas.width/2 + (p0.cx / p0.cz) * fov;
+                        let sy0 = hY - (p0.cy / p0.cz) * fov;
+                        let sx1 = canvas.width/2 + (p1.cx / p1.cz) * fov;
+                        let sy1 = hY - (p1.cy / p1.cz) * fov;
+                        let sx2 = canvas.width/2 + (p2.cx / p2.cz) * fov;
+                        let sy2 = hY - (p2.cy / p2.cz) * fov;
+
+                        drawTexturedTriangle(
+                            ctx, o.texture,
+                            sx0, sy0, sx1, sy1, sx2, sy2,
+                            p0.u, p0.v, p1.u, p1.v, p2.u, p2.v,
+                            shade, o.flash, fog, sky,
+                            o.alpha !== undefined ? o.alpha : 1.0
+                        );
+                    }
+                    
+                    if (depth <= 35.0 || o.targeted) {
+                        ctx.strokeStyle = o.targeted ? 'rgba(255, 255, 255, 0.8)' : (o.flash ? 'white' : `rgba(0,0,0,0.15)`);
+                        ctx.lineWidth = 1.0;
+                        ctx.beginPath();
+                        for (let j = 0; j < clipped.length; j++) {
+                            let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
+                            let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                            if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                    }
+                } else {
+                    let fr = o.flash ? 255 : (o.color.r * shade * (1-fog) + sky.r * fog | 0);
+                    let fg = o.flash ? 255 : (o.color.g * shade * (1-fog) + sky.g * fog | 0);
+                    let fb = o.flash ? 255 : (o.color.b * shade * (1-fog) + sky.b * fog | 0);
+                    if (o.targeted) {
+                        fr = Math.min(255, fr + 40);
+                        fg = Math.min(255, fg + 40);
+                        fb = Math.min(255, fb + 40);
+                    }
+                    if (o.alpha !== undefined && o.alpha < 1.0) {
+                        ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${o.alpha})`;
+                        ctx.strokeStyle = o.targeted ? `rgba(255, 255, 255, ${o.alpha * 0.8})` : (o.flash ? `rgba(255, 255, 255, ${o.alpha})` : ctx.fillStyle);
+                    } else {
+                        ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
+                        ctx.strokeStyle = o.targeted ? 'rgba(255, 255, 255, 0.8)' : (o.flash ? 'white' : ctx.fillStyle);
+                    }
+                    ctx.lineWidth = 2.0;
+                    ctx.beginPath();
+                    for (let j = 0; j < clipped.length; j++) {
+                        let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
+                        let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                        if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    if (depth <= 35.0 || o.targeted) {
+                        ctx.stroke();
+                    }
                 }
-                ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
-                ctx.strokeStyle = o.targeted ? 'rgba(255, 255, 255, 0.8)' : ctx.fillStyle;
             } else if (o.type === 'cloudPoly') {
                 ctx.fillStyle = o.color;
                 ctx.strokeStyle = o.color;
@@ -746,18 +1311,20 @@ function render() {
                 ctx.fillStyle = o.color; ctx.strokeStyle = '#000';
             }
             
-            ctx.lineWidth = 2.0; 
-            ctx.beginPath();
-            for (let j = 0; j < clipped.length; j++) {
-                let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
-                if (j===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-            }
-            ctx.closePath(); 
-            ctx.fill(); 
-            // Stroke Culling: Avoid expensive strokes on far-away faces since seams are invisible at distance.
-            if (depth <= 35.0 || o.targeted) {
-                ctx.stroke();
+            if (o.type !== 'objWorldFace') {
+                ctx.lineWidth = 2.0; 
+                ctx.beginPath();
+                for (let j = 0; j < clipped.length; j++) {
+                    let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
+                    let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
+                    if (j===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+                }
+                ctx.closePath(); 
+                ctx.fill(); 
+                // Stroke Culling: Avoid expensive strokes on far-away faces since seams are invisible at distance.
+                if (depth <= 35.0 || o.targeted) {
+                    ctx.stroke();
+                }
             }
             
         } else if (o.type === 'wall') {
@@ -800,39 +1367,63 @@ function render() {
                         let topChest = sy - (abdH + chestH);
                         
                         // Draw Torso
-                        ctx.fillStyle = color2;
-                        ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        const torsoSprite = ZombieTorsoCache.get(isFlash, objLight);
+                        if (torsoSprite) {
+                            ctx.drawImage(torsoSprite, sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        } else {
+                            ctx.fillStyle = color2;
+                            ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        }
                         
                         // Draw Arms (dragging on ground)
-                        ctx.fillStyle = color1;
                         if (e.hasLeftUpperArm) {
-                            ctx.fillRect(sx - sz * 0.15, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx - sz * 0.15, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx - sz * 0.15, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            }
                             if (e.hasLeftLowerArm) {
-                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.15);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx - sz * 0.12, topChest + chestH, sz * 0.04, sz * 0.04);
-                            ctx.fillStyle = color1;
                         }
                         
                         if (e.hasRightUpperArm) {
-                            ctx.fillRect(sx + sz * 0.09, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx + sz * 0.09, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx + sz * 0.09, topChest + chestH, sz * 0.06, chestH * 0.7);
+                            }
                             if (e.hasRightLowerArm) {
-                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.15);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx + sz * 0.08, topChest + chestH, sz * 0.04, sz * 0.04);
-                            ctx.fillStyle = color1;
                         }
 
                         // Draw Head or Neck Stump
@@ -850,36 +1441,55 @@ function render() {
                         }
 
                         // Draw Crawling Legs (horizontal)
-                        ctx.fillStyle = color1;
                         // Left Leg
                         if (e.hasLeftUpperLeg) {
-                            ctx.fillRect(sx - sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx - sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx - sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            }
                             if (e.hasLeftLowerLeg) {
-                                ctx.fillRect(sx - sz * 0.32, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx - sz * 0.32, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx - sz * 0.32, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx - sz * 0.23, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx - sz * 0.09, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                            ctx.fillStyle = color1;
                         }
                         // Right Leg
                         if (e.hasRightUpperLeg) {
-                            ctx.fillRect(sx + sz * 0.08, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx + sz * 0.08, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx + sz * 0.08, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                            }
                             if (e.hasRightLowerLeg) {
-                                ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx + sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx + sz * 0.06, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                            ctx.fillStyle = color1;
                         }
                     } else {
                         // Standing layout (upper and lower segments)
@@ -887,75 +1497,118 @@ function render() {
                         let topChest = topLegs - (abdH + chestH);
 
                         // Draw Legs separately (standing)
-                        ctx.fillStyle = color1;
                         // Left Leg
                         if (e.hasLeftUpperLeg) {
-                            ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.5);
+                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.5);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.5);
+                            }
                             if (e.hasLeftLowerLeg) {
-                                ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.1);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.1);
-                            ctx.fillStyle = color1;
                         }
                         
                         // Right Leg
                         if (e.hasRightUpperLeg) {
-                            ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.5);
+                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.5);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.5);
+                            }
                             if (e.hasRightLowerLeg) {
-                                ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.1);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.1);
-                            ctx.fillStyle = color1;
                         }
 
                         // Draw Torso
-                        ctx.fillStyle = color2;
-                        ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        const torsoSprite = ZombieTorsoCache.get(isFlash, objLight);
+                        if (torsoSprite) {
+                            ctx.drawImage(torsoSprite, sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        } else {
+                            ctx.fillStyle = color2;
+                            ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
+                        }
 
                         // Draw Arms (standing)
-                        ctx.fillStyle = color1;
                         // Left Arm
                         if (e.hasLeftUpperArm) {
-                            ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx - sz * 0.15, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            }
                             if (e.hasLeftLowerArm) {
-                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.15);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx - sz * 0.12, topChest + chestH * 0.2, sz * 0.04, sz * 0.04);
-                            ctx.fillStyle = color1;
                         }
                         
                         // Right Arm
                         if (e.hasRightUpperArm) {
-                            ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
+                            if (sprite) {
+                                ctx.drawImage(sprite, sx + sz * 0.09, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            } else {
+                                ctx.fillStyle = color1;
+                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
+                            }
                             if (e.hasRightLowerArm) {
-                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
+                                if (spriteL) {
+                                    ctx.drawImage(spriteL, sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                                } else {
+                                    ctx.fillStyle = color1;
+                                    ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
+                                }
                             } else {
                                 ctx.fillStyle = redColor;
                                 ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.15);
-                                ctx.fillStyle = color1;
                             }
                         } else {
                             ctx.fillStyle = redColor;
                             ctx.fillRect(sx + sz * 0.08, topChest + chestH * 0.2, sz * 0.04, sz * 0.04);
-                            ctx.fillStyle = color1;
                         }
 
                         // Draw Head or Neck Stump
@@ -994,7 +1647,7 @@ function render() {
                 if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                 ctx.fillText(o.text, sx, sy);
             } else if (o.type === 'blood') {
-                let bsz = Math.max(2, (fov/depth) * o.size);
+                let bsz = Math.max(1, (fov/depth) * o.size);
                 if (o.isLimb) {
                     ctx.save();
                     ctx.translate(sx, sy);
@@ -1007,11 +1660,46 @@ function render() {
                         ctx.drawImage(headSprite, -bsz/2, -bsz/2, bsz, bsz);
                         ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
                         ctx.fillRect(-bsz/4, bsz/3, bsz/2, bsz/6);
-                    } else if (o.limbType === 'upperArm' || o.limbType === 'lowerArm') {
-                        ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
-                        ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz);
+                    } else if (o.limbType.endsWith('UpperArm') || o.limbType === 'upperArm') {
+                        const sprite = ZombieArmUpperCache.get(false, objLight);
+                        if (sprite) {
+                            ctx.drawImage(sprite, -bsz/4, -bsz/2, bsz/2, bsz);
+                        } else {
+                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
+                            ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz);
+                        }
                         ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
                         ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz/4);
+                    } else if (o.limbType.endsWith('LowerArm') || o.limbType === 'lowerArm') {
+                        const sprite = ZombieArmLowerCache.get(false, objLight);
+                        if (sprite) {
+                            ctx.drawImage(sprite, -bsz/4, -bsz/2, bsz/2, bsz);
+                        } else {
+                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
+                            ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz);
+                        }
+                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
+                        ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz/4);
+                    } else if (o.limbType.endsWith('UpperLeg') || o.limbType === 'upperLeg') {
+                        const sprite = ZombieLegUpperCache.get(false, objLight);
+                        if (sprite) {
+                            ctx.drawImage(sprite, -bsz/3, -bsz/2, bsz*0.66, bsz);
+                        } else {
+                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
+                            ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
+                        }
+                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
+                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz/4);
+                    } else if (o.limbType.endsWith('LowerLeg') || o.limbType === 'lowerLeg') {
+                        const sprite = ZombieLegLowerCache.get(false, objLight);
+                        if (sprite) {
+                            ctx.drawImage(sprite, -bsz/3, -bsz/2, bsz*0.66, bsz);
+                        } else {
+                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
+                            ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
+                        }
+                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
+                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz/4);
                     } else {
                         ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
                         ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
@@ -1020,7 +1708,7 @@ function render() {
                     }
                     ctx.restore();
                 } else {
-                    ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, ${Math.min(1.0, o.life / 20.0)})`;
+                    ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, ${Math.min(1.0, o.life / 60.0)})`;
                     ctx.fillRect(sx - bsz/2, sy - bsz/2, bsz, bsz);
                 }
             } else if (o.type === 'emoji' || o.type === 'animal' || o.type === 'droppedItem') {
@@ -1058,5 +1746,381 @@ function render() {
     if (player.isSubmerged) {
         ctx.fillStyle = 'rgba(10, 50, 130, 0.4)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+function rotateAroundPivot(x, y, z, px, py, pz, rx, ry, rz) {
+    let tx = x - px;
+    let ty = y - py;
+    let tz = z - pz;
+    let r = rotate3D(tx, ty, tz, rx, ry, rz);
+    return {
+        x: r.x + px,
+        y: r.y + py,
+        z: r.z + pz
+    };
+}
+
+function add3DZombieFaces(e, ambient) {
+    let scale = e.size / 32.0;
+    let animTime = e.animTime || 0;
+    
+    // Leg swing back and forth
+    let legSwing = Math.sin(animTime) * 0.6;
+    let rKneeBend = legSwing < 0 ? -legSwing * 0.8 : 0;
+    let lKneeBend = legSwing > 0 ? legSwing * 0.8 : 0;
+
+    // Zombie arms raised forward
+    let rArmPitch = 1.3 + Math.sin(animTime) * 0.1;
+    let lArmPitch = 1.3 - Math.sin(animTime) * 0.1;
+    let rElbowBend = 0.2 + Math.abs(Math.sin(animTime)) * 0.2;
+    let lElbowBend = 0.2 + Math.abs(Math.cos(animTime)) * 0.2;
+
+    // Head bobbing/tilting
+    let headPitch = 0.1 + Math.sin(animTime * 0.5) * 0.05;
+    let headYaw = Math.cos(animTime * 0.3) * 0.1;
+
+    // Set up the parts configuration
+    let parts = [
+        // Torso: 8x12x4. Center at (0, 0, 18).
+        {
+            name: 'torso',
+            minX: -4, maxX: 4, minY: -2, maxY: 2, minZ: 12, maxZ: 24,
+            color: { r: 60, g: 156, b: 156 },
+            active: true,
+            transform: v => ({ x: v.x, y: v.y, z: v.z })
+        },
+        // Head: 8x8x8. Center at (0, 0, 28).
+        {
+            name: 'head',
+            minX: -4, maxX: 4, minY: -4, maxY: 4, minZ: 24, maxZ: 32,
+            color: { r: 90, g: 140, b: 90 },
+            active: e.hasHead !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 0, 0, 24, headPitch, 0, headYaw)
+        },
+        // Left Upper Arm: 4x6x4. Center at (-6, 0, 21).
+        {
+            name: 'leftUpperArm',
+            minX: -8, maxX: -4, minY: -2, maxY: 2, minZ: 18, maxZ: 24,
+            color: { r: 90, g: 140, b: 90 },
+            active: e.hasLeftUpperArm !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, -6, 0, 24, lArmPitch, 0, 0)
+        },
+        // Left Lower Arm: 4x6x4. Center at (-6, 0, 15).
+        {
+            name: 'leftLowerArm',
+            minX: -8, maxX: -4, minY: -2, maxY: 2, minZ: 12, maxZ: 18,
+            color: { r: 90, g: 140, b: 90 },
+            active: e.hasLeftLowerArm !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, -6, 0, 18, lElbowBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, -6, 0, 24, lArmPitch, 0, 0);
+            }
+        },
+        // Right Upper Arm: 4x6x4. Center at (6, 0, 21).
+        {
+            name: 'rightUpperArm',
+            minX: 4, maxX: 8, minY: -2, maxY: 2, minZ: 18, maxZ: 24,
+            color: { r: 90, g: 140, b: 90 },
+            active: e.hasRightUpperArm !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 6, 0, 24, rArmPitch, 0, 0)
+        },
+        // Right Lower Arm: 4x6x4. Center at (6, 0, 15).
+        {
+            name: 'rightLowerArm',
+            minX: 4, maxX: 8, minY: -2, maxY: 2, minZ: 12, maxZ: 18,
+            color: { r: 90, g: 140, b: 90 },
+            active: e.hasRightLowerArm !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, 6, 0, 18, rElbowBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, 6, 0, 24, rArmPitch, 0, 0);
+            }
+        },
+        // Left Upper Leg: 4x6x4. Center at (-2, 0, 9).
+        {
+            name: 'leftUpperLeg',
+            minX: -4, maxX: 0, minY: -2, maxY: 2, minZ: 6, maxZ: 12,
+            color: { r: 64, g: 64, b: 144 },
+            active: e.hasLeftUpperLeg !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, -2, 0, 12, -legSwing, 0, 0)
+        },
+        // Left Lower Leg: 4x6x4. Center at (-2, 0, 3).
+        {
+            name: 'leftLowerLeg',
+            minX: -4, maxX: 0, minY: -2, maxY: 2, minZ: 0, maxZ: 6,
+            color: { r: 64, g: 64, b: 144 },
+            active: e.hasLeftLowerLeg !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, -2, 0, 6, -lKneeBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, -2, 0, 12, -legSwing, 0, 0);
+            }
+        },
+        // Right Upper Leg: 4x6x4. Center at (2, 0, 9).
+        {
+            name: 'rightUpperLeg',
+            minX: 0, maxX: 4, minY: -2, maxY: 2, minZ: 6, maxZ: 12,
+            color: { r: 64, g: 64, b: 144 },
+            active: e.hasRightUpperLeg !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 2, 0, 12, legSwing, 0, 0)
+        },
+        // Right Lower Leg: 4x6x4. Center at (2, 0, 3).
+        {
+            name: 'rightLowerLeg',
+            minX: 0, maxX: 4, minY: -2, maxY: 2, minZ: 0, maxZ: 6,
+            color: { r: 64, g: 64, b: 144 },
+            active: e.hasRightLowerLeg !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, 2, 0, 6, -rKneeBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, 2, 0, 12, legSwing, 0, 0);
+            }
+        }
+    ];
+
+    const BOX_FACES = [
+        [2, 3, 7, 6], // Front (+Y)
+        [0, 1, 5, 4], // Back (-Y)
+        [3, 0, 4, 7], // Left (-X)
+        [1, 2, 6, 5], // Right (+X)
+        [4, 5, 6, 7], // Top (+Z)
+        [3, 2, 1, 0]  // Bottom (-Z)
+    ];
+
+    let rotAngle = e.angle - Math.PI / 2;
+    let cosH = Math.cos(rotAngle);
+    let sinH = Math.sin(rotAngle);
+
+    let skinSource = (minecraftZombieSkinImg.complete && minecraftZombieSkinImg.naturalWidth > 0) ? minecraftZombieSkinImg : fallbackSkinCanvas;
+    let skinH = skinSource.naturalHeight || skinSource.height || 64;
+
+    for (let part of parts) {
+        if (!part.active) continue;
+
+        // Generate 8 vertices
+        let localVerts = [
+            { x: part.minX, y: part.minY, z: part.minZ },
+            { x: part.maxX, y: part.minY, z: part.minZ },
+            { x: part.maxX, y: part.maxY, z: part.minZ },
+            { x: part.minX, y: part.maxY, z: part.minZ },
+            { x: part.minX, y: part.minY, z: part.maxZ },
+            { x: part.maxX, y: part.minY, z: part.maxZ },
+            { x: part.maxX, y: part.maxY, z: part.maxZ },
+            { x: part.minX, y: part.maxY, z: part.maxZ }
+        ];
+
+        // Apply transformations to vertices (skeletal then world)
+        let worldVerts = [];
+        for (let lv of localVerts) {
+            let pt = part.transform(lv);
+            let sx = pt.x * scale;
+            let sy = pt.y * scale;
+            let sz = pt.z * scale;
+
+            let rx, ry, rz;
+            if (e.isCrawling) {
+                rx = sx;
+                ry = sz - 12 * scale;
+                rz = -sy + 2 * scale;
+            } else {
+                rx = sx;
+                ry = sy;
+                rz = sz;
+            }
+
+            // Rotate by zombie heading angle (e.angle)
+            let wx = rx * cosH - ry * sinH;
+            let wy = rx * sinH + ry * cosH;
+            let wz = rz;
+
+            worldVerts.push({
+                x: e.x + wx,
+                y: e.y + wy,
+                z: e.z + wz
+            });
+        }
+
+        // Generate faces
+        for (let faceIndex = 0; faceIndex < BOX_FACES.length; faceIndex++) {
+            let fIdx = BOX_FACES[faceIndex];
+            let pt0 = worldVerts[fIdx[0]];
+            let pt1 = worldVerts[fIdx[1]];
+            let pt2 = worldVerts[fIdx[2]];
+            let pt3 = worldVerts[fIdx[3]];
+
+            // Calculate face normal
+            let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
+            let wx = pt2.x - pt0.x, wy = pt2.y - pt0.y, wz = pt2.z - pt0.z;
+            let nx = uy*wz - uz*wy;
+            let ny = uz*wx - ux*wz;
+            let nz = ux*wy - uy*wx;
+
+            // Backface culling
+            let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
+            let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+            if (nx * (pt0.x - player.x) + ny * (pt0.y - player.y) + nz * (pt0.z - camZ) > 0) continue;
+
+            // Calculate face center
+            let cx = (pt0.x + pt1.x + pt2.x + pt3.x) / 4;
+            let cy = (pt0.y + pt1.y + pt2.y + pt3.y) / 4;
+            let cz = (pt0.z + pt1.z + pt2.z + pt3.z) / 4;
+
+            // Depth check
+            let dx = cx - player.x, dy = cy - player.y;
+            let cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
+            let rotX = dx * cosA + dy * sinA;
+
+            if (rotX > 0.1 && rotX < VIEW_DIST) {
+                let o = getRenderItem();
+                o.type = 'objWorldFace';
+                o.pts = [pt0, pt1, pt2, pt3];
+                o.color = part.color;
+                o.depthSq = rotX * rotX;
+                o.wX = cx;
+                o.wY = cy;
+                o.h = cz;
+                o.norm = { x: nx, y: ny, z: nz };
+                o.targeted = (e === interactTarget);
+                o.flash = e.flash > 0;
+
+                let uvRegion = getMinecraftUVs(part.name, faceIndex, skinH);
+                if (uvRegion) {
+                    let uMin = uvRegion[0], vMin = uvRegion[1], uMax = uvRegion[2], vMax = uvRegion[3];
+                    o.texture = skinSource;
+                    o.uvs = getFaceCornerUVs(faceIndex, uMin, vMin, uMax, vMax);
+                } else {
+                    // Joint / cut stump
+                    if (part.name !== 'head' && part.name !== 'torso') {
+                        o.color = { r: 150, g: 0, b: 0 };
+                    }
+                }
+            }
+        }
+    }
+}
+
+function add3DLimbFaces(b, ambient) {
+    let scale = (b.scale || (1.4 / 32.0)) * 1.333;
+    let minX, maxX, minY, maxY, minZ, maxZ;
+    let color;
+
+    let type = b.limbType;
+    let isArm = type.includes('Arm') || type === 'upperArm' || type === 'lowerArm';
+    let isLeg = type.includes('Leg') || type === 'upperLeg' || type === 'lowerLeg';
+
+    if (type === 'head') {
+        minX = -4 * scale; maxX = 4 * scale;
+        minY = -4 * scale; maxY = 4 * scale;
+        minZ = -4 * scale; maxZ = 4 * scale;
+        color = { r: 90, g: 140, b: 90 };
+    } else if (isArm) {
+        minX = -2 * scale; maxX = 2 * scale;
+        minY = -2 * scale; maxY = 2 * scale;
+        minZ = -3 * scale; maxZ = 3 * scale;
+        color = { r: 90, g: 140, b: 90 };
+    } else {
+        // Legs
+        minX = -2 * scale; maxX = 2 * scale;
+        minY = -2 * scale; maxY = 2 * scale;
+        minZ = -3 * scale; maxZ = 3 * scale;
+        color = { r: 64, g: 64, b: 144 };
+    }
+
+    // Spin/rotation angles
+    let isMoving = (b.vx !== 0 || b.vy !== 0 || b.vz !== 0);
+    let rx = isMoving ? (b.spinX + b.life * b.spinSpeed) : Math.PI / 2;
+    let ry = isMoving ? (b.spinY + b.life * b.spinSpeed) : 0;
+    let rz = isMoving ? (b.spinZ + b.life * b.spinSpeed) : (b.landedAngle || 0);
+
+    let localVerts = [
+        { x: minX, y: minY, z: minZ },
+        { x: maxX, y: minY, z: minZ },
+        { x: maxX, y: maxY, z: minZ },
+        { x: minX, y: maxY, z: minZ },
+        { x: minX, y: minY, z: maxZ },
+        { x: maxX, y: minY, z: maxZ },
+        { x: maxX, y: maxY, z: maxZ },
+        { x: minX, y: maxY, z: maxZ }
+    ];
+
+    const BOX_FACES = [
+        [2, 3, 7, 6], // Front (+Y)
+        [0, 1, 5, 4], // Back (-Y)
+        [3, 0, 4, 7], // Left (-X)
+        [1, 2, 6, 5], // Right (+X)
+        [4, 5, 6, 7], // Top (+Z)
+        [3, 2, 1, 0]  // Bottom (-Z)
+    ];
+
+    // Transform vertices
+    let worldVerts = [];
+    for (let lv of localVerts) {
+        let pt = rotate3D(lv.x, lv.y, lv.z, rx, ry, rz);
+        worldVerts.push({
+            x: b.x + pt.x,
+            y: b.y + pt.y,
+            z: b.z + pt.z
+        });
+    }
+
+    // Alpha fade over its 900 frame lifetime
+    let alpha = Math.min(1.0, b.life / 150.0);
+
+    let skinSource = (minecraftZombieSkinImg.complete && minecraftZombieSkinImg.naturalWidth > 0) ? minecraftZombieSkinImg : fallbackSkinCanvas;
+    let skinH = skinSource.naturalHeight || skinSource.height || 64;
+
+    for (let faceIndex = 0; faceIndex < BOX_FACES.length; faceIndex++) {
+        let fIdx = BOX_FACES[faceIndex];
+        let pt0 = worldVerts[fIdx[0]];
+        let pt1 = worldVerts[fIdx[1]];
+        let pt2 = worldVerts[fIdx[2]];
+        let pt3 = worldVerts[fIdx[3]];
+
+        // Calculate face normal
+        let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
+        let wx = pt2.x - pt0.x, wy = pt2.y - pt0.y, wz = pt2.z - pt0.z;
+        let nx = uy*wz - uz*wy;
+        let ny = uz*wx - ux*wz;
+        let nz = ux*wy - uy*wx;
+
+        // Backface culling
+        let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
+        let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+        if (nx * (pt0.x - player.x) + ny * (pt0.y - player.y) + nz * (pt0.z - camZ) > 0) continue;
+
+        // Face center
+        let cx = (pt0.x + pt1.x + pt2.x + pt3.x) / 4;
+        let cy = (pt0.y + pt1.y + pt2.y + pt3.y) / 4;
+        let cz = (pt0.z + pt1.z + pt2.z + pt3.z) / 4;
+
+        // Depth check
+        let dx = cx - player.x, dy = cy - player.y;
+        let cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
+        let rotX = dx * cosA + dy * sinA;
+
+        if (rotX > 0.1 && rotX < VIEW_DIST) {
+            let o = getRenderItem();
+            o.type = 'objWorldFace';
+            o.pts = [pt0, pt1, pt2, pt3];
+            o.color = color;
+            o.depthSq = rotX * rotX;
+            o.wX = cx;
+            o.wY = cy;
+            o.h = cz;
+            o.norm = { x: nx, y: ny, z: nz };
+            o.targeted = false;
+            o.flash = false;
+            o.alpha = alpha;
+
+            let uvRegion = getMinecraftUVs(type, faceIndex, skinH);
+            if (uvRegion) {
+                let uMin = uvRegion[0], vMin = uvRegion[1], uMax = uvRegion[2], vMax = uvRegion[3];
+                o.texture = skinSource;
+                o.uvs = getFaceCornerUVs(faceIndex, uMin, vMin, uMax, vMax);
+            } else {
+                // Joint / cut stump
+                if (type !== 'head') {
+                    o.color = { r: 150, g: 0, b: 0 };
+                }
+            }
+        }
     }
 }
