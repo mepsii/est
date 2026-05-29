@@ -558,6 +558,8 @@ function render() {
 
     meshesBuiltThisFrame = 0;
 
+    let animTime = performance.now() * 0.0015;
+
     let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
     let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
 
@@ -1157,7 +1159,17 @@ function render() {
             let ptsArray = f.pts;
             let camPts = [];
             for (let k = 0; k < ptsArray.length; k++) {
-                let dx_pt = ptsArray[k].x - player.x, dy_pt = ptsArray[k].y - player.y, dz_pt = ptsArray[k].z - camZ;
+                let z_pt = ptsArray[k].z;
+                if (f.isWater) {
+                    let zFract = z_pt - Math.floor(z_pt);
+                    if (zFract > 0.1 && zFract < 0.9) {
+                        let waveVal = Math.sin(ptsArray[k].x * 0.5 + animTime) * 
+                                      Math.cos(ptsArray[k].y * 0.5 + animTime * 0.8) * 0.08 +
+                                      Math.sin(ptsArray[k].x * 0.15 - animTime * 0.5) * 0.03;
+                        z_pt += waveVal;
+                    }
+                }
+                let dx_pt = ptsArray[k].x - player.x, dy_pt = ptsArray[k].y - player.y, dz_pt = z_pt - camZ;
                 let rx = dx_pt * cosA + dy_pt * sinA;
                 let ry = dx_pt * -sinA + dy_pt * cosA;
                 let rz = dz_pt;
@@ -1207,6 +1219,28 @@ function render() {
                 
                 let shade = f.shade * objLightVal;
                 let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
+                let fAlpha = f.col.a;
+                
+                if (f.isWater) {
+                    let shimmer = Math.sin(f.cx * 1.0 + animTime) * 
+                                  Math.cos(f.cy * 1.0 + animTime * 0.7) * 0.15;
+                    
+                    shade = Math.min(1.0, Math.max(0.2, shade + shimmer * 0.2));
+                    fr = f.col.r * shade | 0;
+                    fg = f.col.g * shade | 0;
+                    fb = f.col.b * shade | 0;
+                    
+                    if (fAlpha !== undefined) {
+                        fAlpha = Math.min(0.85, Math.max(0.35, fAlpha + shimmer * 0.1));
+                    }
+                    
+                    if (shimmer > 0.05) {
+                        let highlight = (shimmer - 0.05) * 1.5;
+                        fr = Math.min(255, fr + highlight * 120) | 0;
+                        fg = Math.min(255, fg + highlight * 100) | 0;
+                        fb = Math.min(255, fb + highlight * 50) | 0;
+                    }
+                }
                 
                 if (player.isSubmerged) {
                     let wFog = Math.min(1, depth / (VIEW_DIST * 0.6));
@@ -1221,8 +1255,8 @@ function render() {
                 }
                 
                 let colorKey;
-                if (f.col.a !== undefined) {
-                    colorKey = `rgba(${fr}, ${fg}, ${fb}, ${f.col.a})`;
+                if (fAlpha !== undefined) {
+                    colorKey = `rgba(${fr}, ${fg}, ${fb}, ${fAlpha})`;
                 } else {
                     colorKey = `rgb(${fr}, ${fg}, ${fb})`;
                 }
