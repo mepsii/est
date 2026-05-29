@@ -1,5 +1,233 @@
 //THIS IS physics.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+// --- 3D Hitbox Math Helpers ---
+function rotateAroundPivot(x, y, z, px, py, pz, rx, ry, rz) {
+    let tx = x - px;
+    let ty = y - py;
+    let tz = z - pz;
+    let r = rotate3D(tx, ty, tz, rx, ry, rz);
+    return {
+        x: r.x + px,
+        y: r.y + py,
+        z: r.z + pz
+    };
+}
+
+function distPointToSegment(px, py, pz, p1x, p1y, p1z, p2x, p2y, p2z) {
+    let dx = p2x - p1x, dy = p2y - p1y, dz = p2z - p1z;
+    let len2 = dx*dx + dy*dy + dz*dz;
+    let t = 0;
+    if (len2 > 0) {
+        t = ((px - p1x) * dx + (py - p1y) * dy + (pz - p1z) * dz) / len2;
+        t = Math.max(0, Math.min(1, t));
+    }
+    let cx = p1x + t * dx;
+    let cy = p1y + t * dy;
+    let cz = p1z + t * dz;
+    return Math.hypot(px - cx, py - cy, pz - cz);
+}
+
+function intersectSegmentTriangle(p1, p2, a, b, c) {
+    const EPSILON = 0.0000001;
+    let edge1 = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    let edge2 = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+    let dir = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
+    
+    let h = {
+        x: dir.y * edge2.z - dir.z * edge2.y,
+        y: dir.z * edge2.x - dir.x * edge2.z,
+        z: dir.x * edge2.y - dir.y * edge2.x
+    };
+    let a_dot = edge1.x * h.x + edge1.y * h.y + edge1.z * h.z;
+    if (a_dot > -EPSILON && a_dot < EPSILON) return false;
+    
+    let f = 1.0 / a_dot;
+    let s = { x: p1.x - a.x, y: p1.y - a.y, z: p1.z - a.z };
+    let u = f * (s.x * h.x + s.y * h.y + s.z * h.z);
+    if (u < 0.0 || u > 1.0) return false;
+    
+    let q = {
+        x: s.y * edge1.z - s.z * edge1.y,
+        y: s.z * edge1.x - s.x * edge1.z,
+        z: s.x * edge1.y - s.y * edge1.x
+    };
+    let v = f * (dir.x * q.x + dir.y * q.y + dir.z * q.z);
+    if (v < 0.0 || u + v > 1.0) return false;
+    
+    let t = f * (edge2.x * q.x + edge2.y * q.y + edge2.z * q.z);
+    if (t >= 0.0 && t <= 1.0) {
+        return t;
+    }
+    return false;
+}
+
+function intersectSegmentBox(p1, p2, verts) {
+    const faces = [
+        [2, 3, 7, 6],
+        [0, 1, 5, 4],
+        [3, 0, 4, 7],
+        [1, 2, 6, 5],
+        [4, 5, 6, 7],
+        [3, 2, 1, 0]
+    ];
+    let minT = Infinity;
+    for (let face of faces) {
+        let t1 = intersectSegmentTriangle(p1, p2, verts[face[0]], verts[face[1]], verts[face[2]]);
+        if (t1 !== false && t1 < minT) minT = t1;
+        let t2 = intersectSegmentTriangle(p1, p2, verts[face[0]], verts[face[2]], verts[face[3]]);
+        if (t2 !== false && t2 < minT) minT = t2;
+    }
+    return minT < Infinity ? minT : false;
+}
+
+function get3DZombieLimbBoxes(e) {
+    let scale = e.size / 32.0;
+    let animTime = e.animTime || 0;
+    
+    let legSwing = Math.sin(animTime) * 0.6;
+    let rKneeBend = legSwing < 0 ? -legSwing * 0.8 : 0;
+    let lKneeBend = legSwing > 0 ? legSwing * 0.8 : 0;
+
+    let rArmPitch = 1.3 + Math.sin(animTime) * 0.1;
+    let lArmPitch = 1.3 - Math.sin(animTime) * 0.1;
+    let rElbowBend = 0.2 + Math.abs(Math.sin(animTime)) * 0.2;
+    let lElbowBend = 0.2 + Math.abs(Math.cos(animTime)) * 0.2;
+
+    let headPitch = 0.1 + Math.sin(animTime * 0.5) * 0.05;
+    let headYaw = Math.cos(animTime * 0.3) * 0.1;
+
+    let parts = [
+        {
+            name: 'torso',
+            minX: -4, maxX: 4, minY: -2, maxY: 2, minZ: 12, maxZ: 24,
+            active: true,
+            transform: v => ({ x: v.x, y: v.y, z: v.z })
+        },
+        {
+            name: 'head',
+            minX: -4, maxX: 4, minY: -4, maxY: 4, minZ: 24, maxZ: 32,
+            active: e.hasHead !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 0, 0, 24, headPitch, 0, headYaw)
+        },
+        {
+            name: 'leftUpperArm',
+            minX: -8, maxX: -4, minY: -2, maxY: 2, minZ: 18, maxZ: 24,
+            active: e.hasLeftUpperArm !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, -6, 0, 24, lArmPitch, 0, 0)
+        },
+        {
+            name: 'leftLowerArm',
+            minX: -8, maxX: -4, minY: -2, maxY: 2, minZ: 12, maxZ: 18,
+            active: e.hasLeftLowerArm !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, -6, 0, 18, lElbowBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, -6, 0, 24, lArmPitch, 0, 0);
+            }
+        },
+        {
+            name: 'rightUpperArm',
+            minX: 4, maxX: 8, minY: -2, maxY: 2, minZ: 18, maxZ: 24,
+            active: e.hasRightUpperArm !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 6, 0, 24, rArmPitch, 0, 0)
+        },
+        {
+            name: 'rightLowerArm',
+            minX: 4, maxX: 8, minY: -2, maxY: 2, minZ: 12, maxZ: 18,
+            active: e.hasRightLowerArm !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, 6, 0, 18, rElbowBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, 6, 0, 24, rArmPitch, 0, 0);
+            }
+        },
+        {
+            name: 'leftUpperLeg',
+            minX: -4, maxX: 0, minY: -2, maxY: 2, minZ: 6, maxZ: 12,
+            active: e.hasLeftUpperLeg !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, -2, 0, 12, -legSwing, 0, 0)
+        },
+        {
+            name: 'leftLowerLeg',
+            minX: -4, maxX: 0, minY: -2, maxY: 2, minZ: 0, maxZ: 6,
+            active: e.hasLeftLowerLeg !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, -2, 0, 6, -lKneeBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, -2, 0, 12, -legSwing, 0, 0);
+            }
+        },
+        {
+            name: 'rightUpperLeg',
+            minX: 0, maxX: 4, minY: -2, maxY: 2, minZ: 6, maxZ: 12,
+            active: e.hasRightUpperLeg !== false,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 2, 0, 12, legSwing, 0, 0)
+        },
+        {
+            name: 'rightLowerLeg',
+            minX: 0, maxX: 4, minY: -2, maxY: 2, minZ: 0, maxZ: 6,
+            active: e.hasRightLowerLeg !== false,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, 2, 0, 6, -rKneeBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, 2, 0, 12, legSwing, 0, 0);
+            }
+        }
+    ];
+
+    let rotAngle = e.angle - Math.PI / 2;
+    let cosH = Math.cos(rotAngle);
+    let sinH = Math.sin(rotAngle);
+
+    let limbBoxes = [];
+
+    for (let part of parts) {
+        if (!part.active) continue;
+
+        let localVerts = [
+            { x: part.minX, y: part.minY, z: part.minZ },
+            { x: part.maxX, y: part.minY, z: part.minZ },
+            { x: part.maxX, y: part.maxY, z: part.minZ },
+            { x: part.minX, y: part.maxY, z: part.minZ },
+            { x: part.minX, y: part.minY, z: part.maxZ },
+            { x: part.maxX, y: part.minY, z: part.maxZ },
+            { x: part.maxX, y: part.maxY, z: part.maxZ },
+            { x: part.minX, y: part.maxY, z: part.maxZ }
+        ];
+
+        let worldVerts = [];
+        for (let lv of localVerts) {
+            let pt = part.transform(lv);
+            let sx = pt.x * scale;
+            let sy = pt.y * scale;
+            let sz = pt.z * scale;
+
+            let rx, ry, rz;
+            if (e.isCrawling) {
+                rx = sx;
+                ry = sz - 12 * scale;
+                rz = -sy + 2 * scale;
+            } else {
+                rx = sx;
+                ry = sy;
+                rz = sz;
+            }
+
+            let wx = rx * cosH - ry * sinH;
+            let wy = rx * sinH + ry * cosH;
+            let wz = rz;
+
+            worldVerts.push({
+                x: e.x + wx,
+                y: e.y + wy,
+                z: e.z + wz
+            });
+        }
+
+        limbBoxes.push({
+            name: part.name,
+            verts: worldVerts
+        });
+    }
+    return limbBoxes;
+}
+
 // --- Update Physics & Logic ---
 function update() {
     if (isPaused || isLoading) return;
@@ -715,17 +943,116 @@ function update() {
         if (w) {
             const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
             if (w.isMelee) {
-                let hitTarget = null; let cDist = w.range;
+                let hitTarget = null;
                 if (gameState === 'overworld') {
-                    for (let e of enemies) { let d = Math.hypot(player.x - e.x, player.y - e.y); if (d < cDist) { let a = Math.atan2(e.y - player.y, e.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - a), Math.cos(player.angle - a))); if (ad < 0.6) { cDist = d; hitTarget = { obj: e, type: 'enemy' }; } } }
-                    for (let a of animals) { if(a.dead) continue; let d = Math.hypot(player.x - a.x, player.y - a.y); if (d < cDist) { let aTo = Math.atan2(a.y - player.y, a.x - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: a, type: 'animal' }; } } }
-                    
+                    let minT = Infinity;
+                    let hitLimb = null;
+                    let hitEnemyIndex = -1;
+                    let hitAnimalIndex = -1;
+
+                    // Set up melee segment from player eye height in player look direction
+                    let pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+                    let waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
+                    let startX = player.x;
+                    let startY = player.y;
+                    let startZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+
+                    let endX = startX + Math.cos(player.angle) * Math.cos(pitchAngle) * w.range;
+                    let endY = startY + Math.sin(player.angle) * Math.cos(pitchAngle) * w.range;
+                    let endZ = startZ + Math.sin(pitchAngle) * w.range;
+
+                    for (let ei = enemies.length - 1; ei >= 0; ei--) {
+                        let e = enemies[ei];
+                        if (e.type === 'zombie3d') {
+                            let dist = distPointToSegment(e.x, e.y, e.z + e.size * 0.5, startX, startY, startZ, endX, endY, endZ);
+                            if (dist < e.size * 1.5) {
+                                let limbBoxes = get3DZombieLimbBoxes(e);
+                                for (let box of limbBoxes) {
+                                    let t = intersectSegmentBox({x: startX, y: startY, z: startZ}, {x: endX, y: endY, z: endZ}, box.verts);
+                                    if (t !== false && t < minT) {
+                                        minT = t;
+                                        hitLimb = box.name;
+                                        hitEnemyIndex = ei;
+                                    }
+                                }
+                            }
+                        } else {
+                            let isLocational = (e.type === 'experimental' || e.type === 'zombie');
+                            let rad = isLocational ? 0.4 : 0.6;
+                            let cylHeight = (e.type === 'zombie' && e.isCrawling) ? 0.7 : e.size;
+                            let hitZ = checkSegCyl(startX, startY, startZ, endX, endY, endZ, e.x, e.y, e.z, cylHeight, rad);
+                            if (hitZ !== false) {
+                                let t = 0.5;
+                                if (endZ !== startZ) {
+                                    t = (hitZ - startZ) / (endZ - startZ);
+                                } else {
+                                    let segLen = Math.hypot(endX - startX, endY - startY);
+                                    if (segLen > 0) {
+                                        let dx = endX - startX, dy = endY - startY;
+                                        t = ((e.x - startX) * dx + (e.y - startY) * dy) / (segLen * segLen);
+                                        t = Math.max(0, Math.min(1, t));
+                                    }
+                                }
+                                if (t < minT) {
+                                    minT = t;
+                                    hitLimb = null;
+                                    hitEnemyIndex = ei;
+                                }
+                            }
+                        }
+                    }
+
+                    for (let ai = animals.length - 1; ai >= 0; ai--) {
+                        let a = animals[ai];
+                        if (!a.dead) {
+                            let hitZ = checkSegCyl(startX, startY, startZ, endX, endY, endZ, a.x, a.y, a.z, a.size, 0.6);
+                            if (hitZ !== false) {
+                                let t = 0.5;
+                                if (endZ !== startZ) {
+                                    t = (hitZ - startZ) / (endZ - startZ);
+                                }
+                                if (t < minT) {
+                                    minT = t;
+                                    hitLimb = null;
+                                    hitEnemyIndex = -1;
+                                    hitAnimalIndex = ai;
+                                }
+                            }
+                        }
+                    }
+
+                    if (minT < Infinity) {
+                        let hitX = startX + minT * (endX - startX);
+                        let hitY = startY + minT * (endY - startY);
+                        let hitZ = startZ + minT * (endZ - startZ);
+                        
+                        if (hitEnemyIndex !== -1) {
+                            let e = enemies[hitEnemyIndex];
+                            hitTarget = { obj: e, type: 'enemy', hitZ, hitX, hitY, hitLimb };
+                        } else if (hitAnimalIndex !== -1) {
+                            let a = animals[hitAnimalIndex];
+                            hitTarget = { obj: a, type: 'animal', hitZ, hitX, hitY };
+                        }
+                    }
+
                     if (!hitTarget && (w.toolType === 'axe' || w.toolType === 'pickaxe')) {
+                        let cDist = w.range;
                         let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
                         for(let cx = pCx - 1; cx <= pCx + 1; cx++) for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
                             let chunk = getMapChunk(cx, cy);
                             for(let i=0; i<chunk.length; i++) {
-                                let cObj = chunk[i]; if (cObj.hp !== undefined) { let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy); if (d < cDist) { let aTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x), ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo))); if (ad < 0.6) { cDist = d; hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i }; } } }
+                                let cObj = chunk[i];
+                                if (cObj.hp !== undefined) {
+                                    let d = Math.hypot(player.x - cObj.wx, player.y - cObj.wy);
+                                    if (d < cDist) {
+                                        let aTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x);
+                                        let ad = Math.abs(Math.atan2(Math.sin(player.angle - aTo), Math.cos(player.angle - aTo)));
+                                        if (ad < 0.6) {
+                                            cDist = d;
+                                            hitTarget = { obj: cObj, type: 'static', chunkArray: chunk, index: i };
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -733,20 +1060,22 @@ function update() {
 
                 if (hitTarget) {
                     if (hitTarget.type === 'enemy') {
-                        if (hitTarget.obj.type === 'zombie' || hitTarget.obj.type === 'zombie3d') {
-                            let died = damageZombieLimb(hitTarget.obj, w.dmg, hitTarget.obj.z + hitTarget.obj.size * 0.6, hitTarget.obj.x, hitTarget.obj.y, Math.cos(player.angle), Math.sin(player.angle));
+                        let e = hitTarget.obj;
+                        if (e.type === 'zombie' || e.type === 'zombie3d') {
+                            let died = damageZombieLimb(e, w.dmg, hitTarget.hitZ, hitTarget.hitX, hitTarget.hitY, Math.cos(player.angle), Math.sin(player.angle), hitTarget.hitLimb);
                             if (died) {
-                                enemies.splice(enemies.indexOf(hitTarget.obj), 1);
+                                enemies.splice(enemies.indexOf(e), 1);
                             }
                         } else {
-                            hitTarget.obj.hp -= w.dmg; hitTarget.obj.flash = 5; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
-                            let bCol = getBloodColor(hitTarget.obj.type); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
-                            if (hitTarget.obj.hp <= 0) { enemies.splice(enemies.indexOf(hitTarget.obj), 1); score += (hitTarget.obj.type!=='alien'?150:100); scoreEl.innerText = score; }
+                            e.hp -= w.dmg; e.flash = 5; addDamageText(e.x, e.y, e.z + e.size, w.dmg);
+                            let bCol = getBloodColor(e.type); if (bCol) spawnBlood(e.x, e.y, e.z + e.size * 0.6, bCol, 12);
+                            if (e.hp <= 0) { enemies.splice(enemies.indexOf(e), 1); score += (e.type!=='alien'?150:100); scoreEl.innerText = score; }
                         }
                     } else if (hitTarget.type === 'animal') {
-                        hitTarget.obj.hp -= w.dmg; addDamageText(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size, w.dmg);
-                        let bCol = getBloodColor('animal'); if (bCol) spawnBlood(hitTarget.obj.x, hitTarget.obj.y, hitTarget.obj.z + hitTarget.obj.size * 0.6, bCol, 12);
-                        if (hitTarget.obj.hp <= 0) { hitTarget.obj.dead = true; score += 25; scoreEl.innerText = score; hitTarget.obj.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) hitTarget.obj.items[k] = { ...hitTarget.obj.drop }; }
+                        let a = hitTarget.obj;
+                        a.hp -= w.dmg; addDamageText(a.x, a.y, a.z + a.size, w.dmg);
+                        let bCol = getBloodColor('animal'); if (bCol) spawnBlood(a.x, a.y, a.z + a.size * 0.6, bCol, 12);
+                        if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; }
                     } else if (hitTarget.type === 'static') {
                         let sObj = hitTarget.obj, isTree = TREE_EMOJIS.has(sObj.emoji), isRock = sObj.emoji === '🪨', validHit = false;
                         if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
@@ -794,40 +1123,114 @@ function update() {
         let p = projectiles[i], prevX = p.x, prevY = p.y, prevZ = p.z;
         p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--; let hit = gameState === 'overworld' ? getSolid(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) : false;
         if (p.owner === 'player' && gameState === 'overworld') {
-            for (let ei = enemies.length - 1; ei >= 0; ei--) { 
-                let e = enemies[ei], isLocational = (e.type === 'experimental' || e.type === 'zombie' || e.type === 'zombie3d'), rad = isLocational ? 0.4 : 0.6;
-                let cylHeight = ((e.type === 'zombie' || e.type === 'zombie3d') && e.isCrawling) ? 0.7 : e.size;
-                let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, e.x, e.y, e.z, cylHeight, rad);
-                if (hitZ !== false) {
-                    if (isLocational) {
-                        if (e.type === 'zombie' || e.type === 'zombie3d') {
-                            let died = damageZombieLimb(e, p.dmg, hitZ, p.x, p.y, p.vx, p.vy);
-                            hit = true;
-                            if (died) {
-                                enemies.splice(ei, 1);
+            let minT = Infinity;
+            let hitLimb = null;
+            let hitEnemyIndex = -1;
+            let hitAnimalIndex = -1;
+
+            for (let ei = enemies.length - 1; ei >= 0; ei--) {
+                let e = enemies[ei];
+                if (e.type === 'zombie3d') {
+                    let dist = distPointToSegment(e.x, e.y, e.z + e.size * 0.5, prevX, prevY, prevZ, p.x, p.y, p.z);
+                    if (dist < e.size * 1.5) {
+                        let limbBoxes = get3DZombieLimbBoxes(e);
+                        for (let box of limbBoxes) {
+                            let t = intersectSegmentBox({x: prevX, y: prevY, z: prevZ}, {x: p.x, y: p.y, z: p.z}, box.verts);
+                            if (t !== false && t < minT) {
+                                minT = t;
+                                hitLimb = box.name;
+                                hitEnemyIndex = ei;
                             }
-                        } else {
-                            let relZ = hitZ - e.z, mult = (relZ > e.size * 0.88) ? 2.0 : ((relZ > e.size * 0.72) ? 1.2 : ((relZ > e.size * 0.44) ? 1.0 : 0.5)), totalDmg = p.dmg * mult;
-                            e.hp -= totalDmg; hit = true; e.flash = 5; addDamageText(e.x, e.y, hitZ, totalDmg);
-                            let bCol = getBloodColor(e.type); if (bCol) spawnBlood(p.x, p.y, hitZ, bCol, mult === 2.0 ? 25 : 8);
-                            if (e.hp <= 0) { enemies.splice(ei, 1); score += 150; scoreEl.innerText = score; }
                         }
-                        break;
-                    } else {
-                        e.hp -= p.dmg; hit = true; e.flash = 5; addDamageText(e.x, e.y, hitZ, p.dmg); let bCol = getBloodColor(e.type || 'alien'); if(bCol) spawnBlood(p.x, p.y, hitZ, bCol, 10);
-                        if (e.hp <= 0) { enemies.splice(ei, 1); score += 100; scoreEl.innerText = score; } break; 
+                    }
+                } else {
+                    let isLocational = (e.type === 'experimental' || e.type === 'zombie');
+                    let rad = isLocational ? 0.4 : 0.6;
+                    let cylHeight = (e.type === 'zombie' && e.isCrawling) ? 0.7 : e.size;
+                    let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, e.x, e.y, e.z, cylHeight, rad);
+                    if (hitZ !== false) {
+                        let t = 0.5;
+                        if (p.z !== prevZ) {
+                            t = (hitZ - prevZ) / (p.z - prevZ);
+                        } else {
+                            let segLen = Math.hypot(p.x - prevX, p.y - prevY);
+                            if (segLen > 0) {
+                                let dx = p.x - prevX, dy = p.y - prevY;
+                                t = ((e.x - prevX) * dx + (e.y - prevY) * dy) / (segLen * segLen);
+                                t = Math.max(0, Math.min(1, t));
+                            }
+                        }
+                        if (t < minT) {
+                            minT = t;
+                            hitLimb = null;
+                            hitEnemyIndex = ei;
+                        }
                     }
                 }
             }
-            if (!hit) {
-                for (let ai = animals.length - 1; ai >= 0; ai--) { 
-                    let a = animals[ai]; 
-                    if (!a.dead) {
-                        let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, a.x, a.y, a.z, a.size, 0.6);
-                        if (hitZ !== false) { 
-                            a.hp -= p.dmg; hit = true; addDamageText(a.x, a.y, hitZ, p.dmg); let bCol = getBloodColor('animal'); if(bCol) spawnBlood(p.x, p.y, hitZ, bCol, 10);
-                            if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; } break; 
-                        } 
+
+            for (let ai = animals.length - 1; ai >= 0; ai--) {
+                let a = animals[ai];
+                if (!a.dead) {
+                    let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, a.x, a.y, a.z, a.size, 0.6);
+                    if (hitZ !== false) {
+                        let t = 0.5;
+                        if (p.z !== prevZ) {
+                            t = (hitZ - prevZ) / (p.z - prevZ);
+                        }
+                        if (t < minT) {
+                            minT = t;
+                            hitLimb = null;
+                            hitEnemyIndex = -1;
+                            hitAnimalIndex = ai;
+                        }
+                    }
+                }
+            }
+
+            if (minT < Infinity) {
+                let hitX = prevX + minT * (p.x - prevX);
+                let hitY = prevY + minT * (p.y - prevY);
+                let hitZ = prevZ + minT * (p.z - prevZ);
+                
+                hit = true;
+
+                if (hitEnemyIndex !== -1) {
+                    let e = enemies[hitEnemyIndex];
+                    if (e.type === 'zombie' || e.type === 'zombie3d') {
+                        let died = damageZombieLimb(e, p.dmg, hitZ, hitX, hitY, p.vx, p.vy, hitLimb);
+                        if (died) {
+                            enemies.splice(hitEnemyIndex, 1);
+                        }
+                    } else {
+                        let relZ = hitZ - e.z;
+                        let mult = (relZ > e.size * 0.88) ? 2.0 : ((relZ > e.size * 0.72) ? 1.2 : ((relZ > e.size * 0.44) ? 1.0 : 0.5));
+                        let totalDmg = p.dmg * mult;
+                        e.hp -= totalDmg;
+                        e.flash = 5;
+                        addDamageText(e.x, e.y, hitZ, totalDmg);
+                        let bCol = getBloodColor(e.type);
+                        if (bCol) spawnBlood(hitX, hitY, hitZ, bCol, mult === 2.0 ? 25 : 8);
+                        if (e.hp <= 0) {
+                            enemies.splice(hitEnemyIndex, 1);
+                            score += 150;
+                            scoreEl.innerText = score;
+                        }
+                    }
+                } else if (hitAnimalIndex !== -1) {
+                    let a = animals[hitAnimalIndex];
+                    a.hp -= p.dmg;
+                    addDamageText(a.x, a.y, hitZ, p.dmg);
+                    let bCol = getBloodColor('animal');
+                    if (bCol) spawnBlood(hitX, hitY, hitZ, bCol, 10);
+                    if (a.hp <= 0) {
+                        a.dead = true;
+                        score += 25;
+                        scoreEl.innerText = score;
+                        a.items = new Array(10).fill(null);
+                        for(let k=0; k<Math.floor(Math.random()*3)+1; k++) {
+                            a.items[k] = { ...a.drop };
+                        }
                     }
                 }
             }
@@ -860,7 +1263,7 @@ function spawnFlyingLimb(x, y, z, type, is3D = false, zSize = 1.4) {
     });
 }
 
-function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy) {
+function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy, specificLimb = null) {
     if (e.hasHead === undefined) {
         e.hasHead = true;
         e.hasLeftUpperArm = true;
@@ -885,143 +1288,157 @@ function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy) {
         e.isCrawling = false;
     }
 
-    let relZ = hitZ - e.z;
-    let len = Math.hypot(dx, dy);
-    let hOffset = 0;
-    if (len > 0) {
-        let sdx = dx / len;
-        let sdy = dy / len;
-        let vx = px - e.x;
-        let vy = py - e.y;
-        hOffset = vy * sdx - vx * sdy;
-        if (vx === 0 && vy === 0) {
-            hOffset = (Math.random() - 0.5) * 0.4; // randomize melee
-        }
-    }
-
     let hitLimb = null;
     let mult = 1.0;
 
-    // Check hit segment based on height (relZ)
-    if (e.type === 'zombie3d') {
-        if (relZ > e.size * 0.75) {
-            // Head
-            if (e.hasHead) {
-                hitLimb = 'head';
-                mult = 2.0;
-            } else {
-                mult = 1.0; // Neck stump
-            }
-        } else if (relZ > e.size * 0.375) {
-            // Torso / Arms height
-            if (Math.abs(hOffset) > 0.225) {
-                // Arm!
-                if (hOffset > 0) {
-                    // Right Arm
-                    if (relZ <= e.size * 0.5625) {
-                        if (e.hasRightLowerArm) hitLimb = 'rightLowerArm';
-                        else if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
-                    } else {
-                        if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
-                    }
-                } else {
-                    // Left Arm
-                    if (relZ <= e.size * 0.5625) {
-                        if (e.hasLeftLowerArm) hitLimb = 'leftLowerArm';
-                        else if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
-                    } else {
-                        if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
-                    }
-                }
-            }
-            if (!hitLimb) {
-                mult = (relZ > e.size * 0.5625) ? 1.2 : 1.0;
-            }
-        } else {
-            // Legs / Crawling torso height
-            if (e.isCrawling) {
-                mult = 0.5; // Torso/stumps hit while crawling
-            } else {
-                // Legs
-                if (hOffset > 0) {
-                    // Right Leg
-                    if (relZ <= e.size * 0.1875) {
-                        if (e.hasRightLowerLeg) hitLimb = 'rightLowerLeg';
-                        else if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
-                    } else {
-                        if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
-                    }
-                } else {
-                    // Left Leg
-                    if (relZ <= e.size * 0.1875) {
-                        if (e.hasLeftLowerLeg) hitLimb = 'leftLowerLeg';
-                        else if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
-                    } else {
-                        if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
-                    }
-                }
-                mult = 0.5;
-            }
+    if (specificLimb) {
+        hitLimb = specificLimb;
+        if (hitLimb === 'head') {
+            mult = 2.0;
+        } else if (hitLimb === 'torso') {
+            mult = 1.1;
+        } else if (hitLimb.endsWith('Arm') || hitLimb.endsWith('arm')) {
+            mult = 1.0;
+        } else if (hitLimb.endsWith('Leg') || hitLimb.endsWith('leg')) {
+            mult = 0.5;
         }
     } else {
-        // Original billboard zombie logic
-        if (relZ > e.size * 0.88) {
-            // Head
-            if (e.hasHead) {
-                hitLimb = 'head';
-                mult = 2.0;
-            } else {
-                mult = 1.0; // Neck stump hit
+        let relZ = hitZ - e.z;
+        let len = Math.hypot(dx, dy);
+        let hOffset = 0;
+        if (len > 0) {
+            let sdx = dx / len;
+            let sdy = dy / len;
+            let vx = px - e.x;
+            let vy = py - e.y;
+            hOffset = vy * sdx - vx * sdy;
+            if (vx === 0 && vy === 0) {
+                hOffset = (Math.random() - 0.5) * 0.4; // randomize melee
             }
-        } else if (relZ > e.size * 0.44) {
-            // Torso height (chest/abdomen)
-            if (Math.abs(hOffset) > 0.12) {
-                // Arm! hOffset > 0 is player's right (screen-right, i.e. zombie's right arm in visual/billboard space)
-                if (hOffset > 0) {
-                    // Right Arm
-                    if (relZ <= e.size * 0.62) {
-                        if (e.hasRightLowerArm) hitLimb = 'rightLowerArm';
-                        else if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
-                    } else {
-                        if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
-                    }
+        }
+
+        // Check hit segment based on height (relZ)
+        if (e.type === 'zombie3d') {
+            if (relZ > e.size * 0.75) {
+                // Head
+                if (e.hasHead) {
+                    hitLimb = 'head';
+                    mult = 2.0;
                 } else {
-                    // Left Arm
-                    if (relZ <= e.size * 0.62) {
-                        if (e.hasLeftLowerArm) hitLimb = 'leftLowerArm';
-                        else if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                    mult = 1.0; // Neck stump
+                }
+            } else if (relZ > e.size * 0.375) {
+                // Torso / Arms height
+                if (Math.abs(hOffset) > 0.225) {
+                    // Arm!
+                    if (hOffset > 0) {
+                        // Right Arm
+                        if (relZ <= e.size * 0.5625) {
+                            if (e.hasRightLowerArm) hitLimb = 'rightLowerArm';
+                            else if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
+                        } else {
+                            if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
+                        }
                     } else {
-                        if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                        // Left Arm
+                        if (relZ <= e.size * 0.5625) {
+                            if (e.hasLeftLowerArm) hitLimb = 'leftLowerArm';
+                            else if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                        } else {
+                            if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                        }
                     }
                 }
-            }
-            if (!hitLimb) {
-                mult = (relZ > e.size * 0.72) ? 1.2 : 1.0;
+                if (!hitLimb) {
+                    mult = (relZ > e.size * 0.5625) ? 1.2 : 1.0;
+                }
+            } else {
+                // Legs / Crawling torso height
+                if (e.isCrawling) {
+                    mult = 0.5; // Torso/stumps hit while crawling
+                } else {
+                    // Legs
+                    if (hOffset > 0) {
+                        // Right Leg
+                        if (relZ <= e.size * 0.1875) {
+                            if (e.hasRightLowerLeg) hitLimb = 'rightLowerLeg';
+                            else if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
+                        } else {
+                            if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
+                        }
+                    } else {
+                        // Left Leg
+                        if (relZ <= e.size * 0.1875) {
+                            // Left Leg
+                            if (e.hasLeftLowerLeg) hitLimb = 'leftLowerLeg';
+                            else if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                        } else {
+                            if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                        }
+                    }
+                    mult = 0.5;
+                }
             }
         } else {
-            // Leg height
-            if (e.isCrawling) {
-                mult = 0.5; // Torso/stumps hit while crawling
-            } else {
-                // Legs
-                if (hOffset > 0) {
-                    // Right Leg
-                    if (relZ <= e.size * 0.22) {
-                        if (e.hasRightLowerLeg) hitLimb = 'rightLowerLeg';
-                        else if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
-                    } else {
-                        if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
-                    }
+            // Original billboard zombie logic
+            if (relZ > e.size * 0.88) {
+                // Head
+                if (e.hasHead) {
+                    hitLimb = 'head';
+                    mult = 2.0;
                 } else {
-                    // Left Leg
-                    if (relZ <= e.size * 0.22) {
-                        if (e.hasLeftLowerLeg) hitLimb = 'leftLowerLeg';
-                        else if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                    mult = 1.0; // Neck stump hit
+                }
+            } else if (relZ > e.size * 0.44) {
+                // Torso height (chest/abdomen)
+                if (Math.abs(hOffset) > 0.12) {
+                    // Arm! hOffset > 0 is player's right (screen-right, i.e. zombie's right arm in visual/billboard space)
+                    if (hOffset > 0) {
+                        // Right Arm
+                        if (relZ <= e.size * 0.62) {
+                            if (e.hasRightLowerArm) hitLimb = 'rightLowerArm';
+                            else if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
+                        } else {
+                            if (e.hasRightUpperArm) hitLimb = 'rightUpperArm';
+                        }
                     } else {
-                        if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                        // Left Arm
+                        if (relZ <= e.size * 0.62) {
+                            if (e.hasLeftLowerArm) hitLimb = 'leftLowerArm';
+                            else if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                        } else {
+                            if (e.hasLeftUpperArm) hitLimb = 'leftUpperArm';
+                        }
                     }
                 }
-                mult = 0.5;
+                if (!hitLimb) {
+                    mult = (relZ > e.size * 0.72) ? 1.2 : 1.0;
+                }
+            } else {
+                // Leg height
+                if (e.isCrawling) {
+                    mult = 0.5; // Torso/stumps hit while crawling
+                } else {
+                    // Legs
+                    if (hOffset > 0) {
+                        // Right Leg
+                        if (relZ <= e.size * 0.22) {
+                            if (e.hasRightLowerLeg) hitLimb = 'rightLowerLeg';
+                            else if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
+                        } else {
+                            if (e.hasRightUpperLeg) hitLimb = 'rightUpperLeg';
+                        }
+                    } else {
+                        // Left Leg
+                        if (relZ <= e.size * 0.22) {
+                            if (e.hasLeftLowerLeg) hitLimb = 'leftLowerLeg';
+                            else if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                        } else {
+                            if (e.hasLeftUpperLeg) hitLimb = 'leftUpperLeg';
+                        }
+                    }
+                    mult = 0.5;
+                }
             }
         }
     }
