@@ -1242,7 +1242,7 @@ function render() {
                 }
                 ctx.closePath();
                 ctx.fill();
-                if (depth <= 35.0 || f.isWater) {
+                if (depth <= 35.0 && !f.isWater) {
                     ctx.stroke();
                 }
             }

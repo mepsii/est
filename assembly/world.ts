@@ -408,6 +408,24 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
   return res;
 }
 
+function getWaterVertexLocal(
+  voxels: Uint8Array,
+  lx: i32, ly: i32, lz: i32,
+  gx: f32, gy: f32, gz: f32,
+  isTop: bool
+): Vertex {
+  let res = new Vertex();
+  if (!isTop) {
+    res.x = gx; res.y = gy; res.z = gz;
+    return res;
+  }
+  let sv = getSmoothVertexLocal(voxels, lx, ly, lz, gx, gy, gz);
+  res.x = sv.x;
+  res.y = sv.y;
+  res.z = gz - 0.55;
+  return res;
+}
+
 function addFace(
   lx: i32, ly: i32, lz: i32,
   gx: i32, gy: i32, gz: i32,
@@ -428,10 +446,12 @@ function addFace(
   let v4 = new Vertex();
 
   if (vType == 2) {
-    v1.x = p1x; v1.y = p1y; v1.z = p1z > (gz as f32) ? p1z - 0.15 : p1z;
-    v2.x = p2x; v2.y = p2y; v2.z = p2z > (gz as f32) ? p2z - 0.15 : p2z;
-    v3.x = p3x; v3.y = p3y; v3.z = p3z > (gz as f32) ? p3z - 0.15 : p3z;
-    v4.x = p4x; v4.y = p4y; v4.z = p4z > (gz as f32) ? p4z - 0.15 : p4z;
+    let cx_start = gx - lx;
+    let cy_start = gy - ly;
+    v1 = getWaterVertexLocal(voxels, (p1x as i32) - cx_start, (p1y as i32) - cy_start, p1z as i32, p1x, p1y, p1z, p1z > (gz as f32));
+    v2 = getWaterVertexLocal(voxels, (p2x as i32) - cx_start, (p2y as i32) - cy_start, p2z as i32, p2x, p2y, p2z, p2z > (gz as f32));
+    v3 = getWaterVertexLocal(voxels, (p3x as i32) - cx_start, (p3y as i32) - cy_start, p3z as i32, p3x, p3y, p3z, p3z > (gz as f32));
+    v4 = getWaterVertexLocal(voxels, (p4x as i32) - cx_start, (p4y as i32) - cy_start, p4z as i32, p4x, p4y, p4z, p4z > (gz as f32));
   } else if (isVoxelCube(vType)) {
     v1.x = p1x; v1.y = p1y; v1.z = p1z;
     v2.x = p2x; v2.y = p2y; v2.z = p2z;
@@ -600,7 +620,11 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, -1, 0, 0.6, fR, fG, fB, fA, v, voxels, t);
           }
         } else if (v == 2) {
-          let fR: u8 = 30, fG: u8 = 110, fB: u8 = 200, fA: u8 = 153; // 0.6 * 255 = 153
+          let colorNoise = hash(gx as f64, gy as f64, lz as f64) * 10.0;
+          let fR: u8 = clampColor(30.0 + colorNoise);
+          let fG: u8 = clampColor(110.0 + colorNoise);
+          let fB: u8 = clampColor(200.0 + colorNoise);
+          let fA: u8 = 140; // 0.55 * 255 = 140
 
           let up = voxels[idx + 100];
 

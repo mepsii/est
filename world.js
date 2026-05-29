@@ -302,7 +302,9 @@ function getSmoothVertex(cx, cy, cz) {
 function getCubeVertex(px, py, pz) { return { x: px, y: py, z: pz }; }
 
 function getWaterVertex(px, py, pz, isTop) {
-    return { x: px, y: py, z: isTop ? pz - 0.15 : pz };
+    if (!isTop) return { x: px, y: py, z: pz };
+    let sv = getSmoothVertex(px, py, pz);
+    return { x: sv.x, y: sv.y, z: pz - 0.55 };
 }
 
 function buildChunkMesh(cx, cy) {
@@ -440,7 +442,8 @@ function buildChunkMeshJS(cx, cy) {
                     if (!isVoxelSolid(ny)) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, v);
                 } 
                 else if (v === 2) { 
-                    let wCol = { r: 30, g: 110, b: 200, a: 0.6 };
+                    let colorNoise = hash(x, y, z) * 10;
+                    let wCol = { r: 30 + colorNoise | 0, g: 110 + colorNoise | 0, b: 200 + colorNoise | 0, a: 0.55 };
                     let up = z < MAX_Z - 1 ? colVoxels[z+1] : 0;
                     if (z === MAX_Z - 1 || up === 0) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, wCol, 2);
                     if (getVoxel(x+1, y, z) === 0) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, wCol, 2);
