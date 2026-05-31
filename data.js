@@ -73,6 +73,7 @@ function getRenderItem() {
     let o = renderPool[renderCount++];
     o.flash = 0; o.targeted = false; o.dead = false; o.hp = undefined; o.wX = undefined; o.wY = undefined; o.flicker = 1.0; o.obj = null; o.ghost = false; o.spinScaleX = undefined;
     o.isLimb = false; o.limbType = undefined; o.vx = undefined; o.vy = undefined; o.vz = undefined; o.landedAngle = undefined;
+    o.texture = null; o.uvs = null; o.alpha = 1.0;
     return o;
 }
 
@@ -162,4 +163,15 @@ const destroyedEntities = new Set();
 const damageTexts = [];
 const bloodParticles =[];
 const projectiles = [], enemies = [], containers = [], animals = [], buildings = [], vehicles = [], droppedItems = [];
-const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100, oxygen: 100, inVehicle: null, vehicleView: '3rd' };
+const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100, oxygen: 100, inVehicle: null, vehicleView: '3rd_back', view: '1st' };
+
+let triggerCoordPick = false;
+let lastPickedCoord = null;
+let coordPickerActive = false;
+
+let freecam = false;
+let freecamX = 0;
+let freecamY = 0;
+let freecamZ = 0;
+let freecamAngle = 0;
+let freecamPitch = 0;

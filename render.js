@@ -552,6 +552,136 @@ minecraftZombieSkinImg.onload = () => {
 };
 minecraftZombieSkinImg.src = 'textures/zombie_skin.png';
 
+function generateDefaultSteveSkin() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 64, 64);
+
+    function fill(x, y, w, h, color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+    }
+
+    // Head (0,0 to 32,16)
+    fill(8, 0, 8, 8, '#2b190e'); // Hair top
+    fill(16, 0, 8, 8, '#e0a080'); // Neck/Bottom head
+    fill(0, 8, 8, 8, '#e0a080'); // Right head
+    fill(0, 8, 8, 3, '#2b190e'); // Right head hair
+    fill(8, 8, 8, 8, '#e0a080'); // Front head
+    fill(8, 8, 8, 2, '#2b190e'); // Front head hair
+    fill(8, 10, 1, 1, '#2b190e'); // Front head hair left side
+    fill(15, 10, 1, 1, '#2b190e'); // Front head hair right side
+    
+    // Steve Eyes
+    fill(10, 12, 1, 1, '#ffffff'); // Left eye white
+    fill(11, 12, 1, 1, '#2f5697'); // Left eye pupil (blue)
+    fill(14, 12, 1, 1, '#ffffff'); // Right eye white
+    fill(13, 12, 1, 1, '#2f5697'); // Right eye pupil (blue)
+    
+    // Steve Nose and Mouth
+    fill(11, 13, 2, 1, '#bd6e4a'); // Nose
+    fill(11, 14, 2, 1, '#7a462d'); // Mouth
+    fill(10, 14, 1, 1, '#bd6e4a'); // Lip border L
+    fill(13, 14, 1, 1, '#bd6e4a'); // Lip border R
+
+    fill(16, 8, 8, 8, '#e0a080'); // Left head
+    fill(16, 8, 8, 3, '#2b190e'); // Left head hair
+    fill(24, 8, 8, 8, '#2b190e'); // Back head (all hair)
+
+    // Torso (16,16 to 40,32)
+    fill(20, 16, 8, 4, '#e0a080'); // Neck top
+    fill(28, 16, 8, 4, '#00a2a2'); // Torso bottom
+    fill(16, 20, 4, 12, '#00a2a2'); // Torso right
+    fill(20, 20, 8, 12, '#00a2a2'); // Torso front
+    fill(22, 20, 4, 2, '#e0a080'); // Neck cutout on front
+    fill(28, 20, 4, 12, '#00a2a2'); // Torso left
+    fill(32, 20, 8, 12, '#00a2a2'); // Torso back
+
+    // Right Arm (40,16 to 56,32)
+    fill(44, 16, 4, 4, '#00a2a2'); // Shoulder top
+    fill(48, 16, 4, 4, '#e0a080'); // Hand bottom
+    fill(40, 20, 4, 4, '#00a2a2'); // Right arm right sleeve
+    fill(40, 24, 4, 8, '#e0a080'); // Right arm right skin
+    fill(44, 20, 4, 4, '#00a2a2'); // Right arm front sleeve
+    fill(44, 24, 4, 8, '#e0a080'); // Right arm front skin
+    fill(48, 20, 4, 4, '#00a2a2'); // Right arm left sleeve
+    fill(48, 24, 4, 8, '#e0a080'); // Right arm left skin
+    fill(52, 20, 4, 4, '#00a2a2'); // Right arm back sleeve
+    fill(52, 24, 4, 8, '#e0a080'); // Right arm back skin
+
+    // Right Leg (0,16 to 16,32)
+    fill(4, 16, 4, 4, '#3c3cbd'); // Leg top
+    fill(8, 16, 4, 4, '#4c4c4c'); // Leg bottom
+    fill(0, 20, 4, 10, '#3c3cbd'); // Leg right pants
+    fill(0, 30, 4, 2, '#4c4c4c'); // Leg right shoe
+    fill(4, 20, 4, 10, '#3c3cbd'); // Leg front pants
+    fill(4, 30, 4, 2, '#4c4c4c'); // Leg front shoe
+    fill(8, 20, 4, 10, '#3c3cbd'); // Leg left pants
+    fill(8, 30, 4, 2, '#4c4c4c'); // Leg left shoe
+    fill(12, 20, 4, 10, '#3c3cbd'); // Leg back pants
+    fill(12, 30, 4, 2, '#4c4c4c'); // Leg back shoe
+
+    // Left Arm (32,48 to 48,64)
+    fill(36, 48, 4, 4, '#00a2a2'); // Sleeve top
+    fill(40, 48, 4, 4, '#e0a080'); // Hand bottom
+    fill(32, 52, 4, 4, '#00a2a2'); // Left arm right sleeve
+    fill(32, 56, 4, 8, '#e0a080'); // Left arm right skin
+    fill(36, 52, 4, 4, '#00a2a2'); // Left arm front sleeve
+    fill(36, 56, 4, 8, '#e0a080'); // Left arm front skin
+    fill(40, 52, 4, 4, '#00a2a2'); // Left arm left sleeve
+    fill(40, 56, 4, 8, '#e0a080'); // Left arm left skin
+    fill(44, 52, 4, 4, '#00a2a2'); // Left arm back sleeve
+    fill(44, 56, 4, 8, '#e0a080'); // Left arm back skin
+
+    // Left Leg (16,48 to 32,64)
+    fill(20, 48, 4, 4, '#3c3cbd'); // Leg top
+    fill(24, 48, 4, 4, '#4c4c4c'); // Leg bottom
+    fill(16, 52, 4, 10, '#3c3cbd'); // Leg right pants
+    fill(16, 62, 4, 2, '#4c4c4c'); // Leg right shoe
+    fill(20, 52, 4, 10, '#3c3cbd'); // Leg front pants
+    fill(20, 62, 4, 2, '#4c4c4c'); // Leg front shoe
+    fill(24, 52, 4, 10, '#3c3cbd'); // Leg left pants
+    fill(24, 62, 4, 2, '#4c4c4c'); // Leg left shoe
+    fill(28, 52, 4, 10, '#3c3cbd'); // Leg back pants
+    fill(28, 62, 4, 2, '#4c4c4c'); // Leg back shoe
+
+    return canvas;
+}
+
+const fallbackPlayerSkinCanvas = generateDefaultSteveSkin();
+const minecraftPlayerSkinImg = new Image();
+let checkedPlayerSkinLimbs = false;
+let playerLeftLimbsTransparent = false;
+
+let currentCamX = 0;
+let currentCamY = 0;
+let currentCamZ = 0;
+let currentCamAngle = 0;
+let currentCamPitch = 0;
+minecraftPlayerSkinImg.onload = () => {
+    checkedPlayerSkinLimbs = false;
+    try {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = minecraftPlayerSkinImg.naturalWidth;
+        tempCanvas.height = minecraftPlayerSkinImg.naturalHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(minecraftPlayerSkinImg, 0, 0);
+        if (tempCanvas.width === 64 && tempCanvas.height === 64) {
+            const imgData = tempCtx.getImageData(16, 48, 32, 16);
+            let allTransparent = true;
+            for (let i = 3; i < imgData.data.length; i += 4) {
+                if (imgData.data[i] > 0) { allTransparent = false; break; }
+            }
+            if (allTransparent) {
+                playerLeftLimbsTransparent = true;
+            }
+        }
+    } catch(e) {}
+};
+minecraftPlayerSkinImg.src = 'textures/skin.png';
+
 function render() {
     if (isLoading) return;
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
@@ -560,12 +690,75 @@ function render() {
 
     let animTime = performance.now() * 0.0015;
 
-    let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
-    let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+    let realPlayerX = player.x;
+    let realPlayerY = player.y;
 
-    const fov = canvas.width * currentZoom, hY = canvas.height/2 + player.pitch;
-    const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
-    const pitchAngle = Math.atan2(player.pitch, fov);
+    let bestPickDepth = Infinity;
+    let bestPickPoint = null;
+    let bestPickVehicle = null;
+
+    let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
+    let camX, camY, camZ;
+    let renderAngle, renderPitch;
+
+    if (freecam) {
+        camX = freecamX;
+        camY = freecamY;
+        camZ = freecamZ;
+        renderAngle = freecamAngle;
+        renderPitch = freecamPitch;
+    } else {
+        camX = player.x;
+        camY = player.y;
+        camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+
+        if (!player.inVehicle && (player.view === '3rd_back' || player.view === '3rd_front')) {
+            let dist = 4.2; // Pulled back from 3.2
+            let startX = player.x;
+            let startY = player.y;
+            let startZ = player.z + 1.0;
+            
+            let reachedDist = dist;
+            let step = 0.25;
+            let dirSign = (player.view === '3rd_front') ? 1.0 : -1.0;
+            for (let d = step; d <= dist; d += step) {
+                let checkX = player.x + Math.cos(player.angle) * dirSign * d;
+                let checkY = player.y + Math.sin(player.angle) * dirSign * d;
+                let checkZ = startZ + (0.2 / dist) * d;
+                if (getSolid(Math.floor(checkX), Math.floor(checkY), Math.floor(checkZ))) {
+                    reachedDist = d - 0.25;
+                    break;
+                }
+            }
+            if (reachedDist < 0.25) reachedDist = 0.25;
+
+            camX = player.x + Math.cos(player.angle) * dirSign * reachedDist;
+            camY = player.y + Math.sin(player.angle) * dirSign * reachedDist;
+            camZ = startZ + (0.2 / dist) * reachedDist + (player.zOffset || 0) + waterBob;
+        }
+
+        renderAngle = player.angle;
+        renderPitch = player.pitch;
+        let isFrontView = (player.inVehicle ? player.vehicleView === '3rd_front' : player.view === '3rd_front');
+        if (isFrontView) {
+            renderAngle = player.angle + Math.PI;
+            renderPitch = -player.pitch;
+        }
+    }
+
+    player.x = camX;
+    player.y = camY;
+
+    // Set file-level globals for sub-drawing functions:
+    currentCamX = camX;
+    currentCamY = camY;
+    currentCamZ = camZ;
+    currentCamAngle = renderAngle;
+    currentCamPitch = renderPitch;
+
+    const fov = canvas.width * currentZoom, hY = canvas.height/2 + renderPitch;
+    const cosA = Math.cos(renderAngle), sinA = Math.sin(renderAngle);
+    const pitchAngle = Math.atan2(renderPitch, fov);
     const cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
     const aimX = cosA * Math.cos(pitchAngle), aimY = sinA * Math.cos(pitchAngle), aimZ = Math.sin(pitchAngle);
 
@@ -748,7 +941,7 @@ function render() {
             let rx = dx * cosA + dy * sinA;
             let ry = dx * -sinA + dy * cosA;
             if (Math.abs(ry) > cz * fovMult + 10.0) continue;
-            if (player.inVehicle === v && player.vehicleView === '1st') continue; 
+            if (player.inVehicle === v && player.vehicleView === '1st' && !freecam) continue; 
             
             let model = WEAPON_MODELS[v.type];
             if (model) {
@@ -791,6 +984,7 @@ function render() {
                         let o = getRenderItem();
                         o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = czFace * czFace;
                         o.wX = cX; o.wY = cY; o.h = cZ; o.norm = {x: nx, y: ny, z: nz};
+                        o.vehicle = v;
                     }
                 }
             } else {
@@ -1108,6 +1302,74 @@ function render() {
         }
     }
 
+    let shouldRenderPlayer = false;
+    if (freecam) {
+        shouldRenderPlayer = true;
+    } else if (player.inVehicle) {
+        shouldRenderPlayer = (player.vehicleView === '3rd_back' || player.vehicleView === '3rd_front');
+    } else {
+        shouldRenderPlayer = (player.view === '3rd_back' || player.view === '3rd_front');
+    }
+
+    if (shouldRenderPlayer) {
+        add3DPlayerFaces(ambient, realPlayerX, realPlayerY);
+    }
+
+    if (coordPickerActive && lastPickedCoord && lastPickedCoord.world) {
+        let mx = lastPickedCoord.world.x;
+        let my = lastPickedCoord.world.y;
+        let mz = lastPickedCoord.world.z;
+        let rSize = 0.12;
+        let pts = [
+            { x: mx - rSize, y: my - rSize, z: mz - rSize },
+            { x: mx + rSize, y: my - rSize, z: mz - rSize },
+            { x: mx + rSize, y: my + rSize, z: mz - rSize },
+            { x: mx - rSize, y: my + rSize, z: mz - rSize },
+            { x: mx - rSize, y: my - rSize, z: mz + rSize },
+            { x: mx + rSize, y: my - rSize, z: mz + rSize },
+            { x: mx + rSize, y: my + rSize, z: mz + rSize },
+            { x: mx - rSize, y: my + rSize, z: mz + rSize }
+        ];
+        
+        const BOX_FACES = [
+            [2, 3, 7, 6], // Front (+Y)
+            [0, 1, 5, 4], // Back (-Y)
+            [3, 0, 4, 7], // Left (-X)
+            [1, 2, 6, 5], // Right (+X)
+            [4, 5, 6, 7], // Top (+Z)
+            [3, 2, 1, 0]  // Bottom (-Z)
+        ];
+        
+        for (let faceIndex = 0; faceIndex < BOX_FACES.length; faceIndex++) {
+            let fIdx = BOX_FACES[faceIndex];
+            let pt0 = pts[fIdx[0]];
+            let pt1 = pts[fIdx[1]];
+            let pt2 = pts[fIdx[2]];
+            let pt3 = pts[fIdx[3]];
+            
+            let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
+            let wx = pt2.x - pt0.x, wy = pt2.y - pt0.y, wz = pt2.z - pt0.z;
+            let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+            
+            let cx = (pt0.x+pt1.x+pt2.x+pt3.x)/4;
+            let cy = (pt0.y+pt1.y+pt2.y+pt3.y)/4;
+            let cz = (pt0.z+pt1.z+pt2.z+pt3.z)/4;
+            let cz_depth = getDepth(cx, cy, cz);
+            
+            if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
+                let o = getRenderItem();
+                o.type = 'objWorldFace';
+                o.pts = [pt0, pt1, pt2, pt3];
+                o.color = { r: 255, g: 0, b: 0 };
+                o.depthSq = cz_depth * cz_depth;
+                o.wX = cx;
+                o.wY = cy;
+                o.h = cz;
+                o.norm = { x: nx, y: ny, z: nz };
+            }
+        }
+    }
+
     activeRenderList.length = renderCount;
     for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
     activeRenderList.sort((a,b) => b.depthSq - a.depthSq); 
@@ -1339,6 +1601,38 @@ function render() {
                     ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`; ctx.strokeStyle = ctx.fillStyle; 
                 }
             } else if (o.type === 'objWorldFace') {
+                if (triggerCoordPick && clipped.length >= 3) {
+                    let poly = [];
+                    for (let j = 0; j < clipped.length; j++) {
+                        let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
+                        let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
+                        poly.push({ x: sx, y: sy });
+                    }
+                    let px_screen = canvas.width / 2;
+                    let py_screen = canvas.height / 2;
+                    let inside = false;
+                    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                        let xi = poly[i].x, yi = poly[i].y;
+                        let xj = poly[j].x, yj = poly[j].y;
+                        let intersect = ((yi > py_screen) !== (yj > py_screen))
+                            && (px_screen < (xj - xi) * (py_screen - yi) / (yj - yi) + xi);
+                        if (intersect) inside = !inside;
+                    }
+                    if (inside) {
+                        let pt0 = o.pts[0];
+                        let nx = o.norm.x, ny = o.norm.y, nz = o.norm.z;
+                        let denom = aimX * nx + aimY * ny + aimZ * nz;
+                        if (Math.abs(denom) > 1e-6) {
+                            let t = ((pt0.x - camX) * nx + (pt0.y - camY) * ny + (pt0.z - camZ) * nz) / denom;
+                            if (t > 0 && t < bestPickDepth) {
+                                bestPickDepth = t;
+                                bestPickPoint = { x: camX + aimX * t, y: camY + aimY * t, z: camZ + aimZ * t };
+                                bestPickVehicle = o.vehicle || null;
+                            }
+                        }
+                    }
+                }
+
                 let len = Math.hypot(o.norm.x, o.norm.y, o.norm.z);
                 let nx = o.norm.x/len, ny = o.norm.y/len, nz = o.norm.z/len;
                 let sunDot = Math.max(0, nx*0.3 + ny*0.5 + nz*0.8);
@@ -1842,17 +2136,60 @@ function render() {
         }
     }
 
-    if (!player.inVehicle || player.vehicleView === '1st') {
+    let isFirstPerson = (player.inVehicle ? player.vehicleView === '1st' : player.view === '1st');
+    if (isFirstPerson && !freecam) {
         renderWeaponModel();
+    }
+
+    if (!player.inVehicle || player.vehicleView === '1st' || freecam) {
+        let pitchVal = freecam ? freecamPitch : player.pitch;
         ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
-        ctx.moveTo(canvas.width/2-cs, hY-player.pitch); ctx.lineTo(canvas.width/2+cs, hY-player.pitch);
-        ctx.moveTo(canvas.width/2, hY-player.pitch-cs); ctx.lineTo(canvas.width/2, hY-player.pitch+cs); ctx.stroke();
+        ctx.moveTo(canvas.width/2-cs, hY-pitchVal); ctx.lineTo(canvas.width/2+cs, hY-pitchVal);
+        ctx.moveTo(canvas.width/2, hY-pitchVal-cs); ctx.lineTo(canvas.width/2, hY-pitchVal+cs); ctx.stroke();
     }
 
     if (player.isSubmerged) {
         ctx.fillStyle = 'rgba(10, 50, 130, 0.4)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
+
+    // Process picked coordinate candidate
+    if (triggerCoordPick) {
+        if (bestPickPoint) {
+            let px = bestPickPoint.x;
+            let py = bestPickPoint.y;
+            let pz = bestPickPoint.z;
+            
+            let localCoords = null;
+            let vType = null;
+            if (bestPickVehicle) {
+                let v = bestPickVehicle;
+                vType = v.type;
+                let cosA = Math.cos(v.angle);
+                let sinA = Math.sin(v.angle);
+                let dx = (px - v.x) * cosA + (py - v.y) * sinA;
+                let dy = -(px - v.x) * sinA + (py - v.y) * cosA;
+                let dz = pz - v.z;
+                localCoords = { dx, dy, dz };
+            }
+            
+            lastPickedCoord = {
+                world: bestPickPoint,
+                local: localCoords,
+                vehicleType: vType,
+                time: performance.now()
+            };
+            console.log("PICKED COORDS:", lastPickedCoord);
+            if (window.updatePickerPanelUI) {
+                window.updatePickerPanelUI();
+            }
+        }
+        triggerCoordPick = false;
+    }
+
+    // Restore player position
+    player.x = realPlayerX;
+    player.y = realPlayerY;
 }
 
 function rotateAroundPivot(x, y, z, px, py, pz, rx, ry, rz) {
@@ -2060,8 +2397,7 @@ function add3DZombieFaces(e, ambient) {
             let nz = ux*wy - uy*wx;
 
             // Backface culling
-            let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
-            let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+            let camZ = currentCamZ;
             if (nx * (pt0.x - player.x) + ny * (pt0.y - player.y) + nz * (pt0.z - camZ) > 0) continue;
 
             // Calculate face center
@@ -2071,11 +2407,11 @@ function add3DZombieFaces(e, ambient) {
 
             // Depth check
             let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
-            let cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
+            let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
             let rx = dx * cosA + dy * sinA;
             let rz = dz;
             let fov = canvas.width * currentZoom;
-            let pitchAngle = Math.atan2(player.pitch, fov);
+            let pitchAngle = Math.atan2(currentCamPitch, fov);
             let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
             let cz_depth = rz * sinP + rx * cosP;
 
@@ -2193,8 +2529,7 @@ function add3DLimbFaces(b, ambient) {
         let nz = ux*wy - uy*wx;
 
         // Backface culling
-        let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
-        let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+        let camZ = currentCamZ;
         if (nx * (pt0.x - player.x) + ny * (pt0.y - player.y) + nz * (pt0.z - camZ) > 0) continue;
 
         // Face center
@@ -2204,11 +2539,11 @@ function add3DLimbFaces(b, ambient) {
 
         // Depth check
         let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
-        let cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
+        let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
         let rx = dx * cosA + dy * sinA;
         let rz = dz;
         let fov = canvas.width * currentZoom;
-        let pitchAngle = Math.atan2(player.pitch, fov);
+        let pitchAngle = Math.atan2(currentCamPitch, fov);
         let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
         let cz_depth = rz * sinP + rx * cosP;
 
@@ -2235,6 +2570,370 @@ function add3DLimbFaces(b, ambient) {
                 // Joint / cut stump
                 if (type !== 'head') {
                     o.color = { r: 150, g: 0, b: 0 };
+                }
+            }
+        }
+    }
+}
+
+function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
+    let scale = player.baseHeight / 32.0;
+    
+    let skinSource = (minecraftPlayerSkinImg.complete && minecraftPlayerSkinImg.naturalWidth > 0) ? minecraftPlayerSkinImg : fallbackPlayerSkinCanvas;
+    let skinH = skinSource.naturalHeight || skinSource.height || 64;
+
+    let rArmPitch = 0;
+    let lArmPitch = 0;
+    let rElbowBend = 0;
+    let lElbowBend = 0;
+    let rKneeBend = 0;
+    let lKneeBend = 0;
+    let rLegPitch = 0;
+    let lLegPitch = 0;
+    let headPitch = 0;
+    let headYaw = 0;
+
+    const fov = canvas.width * currentZoom;
+    const pitchAngle = Math.atan2(player.pitch, fov);
+
+    let isSitting = (player.inVehicle !== null);
+    let realX, realY, realZ, bodyAngle;
+    let bodyRoll = 0;
+    let bodyPitch = 0;
+
+    if (isSitting) {
+        let v = player.inVehicle;
+        realX = v.x + Math.cos(v.angle) * 0.5 + Math.sin(v.angle) * 0.8;
+        realY = v.y + Math.sin(v.angle) * 0.5 - Math.cos(v.angle) * 0.8;
+        realZ = v.z + 0.08;
+        bodyAngle = v.angle;
+        bodyPitch = v.pitch;
+        bodyRoll = v.roll;
+
+        rLegPitch = -Math.PI / 2;
+        lLegPitch = -Math.PI / 2;
+        rKneeBend = Math.PI / 2;
+        lKneeBend = Math.PI / 2;
+
+        rArmPitch = 1.0;
+        lArmPitch = 1.0;
+        rElbowBend = 0.5;
+        lElbowBend = 0.5;
+
+        headPitch = -pitchAngle;
+        headYaw = 0;
+    } else {
+        realX = realPlayerX;
+        realY = realPlayerY;
+        realZ = player.z;
+        bodyAngle = player.angle;
+
+        let animTime = player.animTime || 0;
+        let legSwing = Math.sin(animTime) * 0.6;
+        rLegPitch = legSwing;
+        lLegPitch = -legSwing;
+        rKneeBend = legSwing < 0 ? -legSwing * 0.8 : 0;
+        lKneeBend = legSwing > 0 ? legSwing * 0.8 : 0;
+
+        rArmPitch = -legSwing * 0.6;
+        lArmPitch = legSwing * 0.6;
+
+        let activeItem = inventory[hotbarSelection];
+        let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+        let holdingWeapon = (curW !== null);
+        let isTwoHanded = curW && (curW.type === 'weapon' && (activeItem.id === 'smg' || activeItem.id === 'shotgun'));
+
+        if (holdingWeapon) {
+            rArmPitch = 1.57 - pitchAngle;
+            rElbowBend = 0.1;
+            if (isTwoHanded) {
+                lArmPitch = 1.2 - pitchAngle;
+                lElbowBend = 0.4;
+            }
+        }
+
+        headPitch = -pitchAngle;
+        headYaw = 0;
+    }
+
+    let parts = [
+        {
+            name: 'torso',
+            minX: -4, maxX: 4, minY: -2, maxY: 2, minZ: 12, maxZ: 24,
+            color: { r: 0, g: 162, b: 162 },
+            active: true,
+            transform: v => ({ x: v.x, y: v.y, z: v.z })
+        },
+        {
+            name: 'head',
+            minX: -4, maxX: 4, minY: -4, maxY: 4, minZ: 24, maxZ: 32,
+            color: { r: 224, g: 160, b: 128 },
+            active: true,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 0, 0, 24, headPitch, 0, headYaw)
+        },
+        {
+            name: 'rightUpperArm',
+            minX: -8, maxX: -4, minY: -2, maxY: 2, minZ: 18, maxZ: 24,
+            color: { r: 224, g: 160, b: 128 },
+            active: true,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, -6, 0, 24, rArmPitch, 0, 0)
+        },
+        {
+            name: 'rightLowerArm',
+            minX: -8, maxX: -4, minY: -2, maxY: 2, minZ: 12, maxZ: 18,
+            color: { r: 224, g: 160, b: 128 },
+            active: true,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, -6, 0, 18, rElbowBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, -6, 0, 24, rArmPitch, 0, 0);
+            }
+        },
+        {
+            name: 'leftUpperArm',
+            minX: 4, maxX: 8, minY: -2, maxY: 2, minZ: 18, maxZ: 24,
+            color: { r: 224, g: 160, b: 128 },
+            active: true,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 6, 0, 24, lArmPitch, 0, 0)
+        },
+        {
+            name: 'leftLowerArm',
+            minX: 4, maxX: 8, minY: -2, maxY: 2, minZ: 12, maxZ: 18,
+            color: { r: 224, g: 160, b: 128 },
+            active: true,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, 6, 0, 18, lElbowBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, 6, 0, 24, lArmPitch, 0, 0);
+            }
+        },
+        {
+            name: 'rightUpperLeg',
+            minX: -4, maxX: 0, minY: -2, maxY: 2, minZ: 6, maxZ: 12,
+            color: { r: 60, g: 60, b: 189 },
+            active: true,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, -2, 0, 12, -rLegPitch, 0, 0)
+        },
+        {
+            name: 'rightLowerLeg',
+            minX: -4, maxX: 0, minY: -2, maxY: 2, minZ: 0, maxZ: 6,
+            color: { r: 60, g: 60, b: 189 },
+            active: true,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, -2, 0, 6, -rKneeBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, -2, 0, 12, -rLegPitch, 0, 0);
+            }
+        },
+        {
+            name: 'leftUpperLeg',
+            minX: 0, maxX: 4, minY: -2, maxY: 2, minZ: 6, maxZ: 12,
+            color: { r: 60, g: 60, b: 189 },
+            active: true,
+            transform: v => rotateAroundPivot(v.x, v.y, v.z, 2, 0, 12, -lLegPitch, 0, 0)
+        },
+        {
+            name: 'leftLowerLeg',
+            minX: 0, maxX: 4, minY: -2, maxY: 2, minZ: 0, maxZ: 6,
+            color: { r: 60, g: 60, b: 189 },
+            active: true,
+            transform: v => {
+                let v1 = rotateAroundPivot(v.x, v.y, v.z, 2, 0, 6, -lKneeBend, 0, 0);
+                return rotateAroundPivot(v1.x, v1.y, v1.z, 2, 0, 12, -lLegPitch, 0, 0);
+            }
+        }
+    ];
+
+    const BOX_FACES = [
+        [2, 3, 7, 6], // Front (+Y)
+        [0, 1, 5, 4], // Back (-Y)
+        [3, 0, 4, 7], // Left (-X)
+        [1, 2, 6, 5], // Right (+X)
+        [4, 5, 6, 7], // Top (+Z)
+        [3, 2, 1, 0]  // Bottom (-Z)
+    ];
+
+    let rotAngle = bodyAngle - Math.PI / 2;
+    let cosH = Math.cos(rotAngle);
+    let sinH = Math.sin(rotAngle);
+
+    let camZ = currentCamZ;
+
+    for (let part of parts) {
+        let localVerts = [
+            { x: part.minX, y: part.minY, z: part.minZ },
+            { x: part.maxX, y: part.minY, z: part.minZ },
+            { x: part.maxX, y: part.maxY, z: part.minZ },
+            { x: part.minX, y: part.maxY, z: part.minZ },
+            { x: part.minX, y: part.minY, z: part.maxZ },
+            { x: part.maxX, y: part.minY, z: part.maxZ },
+            { x: part.maxX, y: part.maxY, z: part.maxZ },
+            { x: part.minX, y: part.maxY, z: part.maxZ }
+        ];
+
+        let worldVerts = [];
+        for (let lv of localVerts) {
+            let pt = part.transform(lv);
+            let sx = pt.x * scale;
+            let sy = pt.y * scale;
+            let sz = pt.z * scale;
+
+            let rx = sx, ry = sy, rz = sz;
+            let wx, wy, wz;
+
+            if (isSitting) {
+                let cp = Math.cos(bodyPitch), sp = Math.sin(bodyPitch);
+                let cr = Math.cos(bodyRoll), sr = Math.sin(bodyRoll);
+                
+                let p2x = rx * cp - rz * sp;
+                let p2y = ry;
+                let p2z = rx * sp + rz * cp;
+                
+                let p3x = p2x;
+                let p3y = p2y * cr - p2z * sr;
+                let p3z = p2y * sr + p2z * cr;
+                
+                wx = p3x * cosH - p3y * sinH;
+                wy = p3x * sinH + p3y * cosH;
+                wz = p3z;
+            } else {
+                wx = rx * cosH - ry * sinH;
+                wy = rx * sinH + ry * cosH;
+                wz = rz;
+            }
+
+            worldVerts.push({
+                x: realX + wx,
+                y: realY + wy,
+                z: realZ + wz
+            });
+        }
+
+        for (let faceIndex = 0; faceIndex < BOX_FACES.length; faceIndex++) {
+            let fIdx = BOX_FACES[faceIndex];
+            let pt0 = worldVerts[fIdx[0]];
+            let pt1 = worldVerts[fIdx[1]];
+            let pt2 = worldVerts[fIdx[2]];
+            let pt3 = worldVerts[fIdx[3]];
+
+            let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
+            let wx_v = pt2.x - pt0.x, wy_v = pt2.y - pt0.y, wz_v = pt2.z - pt0.z;
+            let nx = uy*wz_v - uz*wy_v;
+            let ny = uz*wx_v - ux*wz_v;
+            let nz = ux*wy_v - uy*wx_v;
+
+            if (nx * (pt0.x - player.x) + ny * (pt0.y - player.y) + nz * (pt0.z - camZ) > 0) continue;
+
+            let cx = (pt0.x + pt1.x + pt2.x + pt3.x) / 4;
+            let cy = (pt0.y + pt1.y + pt2.y + pt3.y) / 4;
+            let cz = (pt0.z + pt1.z + pt2.z + pt3.z) / 4;
+
+            let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
+            let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
+            let rx_depth = dx * cosA + dy * sinA;
+            let rz_depth = dz;
+            let pitchAngle_depth = Math.atan2(currentCamPitch, fov);
+            let cosP = Math.cos(pitchAngle_depth), sinP = Math.sin(pitchAngle_depth);
+            let cz_depth = rz_depth * sinP + rx_depth * cosP;
+
+            if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
+                let o = getRenderItem();
+                o.type = 'objWorldFace';
+                o.pts = [pt0, pt1, pt2, pt3];
+                o.color = part.color;
+                o.depthSq = cz_depth * cz_depth;
+                o.wX = cx;
+                o.wY = cy;
+                o.h = cz;
+                o.norm = { x: nx, y: ny, z: nz };
+
+                let uvRegion = getMinecraftUVs(part.name, faceIndex, skinH);
+                if (uvRegion) {
+                    let uMin = uvRegion[0], vMin = uvRegion[1], uMax = uvRegion[2], vMax = uvRegion[3];
+                    o.texture = skinSource;
+                    o.uvs = getFaceCornerUVs(faceIndex, uMin, vMin, uMax, vMax);
+                }
+            }
+        }
+    }
+
+    // Held Weapon Rendering (in right hand)
+    let activeItem = inventory[hotbarSelection];
+    let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+    if (curW && !curW.isMelee && !isSitting) {
+        let wName = curW.name.toLowerCase();
+        let model = WEAPON_MODELS[wName];
+        if (model) {
+            let conf = WEAPON_MODEL_CONFIG[wName] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
+            
+            let localHandPt = { x: -6, y: 0.5, z: 12.0 };
+            let handPt1 = rotateAroundPivot(localHandPt.x, localHandPt.y, localHandPt.z, -6, 0, 18, rElbowBend, 0, 0);
+            let handPt2 = rotateAroundPivot(handPt1.x, handPt1.y, handPt1.z, -6, 0, 24, rArmPitch, 0, 0);
+            
+            let hx = handPt2.x * scale;
+            let hy = handPt2.y * scale;
+            let hz = handPt2.z * scale;
+            
+            let wxHand = hx * cosH - hy * sinH;
+            let wyHand = hx * sinH + hy * cosH;
+            let wzHand = hz;
+            
+            let worldHandPt = {
+                x: realX + wxHand,
+                y: realY + wyHand,
+                z: realZ + wzHand
+            };
+
+            let weaponScale = conf.scale * 1.3;
+            let weaponRotX = conf.rotX;
+            let weaponRotY = conf.rotY;
+            let weaponRotZ = conf.rotZ;
+
+            for (let f of model.faces) {
+                let wPts = [];
+                for (let pt of f.pts) {
+                    let p1 = rotate3D(pt.x * weaponScale, pt.y * weaponScale, pt.z * weaponScale, weaponRotX, weaponRotY, weaponRotZ);
+                    
+                    let p2 = rotate3D(p1.x, p1.y, p1.z, rArmPitch - 1.57, 0, 0);
+                    
+                    let wxW = p2.x * cosH - p2.y * sinH;
+                    let wyW = p2.x * sinH + p2.y * cosH;
+                    let wzW = p2.z;
+                    
+                    wPts.push({
+                        x: worldHandPt.x + wxW,
+                        y: worldHandPt.y + wyW,
+                        z: worldHandPt.z + wzW
+                    });
+                }
+
+                let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
+                let wx_v = wPts[2].x - wPts[0].x, wy_v = wPts[2].y - wPts[0].y, wz_v = wPts[2].z - wPts[0].z;
+                let nx = uy*wz_v - uz*wy_v;
+                let ny = uz*wx_v - ux*wz_v;
+                let nz = ux*wy_v - uy*wx_v;
+
+                if (nx * (wPts[0].x - player.x) + ny * (wPts[0].y - player.y) + nz * (wPts[0].z - camZ) > 0) continue;
+
+                let cx = (wPts[0].x + wPts[1].x + wPts[2].x) / 3;
+                let cy = (wPts[0].y + wPts[1].y + wPts[2].y) / 3;
+                let cz = (wPts[0].z + wPts[1].z + wPts[2].z) / 3;
+
+                let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
+                let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
+                let rx_depth = dx * cosA + dy * sinA;
+                let rz_depth = dz;
+                let pitchAngle_depth = Math.atan2(currentCamPitch, fov);
+                let cosP = Math.cos(pitchAngle_depth), sinP = Math.sin(pitchAngle_depth);
+                let cz_depth = rz_depth * sinP + rx_depth * cosP;
+
+                if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
+                    let o = getRenderItem();
+                    o.type = 'objWorldFace';
+                    o.pts = wPts;
+                    o.color = f.color;
+                    o.depthSq = cz_depth * cz_depth;
+                    o.wX = cx;
+                    o.wY = cy;
+                    o.h = cz;
+                    o.norm = { x: nx, y: ny, z: nz };
                 }
             }
         }

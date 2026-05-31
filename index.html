@@ -51,7 +51,7 @@
         </div>
 
         <div style="position: absolute; bottom: 15px; right: 20px; font-size: 12px; color: rgba(255, 255, 255, 0.4);">
-            >est-0.00.77b</div>
+            >est-0.00.78</div>
     </div>
 
     <div id="hotbar-container">
@@ -112,6 +112,8 @@
         </div>
         <div class="dbg-row"><label><input type="checkbox" id="dbg-god"> God Mode</label></div>
         <div class="dbg-row"><label><input type="checkbox" id="dbg-noclip"> Noclip</label></div>
+        <div class="dbg-row"><label><input type="checkbox" id="dbg-freecam"> Freecam</label></div>
+        <div class="dbg-row"><label><input type="checkbox" id="dbg-picker"> Coord Picker</label></div>
         <div class="dbg-row"><label><input type="checkbox" id="dbg-infstam"> Inf Stamina</label></div>
         <div class="dbg-row"><label>Speed %:</label><input type="number" id="dbg-speed" value="100"></div>
         <div class="dbg-row"><label>Sprint Spd:</label><input type="number" id="dbg-sprint" value="1.5" step="0.1">
@@ -169,6 +171,19 @@
 
     <canvas id="gameCanvas"></canvas>
     <div id="item-tooltip" class="tooltip"></div>
+
+    <div id="picker-panel" class="panel">
+        <div id="picker-header">
+            <span>Coordinate Picker</span>
+            <span style="font-size: 10px; color: #888; font-weight: normal;">Drag to move</span>
+        </div>
+        <div class="picker-row" id="picker-world-coords">Aim and press P to pick coords</div>
+        <div class="picker-row" id="picker-local-coords"></div>
+        <div style="margin-top: 10px; display: flex; gap: 5px;">
+            <button id="picker-copy-local" class="picker-copy-btn" style="display: none;">Copy Local</button>
+            <button id="picker-copy-world" class="picker-copy-btn" style="display: none;">Copy World</button>
+        </div>
+    </div>
 
     <script src="data.js"></script>
     <script src="world_wasm_binary.js"></script>

@@ -275,8 +275,24 @@ function update() {
     }
     staminaEl.innerText = Math.floor(player.stamina);
     
+    if (isMoving && !player.inVehicle) {
+        let speed = isSprinting ? 0.15 : 0.08;
+        player.animTime = (player.animTime || 0) + speed;
+    } else {
+        if (player.animTime) {
+            player.animTime %= Math.PI * 2;
+            if (player.animTime > 0.08) player.animTime -= 0.08;
+            else if (player.animTime < -0.08) player.animTime += 0.08;
+            else player.animTime = 0;
+        }
+    }
+
     if (coordsEl) {
-        coordsEl.innerText = `${Math.floor(player.x)}, ${Math.floor(player.y)}, ${Math.floor(player.z)}`;
+        if (freecam) {
+            coordsEl.innerText = `Freecam: ${Math.floor(freecamX)}, ${Math.floor(freecamY)}, ${Math.floor(freecamZ)}`;
+        } else {
+            coordsEl.innerText = `${Math.floor(player.x)}, ${Math.floor(player.y)}, ${Math.floor(player.z)}`;
+        }
     }
     
     let curSpeedMult = speedMult * (isSprinting ? sprintMult : 1.0) * (player.inWater ? 0.5 : 1.0);
@@ -287,6 +303,47 @@ function update() {
     player.zOffset = player.zOffset || 0;
 
     // Movement & Vehicle Physics Handling
+    if (freecam) {
+        let curSpeed = player.speed * 1.5;
+        if (keys['ShiftLeft'] || keys['ShiftRight']) {
+            curSpeed *= 3.0;
+        }
+        
+        let pitchAngle = Math.atan2(freecamPitch, canvas.width * currentZoom);
+        let fwdX = Math.cos(freecamAngle) * Math.cos(pitchAngle);
+        let fwdY = Math.sin(freecamAngle) * Math.cos(pitchAngle);
+        let fwdZ = Math.sin(pitchAngle);
+        
+        if (keys['KeyW']) {
+            freecamX += fwdX * curSpeed;
+            freecamY += fwdY * curSpeed;
+            freecamZ += fwdZ * curSpeed;
+        }
+        if (keys['KeyS']) {
+            freecamX -= fwdX * curSpeed;
+            freecamY -= fwdY * curSpeed;
+            freecamZ -= fwdZ * curSpeed;
+        }
+        
+        let leftAngle = freecamAngle - Math.PI / 2;
+        if (keys['KeyA']) {
+            freecamX += Math.cos(leftAngle) * curSpeed;
+            freecamY += Math.sin(leftAngle) * curSpeed;
+        }
+        if (keys['KeyD']) {
+            freecamX += Math.cos(freecamAngle + Math.PI / 2) * curSpeed;
+            freecamY += Math.sin(freecamAngle + Math.PI / 2) * curSpeed;
+        }
+        
+        if (keys['Space']) {
+            freecamZ += curSpeed;
+        }
+        if (keys['KeyC']) {
+            freecamZ -= curSpeed;
+        }
+        
+        player.vz = 0;
+    } else {
     if (player.inVehicle) {
         let v = player.inVehicle;
         v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
@@ -384,17 +441,18 @@ function update() {
         v.camY += (v.y - v.camY) * 0.15;
         v.camZ += (v.z - v.camZ) * 0.15;
 
-        if (player.vehicleView === '3rd') {
-            player.x = v.camX - Math.cos(player.angle) * 9.5; 
-            player.y = v.camY - Math.sin(player.angle) * 9.5;
+        if (player.vehicleView === '3rd_back' || player.vehicleView === '3rd_front') {
+            let dirSign = player.vehicleView === '3rd_front' ? 1.0 : -1.0;
+            player.x = v.camX + Math.cos(player.angle) * dirSign * 9.5; 
+            player.y = v.camY + Math.sin(player.angle) * dirSign * 9.5;
             player.z = v.camZ + 1.0; 
             
             let pitchTarget = v.pitch * 300; 
             player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
-            player.x = v.x + Math.cos(v.angle) * 0.5 - Math.sin(v.angle) * 0.8; 
-            player.y = v.y + Math.sin(v.angle) * 0.5 + Math.cos(v.angle) * 0.8;
-            player.z = v.z + 2.2; 
+            player.x = v.x + Math.cos(v.angle) * 0.5 + Math.sin(v.angle) * 0.8; 
+            player.y = v.y + Math.sin(v.angle) * 0.5 - Math.cos(v.angle) * 0.8;
+            player.z = v.z + 1.15; 
         }
         player.vz = 0;
 
@@ -470,6 +528,7 @@ function update() {
             if (!isSolid(nx, player.y)) player.x = nx;
             if (!isSolid(player.x, ny)) player.y = ny;
         }
+    }
     }
 
     for (let v of vehicles) {

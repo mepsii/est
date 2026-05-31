@@ -726,7 +726,7 @@ window.addEventListener('keydown', e => {
         } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) { 
             if (vehicles.includes(interactTarget)) {
                 player.inVehicle = interactTarget;
-                player.vehicleView = '3rd';
+                player.vehicleView = '3rd_back';
             } else if (droppedItems.includes(interactTarget)) {
                 let success = giveItem({ ...interactTarget.item });
                 if (success) {
@@ -741,8 +741,30 @@ window.addEventListener('keydown', e => {
         }
     }
     
-    if (e.key.toLowerCase() === 'v' && player.inVehicle) {
-        player.vehicleView = player.vehicleView === '3rd' ? '1st' : '3rd';
+    if (e.key.toLowerCase() === 'v') {
+        if (player.inVehicle) {
+            if (player.vehicleView === '1st') {
+                player.vehicleView = '3rd_back';
+            } else if (player.vehicleView === '3rd_back') {
+                player.vehicleView = '3rd_front';
+            } else {
+                player.vehicleView = '1st';
+            }
+        } else {
+            if (player.view === '1st') {
+                player.view = '3rd_back';
+            } else if (player.view === '3rd_back') {
+                player.view = '3rd_front';
+            } else {
+                player.view = '1st';
+            }
+        }
+    }
+
+    if (e.key.toLowerCase() === 'p') {
+        if (coordPickerActive) {
+            triggerCoordPick = true;
+        }
     }
 
     if (e.key.toLowerCase() === 'i') { if(!isInventoryOpen) { isInventoryOpen = true; isDebugOpen = isStairMenuOpen = false; activeContainer = null; updateInventories(); document.exitPointerLock(); } else canvas.requestPointerLock(); }
@@ -766,6 +788,38 @@ document.getElementById('btn-stam').onclick = () => { player.stamina = parseInt(
 document.getElementById('btn-food').onclick = () => { player.food = parseInt(document.getElementById('dbg-food').value); foodEl.innerText = player.food; };
 document.getElementById('dbg-god').onchange = e => godMode = e.target.checked;
 document.getElementById('dbg-noclip').onchange = e => noclip = e.target.checked;
+document.getElementById('dbg-freecam').onchange = e => {
+    freecam = e.target.checked;
+    if (freecam) {
+        let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
+        freecamX = player.x;
+        freecamY = player.y;
+        freecamZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+        
+        if (player.inVehicle) {
+            let v = player.inVehicle;
+            if (player.vehicleView === '3rd_back' || player.vehicleView === '3rd_front') {
+                let dirSign = player.vehicleView === '3rd_front' ? 1.0 : -1.0;
+                freecamX = v.camX + Math.cos(player.angle) * dirSign * 9.5;
+                freecamY = v.camY + Math.sin(player.angle) * dirSign * 9.5;
+                freecamZ = v.camZ + 1.0 + player.baseHeight;
+            } else {
+                freecamX = v.x + Math.cos(v.angle) * 0.5 + Math.sin(v.angle) * 0.8;
+                freecamY = v.y + Math.sin(v.angle) * 0.5 - Math.cos(v.angle) * 0.8;
+                freecamZ = v.z + 1.15 + player.baseHeight;
+            }
+        } else if (player.view === '3rd_back' || player.view === '3rd_front') {
+            let dist = 4.2;
+            let dirSign = player.view === '3rd_front' ? 1.0 : -1.0;
+            freecamX = player.x + Math.cos(player.angle) * dirSign * dist;
+            freecamY = player.y + Math.sin(player.angle) * dirSign * dist;
+            freecamZ = player.z + 1.0 + (0.2 / dist) * dist + (player.zOffset || 0) + waterBob;
+        }
+        
+        freecamAngle = player.angle;
+        freecamPitch = player.pitch;
+    }
+};
 document.getElementById('dbg-infstam').onchange = e => infiniteStamina = e.target.checked;
 document.getElementById('dbg-speed').onchange = e => speedMult = (parseInt(e.target.value) || 100) / 100;
 document.getElementById('dbg-sprint').onchange = e => sprintMult = parseFloat(e.target.value) || 1.5;
@@ -845,3 +899,153 @@ window.addEventListener('mouseleave', hideTooltip);
 // Init hotbar UI states immediately
 updateInventories();
 selectHotbar(0);
+
+// --- HTML Coordinate Picker Panel Logic ---
+
+// Sync debug menu checkbox with state
+document.getElementById('dbg-picker').onchange = e => {
+    coordPickerActive = e.target.checked;
+    let panel = document.getElementById('picker-panel');
+    if (coordPickerActive) {
+        panel.style.display = 'block';
+        updatePickerPanelUI();
+    } else {
+        panel.style.display = 'none';
+        lastPickedCoord = null;
+        updatePickerPanelUI();
+    }
+};
+
+// UI updates for picker panel
+function updatePickerPanelUI() {
+    let worldEl = document.getElementById('picker-world-coords');
+    let localEl = document.getElementById('picker-local-coords');
+    let copyWorldBtn = document.getElementById('picker-copy-world');
+    let copyLocalBtn = document.getElementById('picker-copy-local');
+
+    if (lastPickedCoord && lastPickedCoord.world) {
+        let w = lastPickedCoord.world;
+        worldEl.innerHTML = `<strong>World:</strong> X:${w.x.toFixed(3)} Y:${w.y.toFixed(3)} Z:${w.z.toFixed(3)}`;
+        copyWorldBtn.style.display = 'inline-block';
+        copyWorldBtn.innerText = 'Copy World';
+
+        let l = lastPickedCoord.local;
+        if (l) {
+            localEl.innerHTML = `<strong>Vehicle (${lastPickedCoord.vehicleType}):</strong><br><span style="color:#ffaa00;">dx:${l.dx.toFixed(3)} dy:${l.dy.toFixed(3)} dz:${l.dz.toFixed(3)}</span>`;
+            copyLocalBtn.style.display = 'inline-block';
+            copyLocalBtn.innerText = 'Copy Local';
+        } else {
+            localEl.innerHTML = `<em>No vehicle hit (aim at vehicle)</em>`;
+            copyLocalBtn.style.display = 'none';
+        }
+    } else {
+        worldEl.innerHTML = `<em>Aim and press P to pick coords</em>`;
+        localEl.innerHTML = "";
+        copyWorldBtn.style.display = 'none';
+        copyLocalBtn.style.display = 'none';
+    }
+}
+window.updatePickerPanelUI = updatePickerPanelUI;
+
+// Helper for temporary feedback text on copy button
+function showTemporaryFeedback(buttonId, originalText) {
+    let btn = document.getElementById(buttonId);
+    btn.innerText = 'Copied!';
+    setTimeout(() => {
+        btn.innerText = originalText;
+    }, 1200);
+}
+
+// Click-to-copy handlers
+document.getElementById('picker-copy-local').onclick = () => {
+    if (lastPickedCoord && lastPickedCoord.local) {
+        let l = lastPickedCoord.local;
+        let txt = `${l.dx.toFixed(3)}, ${l.dy.toFixed(3)}, ${l.dz.toFixed(3)}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(txt).then(() => {
+                showTemporaryFeedback('picker-copy-local', 'Copy Local');
+            }).catch(err => {
+                console.error('Failed to copy local coords: ', err);
+            });
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = txt;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showTemporaryFeedback('picker-copy-local', 'Copy Local');
+        }
+    }
+};
+
+document.getElementById('picker-copy-world').onclick = () => {
+    if (lastPickedCoord && lastPickedCoord.world) {
+        let w = lastPickedCoord.world;
+        let txt = `${w.x.toFixed(3)}, ${w.y.toFixed(3)}, ${w.z.toFixed(3)}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(txt).then(() => {
+                showTemporaryFeedback('picker-copy-world', 'Copy World');
+            }).catch(err => {
+                console.error('Failed to copy world coords: ', err);
+            });
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = txt;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showTemporaryFeedback('picker-copy-world', 'Copy World');
+        }
+    }
+};
+
+// Movable window dragging utility
+function makeDraggable(element, handle) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    handle.onmousedown = dragMouseDown;
+
+    function dragMouseDown(e) {
+        e = e || window.event;
+        if (e.target.tagName === 'BUTTON') return;
+        e.preventDefault();
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = closeDragElement;
+        document.onmousemove = elementDrag;
+    }
+
+    function elementDrag(e) {
+        e = e || window.event;
+        e.preventDefault();
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        
+        let newTop = element.offsetTop - pos2;
+        let newLeft = element.offsetLeft - pos1;
+        
+        // Window bounds clamping
+        if (newTop < 0) newTop = 0;
+        if (newLeft < 0) newLeft = 0;
+        if (newTop + element.offsetHeight > window.innerHeight) newTop = window.innerHeight - element.offsetHeight;
+        if (newLeft + element.offsetWidth > window.innerWidth) newLeft = window.innerWidth - element.offsetWidth;
+        
+        element.style.top = newTop + "px";
+        element.style.left = newLeft + "px";
+        element.style.bottom = "auto";
+    }
+
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+    }
+}
+
+// Make picker panel draggable by its header
+makeDraggable(document.getElementById('picker-panel'), document.getElementById('picker-header'));
+
+// Run initial panel rendering update
+updatePickerPanelUI();
