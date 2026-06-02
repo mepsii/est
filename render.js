@@ -2634,9 +2634,9 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
 
     if (isSitting) {
         let v = player.inVehicle;
-        realX = v.x + Math.cos(v.angle) * 0.5 + Math.sin(v.angle) * 0.8;
-        realY = v.y + Math.sin(v.angle) * 0.5 - Math.cos(v.angle) * 0.8;
-        realZ = v.z + 0.08;
+        realX = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32;
+        realY = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
+        realZ = v.z - 0.62;
         bodyAngle = v.angle;
         bodyPitch = v.pitch;
         bodyRoll = v.roll;

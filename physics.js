@@ -450,9 +450,9 @@ function update() {
             let pitchTarget = v.pitch * 300; 
             player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
-            player.x = v.x + Math.cos(v.angle) * 0.5 + Math.sin(v.angle) * 0.8; 
-            player.y = v.y + Math.sin(v.angle) * 0.5 - Math.cos(v.angle) * 0.8;
-            player.z = v.z + 1.15; 
+            player.x = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32; 
+            player.y = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
+            player.z = v.z + 0.45; 
         }
         player.vz = 0;
 
