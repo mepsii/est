@@ -1,4 +1,42 @@
-//THIS IS data.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
+// Uncaught error reporter for debugging
+window.addEventListener('error', function(e) {
+    let errDiv = document.getElementById('debug-error-overlay');
+    if (!errDiv) {
+        errDiv = document.createElement('div');
+        errDiv.id = 'debug-error-overlay';
+        errDiv.style.position = 'fixed';
+        errDiv.style.top = '0';
+        errDiv.style.left = '0';
+        errDiv.style.width = '100vw';
+        errDiv.style.background = 'rgba(255, 0, 0, 0.95)';
+        errDiv.style.color = 'white';
+        errDiv.style.fontFamily = 'monospace';
+        errDiv.style.fontSize = '14px';
+        errDiv.style.padding = '15px';
+        errDiv.style.zIndex = '99999';
+        errDiv.style.boxSizing = 'border-box';
+        errDiv.style.maxHeight = '50vh';
+        errDiv.style.overflowY = 'auto';
+        errDiv.style.borderBottom = '3px solid black';
+        
+        let closeBtn = document.createElement('button');
+        closeBtn.innerText = 'Dismiss';
+        closeBtn.style.float = 'right';
+        closeBtn.onclick = () => errDiv.remove();
+        errDiv.appendChild(closeBtn);
+        
+        let title = document.createElement('h3');
+        title.innerText = 'Uncaught Runtime Error:';
+        title.style.margin = '0 0 10px 0';
+        errDiv.appendChild(title);
+        
+        document.body.appendChild(errDiv);
+    }
+    let p = document.createElement('p');
+    p.innerText = `${e.message} at ${e.filename}:${e.lineno}:${e.colno}`;
+    p.style.margin = '5px 0';
+    errDiv.appendChild(p);
+});
 
 // --- Globals & DOM ---
 const canvas = document.getElementById('gameCanvas');
@@ -110,7 +148,8 @@ const ITEMS = {
     'dirt': { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 1 },
     'cube': { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 3 },
     'wood_block': { name: "Wood Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 4 },
-    'stone_block': { name: "Stone Cube", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 5 }
+    'stone_block': { name: "Stone Cube", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 5 },
+    'coord_picker': { name: "Coord Picker", fireRate: 15, isMelee: true, range: 100.0, dmg: 0, type: 'tool' }
 };
 
 const ENTITIES_DATA = { '🌲': { baseSize: 5.5, solid: true }, '🌳': { baseSize: 5.0, solid: true }, '🪾': { baseSize: 5.2, solid: true }, '🌵': { baseSize: 1.4, solid: true }, '💀': { baseSize: 0.5, solid: false }, '🪨': { baseSize: 0.8, solid: true }, '🌻': { baseSize: 0.6, solid: false }, '🌹': { baseSize: 0.6, solid: false }, '🌷': { baseSize: 0.6, solid: false }, '🌼': { baseSize: 0.6, solid: false } };
@@ -143,6 +182,7 @@ inventory[4] = { id: 'pickaxe', type: 'tool', emoji: '⛏️', count: 1 };
 inventory[5] = { id: 'shovel', type: 'tool', emoji: '🥄', count: 1 };
 inventory[6] = { id: 'dirt', type: 'block', emoji: '🟫', count: 64 };
 inventory[7] = { id: 'cube', type: 'block', emoji: '🧊', count: 64 };
+inventory[8] = { id: 'coord_picker', type: 'tool', emoji: '📐', count: 1 };
 
 let hotbarSelection = 0;
 
@@ -168,6 +208,8 @@ const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, base
 let triggerCoordPick = false;
 let lastPickedCoord = null;
 let coordPickerActive = false;
+let pickX_screen = 0;
+let pickY_screen = 0;
 
 let freecam = false;
 let freecamX = 0;

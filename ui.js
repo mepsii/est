@@ -31,7 +31,8 @@ const ITEM_DETAILS = {
     'shotgun': { name: 'Shotgun', desc: 'Powerful close-range scatter gun. Fires 12 pellets at once.', category: 'weapon' },
     'axe': { name: 'Axe', desc: 'Sharp melee weapon and harvesting tool. Used to harvest Wood from trees.', category: 'tool' },
     'pickaxe': { name: 'Pickaxe', desc: 'Pointy mining tool. Used to harvest Stone from rocks.', category: 'tool' },
-    'shovel': { name: 'Shovel', desc: 'Digging tool. Used to dig up dirt.', category: 'tool' }
+    'shovel': { name: 'Shovel', desc: 'Digging tool. Used to dig up dirt.', category: 'tool' },
+    'coord_picker': { name: 'Coord Picker', desc: 'Developer tool to capture coordinates. Select it and click on vehicle models to copy local offset coordinates.', category: 'tool' }
 };
 
 function resolveItemDetails(item) {
@@ -763,7 +764,15 @@ window.addEventListener('keydown', e => {
 
     if (e.key.toLowerCase() === 'p') {
         if (coordPickerActive) {
+            pickX_screen = canvas.width / 2;
+            pickY_screen = canvas.height / 2;
             triggerCoordPick = true;
+            if (typeof render === 'function') {
+                render();
+            }
+            if (typeof copyCoordsToClipboardDirectly === 'function') {
+                copyCoordsToClipboardDirectly();
+            }
         }
     }
 
@@ -902,20 +911,6 @@ selectHotbar(0);
 
 // --- HTML Coordinate Picker Panel Logic ---
 
-// Sync debug menu checkbox with state
-document.getElementById('dbg-picker').onchange = e => {
-    coordPickerActive = e.target.checked;
-    let panel = document.getElementById('picker-panel');
-    if (coordPickerActive) {
-        panel.style.display = 'block';
-        updatePickerPanelUI();
-    } else {
-        panel.style.display = 'none';
-        lastPickedCoord = null;
-        updatePickerPanelUI();
-    }
-};
-
 // UI updates for picker panel
 function updatePickerPanelUI() {
     let worldEl = document.getElementById('picker-world-coords');
@@ -1049,3 +1044,111 @@ makeDraggable(document.getElementById('picker-panel'), document.getElementById('
 
 // Run initial panel rendering update
 updatePickerPanelUI();
+
+// Copy coordinate value to clipboard and show feedback
+function copyCoordsToClipboardDirectly() {
+    if (!lastPickedCoord) return;
+    
+    let txt = "";
+    let buttonId = "";
+    let originalText = "";
+    
+    if (lastPickedCoord.local) {
+        let l = lastPickedCoord.local;
+        txt = `${l.dx.toFixed(3)}, ${l.dy.toFixed(3)}, ${l.dz.toFixed(3)}`;
+        buttonId = 'picker-copy-local';
+        originalText = 'Copy Local';
+    } else if (lastPickedCoord.world) {
+        let w = lastPickedCoord.world;
+        txt = `${w.x.toFixed(3)}, ${w.y.toFixed(3)}, ${w.z.toFixed(3)}`;
+        buttonId = 'picker-copy-world';
+        originalText = 'Copy World';
+    }
+    
+    if (!txt) return;
+    
+    const feedbackBtn = document.getElementById(buttonId);
+    
+    function setFeedback() {
+        if (feedbackBtn) {
+            feedbackBtn.innerText = 'Copied!';
+            feedbackBtn.style.background = '#ffaa00';
+            feedbackBtn.style.color = 'black';
+            setTimeout(() => {
+                feedbackBtn.innerText = originalText;
+                feedbackBtn.style.background = '';
+                feedbackBtn.style.color = '';
+            }, 1200);
+        }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(() => {
+            setFeedback();
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            fallbackCopy(txt);
+        });
+    } else {
+        fallbackCopy(txt);
+    }
+    
+    function fallbackCopy(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            setFeedback();
+        } catch (err) {
+            console.error('Fallback copy failed: ', err);
+        }
+        document.body.removeChild(textarea);
+    }
+}
+
+// Intercept clicks on the canvas for coordinate picking
+window.addEventListener('mousedown', (e) => {
+    let activeItem = inventory[hotbarSelection];
+    let isCoordPickerEquipped = activeItem && activeItem.id === 'coord_picker';
+    if (!isCoordPickerEquipped && !coordPickerActive) return;
+
+    // We only want to intercept if they click on the game canvas itself
+    if (e.target !== canvas) {
+        return;
+    }
+
+    let px_screen, py_screen;
+    if (document.pointerLockElement === canvas) {
+        // Pointer locked: pick at the center of the screen
+        px_screen = canvas.width / 2;
+        py_screen = canvas.height / 2;
+    } else {
+        // Pointer free: pick at cursor click position
+        let rect = canvas.getBoundingClientRect();
+        px_screen = (e.clientX - rect.left) * (canvas.width / rect.width);
+        py_screen = (e.clientY - rect.top) * (canvas.height / rect.height);
+    }
+
+    pickX_screen = px_screen;
+    pickY_screen = py_screen;
+    triggerCoordPick = true;
+
+    // Run render synchronously in the user click event handler stack!
+    // This allows clipboard API to work since it's inside a user gesture.
+    if (typeof render === 'function') {
+        render();
+    }
+
+    // Attempt direct copy of the picked coordinate
+    copyCoordsToClipboardDirectly();
+
+    // Prevent default shooting/zooming etc. if pointer locked
+    if (document.pointerLockElement === canvas) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+}, true); // Capture phase is critical to run before normal game input listeners!

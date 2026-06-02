@@ -352,6 +352,12 @@ canvas { display: block; width: 100vw; height: 100vh; }
     bottom: 20px;
     left: 20px;
     width: 320px;
+    min-width: 260px;
+    min-height: 140px;
+    max-width: 90vw;
+    max-height: 90vh;
+    resize: both;
+    overflow: auto;
     z-index: 100;
     background: rgba(18, 18, 24, 0.88);
     backdrop-filter: blur(8px);

@@ -686,6 +686,20 @@ function render() {
     if (isLoading) return;
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
 
+    // Coordinate picker item sync
+    let equippedItem = inventory[hotbarSelection];
+    let isCoordPickerEquipped = equippedItem && equippedItem.id === 'coord_picker';
+    let panel = document.getElementById('picker-panel');
+    if (panel) {
+        if (isCoordPickerEquipped) {
+            panel.style.display = 'block';
+            coordPickerActive = true;
+        } else {
+            panel.style.display = 'none';
+            coordPickerActive = false;
+        }
+    }
+
     meshesBuiltThisFrame = 0;
 
     let animTime = performance.now() * 0.0015;
@@ -1605,11 +1619,11 @@ function render() {
                     let poly = [];
                     for (let j = 0; j < clipped.length; j++) {
                         let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                        let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
+                        let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
                         poly.push({ x: sx, y: sy });
                     }
-                    let px_screen = canvas.width / 2;
-                    let py_screen = canvas.height / 2;
+                    let px_screen = pickX_screen;
+                    let py_screen = pickY_screen;
                     let inside = false;
                     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
                         let xi = poly[i].x, yi = poly[i].y;
@@ -1619,14 +1633,31 @@ function render() {
                         if (intersect) inside = !inside;
                     }
                     if (inside) {
+                        let v_cx = (px_screen - canvas.width / 2) / fov;
+                        let v_cy = (hY - py_screen) / fov;
+                        let v_cz = 1.0;
+                        
+                        let ry = v_cx;
+                        let rx = v_cz * cosP - v_cy * sinP;
+                        let rz = v_cz * sinP + v_cy * cosP;
+                        
+                        let rayX = rx * cosA - ry * sinA;
+                        let rayY = rx * sinA + ry * cosA;
+                        let rayZ = rz;
+                        
+                        let rLen = Math.hypot(rayX, rayY, rayZ);
+                        rayX /= rLen;
+                        rayY /= rLen;
+                        rayZ /= rLen;
+
                         let pt0 = o.pts[0];
                         let nx = o.norm.x, ny = o.norm.y, nz = o.norm.z;
-                        let denom = aimX * nx + aimY * ny + aimZ * nz;
+                        let denom = rayX * nx + rayY * ny + rayZ * nz;
                         if (Math.abs(denom) > 1e-6) {
                             let t = ((pt0.x - camX) * nx + (pt0.y - camY) * ny + (pt0.z - camZ) * nz) / denom;
                             if (t > 0 && t < bestPickDepth) {
                                 bestPickDepth = t;
-                                bestPickPoint = { x: camX + aimX * t, y: camY + aimY * t, z: camZ + aimZ * t };
+                                bestPickPoint = { x: camX + rayX * t, y: camY + rayY * t, z: camZ + rayZ * t };
                                 bestPickVehicle = o.vehicle || null;
                             }
                         }
