@@ -477,7 +477,7 @@ function drawBillboardEmoji(obj, emoji, size, x, y, z, targeted = false, ghost =
     activeSpritesThisFrame.add(key);
     
     let mesh = threeDynamicSprites.get(key);
-    let texture = ThreeTextureCache.get(emoji, targeted, false, 1.0);
+    let texture = ThreeTextureCache.get(emoji, targeted, dead, 1.0);
     
     if (!mesh) {
         let mat = new THREE.MeshStandardMaterial({
@@ -1178,7 +1178,7 @@ function render() {
             if (e.type === 'zombie3d' || e.type === 'zombie' || e.type === 'experimental') {
                 add3DZombieFaces(e, ambientVal);
             } else {
-                drawBillboardEmoji(e, e.emoji || '👽', e.size, e.x, e.y, e.z);
+                drawBillboardEmoji(e, e.emoji || '👽', e.size, e.x, e.y, e.z, e === interactTarget, false, e.dead);
             }
         }
     }
@@ -1318,9 +1318,30 @@ function render() {
         }
     }
     
-    // Orient all active billboard meshes to face the camera
+    // Orient and apply ambient emissive boost to all active billboard meshes to match daytime surroundings
+    let dayFactor = 0.0;
+    if (gameState === 'overworld') {
+        dayFactor = Math.max(0.0, (ambientVal - 0.2) / 0.8);
+    }
+    
+    // Tone down the daytime blue sky tint by mixing with grayscale average
+    let avg = (ambientR + ambientG + ambientB) / 3;
+    let mixedR = ambientR * 0.25 + avg * 0.75;
+    let mixedG = ambientG * 0.25 + avg * 0.75;
+    let mixedB = ambientB * 0.25 + avg * 0.75;
+    
+    let emissiveIntensity = dayFactor * 0.28;
+    let emissiveColor = new THREE.Color(
+        mixedR * emissiveIntensity,
+        mixedG * emissiveIntensity,
+        mixedB * emissiveIntensity
+    );
+
     for (let mesh of activeBillboardMeshes) {
         mesh.quaternion.copy(camera.quaternion);
+        if (mesh.material && mesh.material.emissive) {
+            mesh.material.emissive.copy(emissiveColor);
+        }
     }
     
     // Run WebGL Render Call
