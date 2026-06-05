@@ -1,3 +1,7 @@
+<h1> LAST VERSION TO USE NON ACCELERATED 2D CANVAS RENDERER, SAVED FOR POSTERITY </h1>
+
+----
+
 #a total experiment. just a basic voxel based survival-fps game.\
 #just wanted to see how far it could be taken with nothing but ai models.\
 #done w essentially all gemini
