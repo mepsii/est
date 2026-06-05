@@ -848,6 +848,9 @@ document.getElementById('dbg-viewdist').oninput = e => {
     VIEW_DIST = parseInt(e.target.value);
     document.getElementById('dbg-viewdist-val').innerText = VIEW_DIST;
 };
+document.getElementById('dbg-thick-fog').onchange = e => {
+    thickFogEnabled = e.target.checked;
+};
 
 function closeStairMenu() { isStairMenuOpen = false; canvas.requestPointerLock(); }
 document.getElementById('btn-stair-up').onclick = () => { changeFloor(1); closeStairMenu(); };

@@ -96,6 +96,7 @@ function render() {
 
     renderCount = 0; 
     let sky = getSkyColor(gameTime);
+    let fogColor = (gameState === 'overworld') ? sky : { r: 10, g: 13, b: 4 };
     let ambient = getAmbientLight(gameTime);
     let visibleTorches = torches.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST);
 
@@ -125,7 +126,7 @@ function render() {
     };
 
     let fovMult = 0.7 / currentZoom; 
-    let maxForwardDist = VIEW_DIST * 1.5;
+    let maxForwardDist = VIEW_DIST;
     let cloudViewDist = VIEW_DIST * 4.0;
     if (gameState === 'overworld') {
         let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
@@ -827,7 +828,7 @@ function render() {
                 } else {
                     let dist2D = Math.hypot(dx, dy);
                     let cosTheta = rx / Math.max(0.1, dist2D);
-                    let maxDist = (VIEW_DIST * 1.5) * Math.pow(Math.max(0, cosTheta), 1.5);
+                    let maxDist = VIEW_DIST * Math.pow(Math.max(0, cosTheta), 1.5);
                     distRatio = dist2D / Math.max(0.1, maxDist);
                 }
             } else {
@@ -836,7 +837,20 @@ function render() {
         } else {
             distRatio = depth / VIEW_DIST;
         }
-        let fog = Math.min(1, distRatio);
+        let fog = 0;
+        if (thickFogEnabled) {
+            let fogStart = 0.35;
+            let fogEnd = 0.80;
+            if (gameState !== 'overworld') {
+                fogStart = 0.25;
+                fogEnd = 0.75;
+            }
+            if (distRatio > fogStart) {
+                fog = Math.min(1.0, (distRatio - fogStart) / (fogEnd - fogStart));
+            }
+        } else {
+            fog = Math.min(1, distRatio);
+        }
         
         let isUnderground = o.type === 'face' && !o.face.isWater && o.face.underground;
         if (isUnderground) objLight = 0.05; 
@@ -952,14 +966,23 @@ function render() {
                 }
                 
                 if (player.isSubmerged) {
-                    let wFog = Math.min(1, distRatio / 0.6);
+                    let wFog = 0;
+                    if (thickFogEnabled) {
+                        let wStart = 0.1;
+                        let wEnd = 0.5;
+                        if (distRatio > wStart) {
+                            wFog = Math.min(1.0, (distRatio - wStart) / (wEnd - wStart));
+                        }
+                    } else {
+                        wFog = Math.min(1, distRatio / 0.6);
+                    }
                     fr = fr * (1 - wFog) + 15 * wFog | 0;
                     fg = fg * (1 - wFog) + 50 * wFog | 0;
                     fb = fb * (1 - wFog) + 120 * wFog | 0;
                 } else {
-                    fr = fr * (1 - fog) + sky.r * fog | 0;
-                    fg = fg * (1 - fog) + sky.g * fog | 0;
-                    fb = fb * (1 - fog) + sky.b * fog | 0;
+                    fr = fr * (1 - fog) + fogColor.r * fog | 0;
+                    fg = fg * (1 - fog) + fogColor.g * fog | 0;
+                    fb = fb * (1 - fog) + fogColor.b * fog | 0;
                 }
                 
                 let colorKey;
@@ -1030,14 +1053,23 @@ function render() {
                 let fr = o.face.col.r * shade | 0, fg = o.face.col.g * shade | 0, fb = o.face.col.b * shade | 0;
 
                 if (player.isSubmerged) {
-                    let wFog = Math.min(1, distRatio / 0.6);
+                    let wFog = 0;
+                    if (thickFogEnabled) {
+                        let wStart = 0.1;
+                        let wEnd = 0.5;
+                        if (distRatio > wStart) {
+                            wFog = Math.min(1.0, (distRatio - wStart) / (wEnd - wStart));
+                        }
+                    } else {
+                        wFog = Math.min(1, distRatio / 0.6);
+                    }
                     fr = fr * (1 - wFog) + 15 * wFog | 0; 
                     fg = fg * (1 - wFog) + 50 * wFog | 0; 
                     fb = fb * (1 - wFog) + 120 * wFog | 0;
                 } else {
-                    fr = fr * (1 - fog) + sky.r * fog | 0; 
-                    fg = fg * (1 - fog) + sky.g * fog | 0; 
-                    fb = fb * (1 - fog) + sky.b * fog | 0;
+                    fr = fr * (1 - fog) + fogColor.r * fog | 0; 
+                    fg = fg * (1 - fog) + fogColor.g * fog | 0; 
+                    fb = fb * (1 - fog) + fogColor.b * fog | 0;
                 }
                 if (o.face.col.a !== undefined) {
                     ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${o.face.col.a})`;
@@ -1118,7 +1150,7 @@ function render() {
                             ctx, o.texture,
                             sx0, sy0, sx1, sy1, sx2, sy2,
                             p0.u, p0.v, p1.u, p1.v, p2.u, p2.v,
-                            shade, o.flash, fog, sky,
+                            shade, o.flash, fog, fogColor,
                             o.alpha !== undefined ? o.alpha : 1.0
                         );
                     }
@@ -1136,9 +1168,9 @@ function render() {
                         ctx.stroke();
                     }
                 } else {
-                    let fr = o.flash ? 255 : (o.color.r * shade * (1-fog) + sky.r * fog | 0);
-                    let fg = o.flash ? 255 : (o.color.g * shade * (1-fog) + sky.g * fog | 0);
-                    let fb = o.flash ? 255 : (o.color.b * shade * (1-fog) + sky.b * fog | 0);
+                    let fr = o.flash ? 255 : (o.color.r * shade * (1-fog) + fogColor.r * fog | 0);
+                    let fg = o.flash ? 255 : (o.color.g * shade * (1-fog) + fogColor.g * fog | 0);
+                    let fb = o.flash ? 255 : (o.color.b * shade * (1-fog) + fogColor.b * fog | 0);
                     if (o.targeted) {
                         fr = Math.min(255, fr + 40);
                         fg = Math.min(255, fg + 40);
@@ -1515,9 +1547,12 @@ function render() {
                 }
                 ctx.restore();
             } else if (o.type === 'dmgText') {
+                ctx.save();
+                ctx.globalAlpha = 1 - fog;
                 ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/depth) + 'px sans-serif';
                 if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
                 ctx.fillText(o.text, sx, sy);
+                ctx.restore();
             } else if (o.type === 'blood') {
                 ctx.save();
                 ctx.globalAlpha = (1 - fog) * Math.min(1.0, o.life / 60.0);
@@ -1606,7 +1641,10 @@ function render() {
                 if (o.ghost) ctx.globalAlpha = 1.0;
                 ctx.restore();
             } else {
+                ctx.save();
+                ctx.globalAlpha = 1 - fog;
                 ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/depth), 0, 7); ctx.fill();
+                ctx.restore();
             }
         }
     }
