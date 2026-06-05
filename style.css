@@ -413,3 +413,72 @@ canvas { display: block; width: 100vw; height: 100vh; }
     border-color: #ffaa00;
     transform: scale(0.95);
 }
+
+/* CROSSHAIR & SUBMERGED OVERLAY STYLES */
+#crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    z-index: 15;
+    display: none;
+}
+#crosshair.visible {
+    display: block;
+}
+#crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: white;
+    transition: background-color 0.1s;
+}
+/* Horizontal line */
+#crosshair::before {
+    top: 7px;
+    left: 0;
+    width: 16px;
+    height: 2px;
+}
+/* Vertical line */
+#crosshair::after {
+    top: 0;
+    left: 7px;
+    width: 2px;
+    height: 16px;
+}
+/* Recoil state */
+#crosshair.recoil::before, #crosshair.recoil::after {
+    background: red;
+}
+/* Zoom state */
+#crosshair.zoomed::before {
+    top: 7.5px;
+    left: 4px;
+    width: 8px;
+    height: 1px;
+}
+#crosshair.zoomed::after {
+    top: 4px;
+    left: 7.5px;
+    width: 1px;
+    height: 8px;
+}
+
+#submerged-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(10, 50, 130, 0.4);
+    pointer-events: none;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+#submerged-overlay.visible {
+    opacity: 1;
+}

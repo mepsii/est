@@ -1,38 +1,547 @@
 //THIS IS render.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+let threeInitialized = false;
+let scene, camera, renderer;
+let ambientLight, sunLight, flashlight;
+let threeChunks = new Map();
+let threeDynamicSprites = new Map();
+let threePointLights = new Map();
+let dynamicSolidMesh;
+let dynamicCloudMesh;
+let dynamicPlayerMesh;
+let dynamicZombieMesh;
+let playerTexture = null;
+let zombieTexture = null;
+let aimBox;
+let pickerBox;
+let sunSprite = null;
+let moonSprite = null;
+let heldWeaponGroup;
+
+// Helper to convert hex colors to rgb
+function hexToRgb(hex) {
+    let cleanHex = hex.replace('#', '');
+    if (cleanHex.length === 3) {
+        cleanHex = cleanHex.split('').map(c => c + c).join('');
+    }
+    let num = parseInt(cleanHex, 16);
+    return {
+        r: (num >> 16) & 255,
+        g: (num >> 8) & 255,
+        b: num & 255
+    };
+}
+
+// Cache canvas-based emoji sprites in THREE.CanvasTexture to prevent GPU upload overhead
+const ThreeTextureCache = {
+    textures: new Map(),
+    get(emoji, shadow, rotate, ambient) {
+        let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20);
+        const key = `${emoji}_${shadow}_${rotate}_${ambStep}`;
+        if (this.textures.has(key)) return this.textures.get(key);
+        
+        const canvas = SpriteCache.get(emoji, shadow, rotate, ambient);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        this.textures.set(key, texture);
+        return texture;
+    },
+    clear() {
+        for (let t of this.textures.values()) t.dispose();
+        this.textures.clear();
+    }
+};
+
+// Retrieve or load player skin canvas texture
+function getPlayerTexture() {
+    let skinSource = (minecraftPlayerSkinImg.complete && minecraftPlayerSkinImg.naturalWidth > 0) ? minecraftPlayerSkinImg : fallbackPlayerSkinCanvas;
+    if (!playerTexture) {
+        playerTexture = new THREE.CanvasTexture(skinSource);
+        playerTexture.minFilter = THREE.NearestFilter;
+        playerTexture.magFilter = THREE.NearestFilter;
+    } else if (playerTexture.image !== skinSource) {
+        playerTexture.image = skinSource;
+        playerTexture.needsUpdate = true;
+    }
+    return playerTexture;
+}
+
+// Retrieve or load zombie skin canvas texture
+function getZombieTexture() {
+    let skinSource = (minecraftZombieSkinImg.complete && minecraftZombieSkinImg.naturalWidth > 0) ? minecraftZombieSkinImg : fallbackZombieSkinCanvas;
+    if (!zombieTexture) {
+        zombieTexture = new THREE.CanvasTexture(skinSource);
+        zombieTexture.minFilter = THREE.NearestFilter;
+        zombieTexture.magFilter = THREE.NearestFilter;
+    } else if (zombieTexture.image !== skinSource) {
+        zombieTexture.image = skinSource;
+        zombieTexture.needsUpdate = true;
+    }
+    return zombieTexture;
+}
+
+// Cache damage number canvases
+const DmgTextCache = {
+    textures: new Map(),
+    get(text) {
+        if (this.textures.has(text)) return this.textures.get(text);
+        const c = document.createElement('canvas');
+        c.width = 128; c.height = 64;
+        const cx = c.getContext('2d');
+        cx.font = 'bold 36px sans-serif';
+        cx.fillStyle = 'rgb(255, 50, 50)';
+        cx.textAlign = 'center';
+        cx.textBaseline = 'middle';
+        cx.fillText(text, 64, 32);
+        
+        const texture = new THREE.CanvasTexture(c);
+        this.textures.set(text, texture);
+        return texture;
+    }
+};
+
+// Initialize Three.js scene, camera, lights, and mesh containers
+function initThree() {
+    camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
+    scene = new THREE.Scene();
+    
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    
+    // Ambient light
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambientLight);
+    
+    // Directional day/night cycle light
+    sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    scene.add(sunLight);
+    
+    // Flashlight Spotlight (attached to camera)
+    flashlight = new THREE.SpotLight(0xffffff, 2.0, 45, Math.PI / 5, 0.5, 1);
+    camera.add(flashlight);
+    camera.add(flashlight.target);
+    flashlight.target.position.set(0, 0, -1);
+    
+    scene.add(camera);
+    
+    // Voxel selection target box mesh
+    const aimGeo = new THREE.BoxGeometry(1.002, 1.002, 1.002);
+    const aimMat = new THREE.MeshBasicMaterial({
+        color: 0xffaa00,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false
+    });
+    aimBox = new THREE.Mesh(aimGeo, aimMat);
+    aimBox.visible = false;
+    scene.add(aimBox);
+    
+    // Coord picker box mesh
+    const pickerGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
+    const pickerMat = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false
+    });
+    pickerBox = new THREE.Mesh(pickerGeo, pickerMat);
+    pickerBox.visible = false;
+    scene.add(pickerBox);
+    
+    // Group for rendering first-person held weapons
+    heldWeaponGroup = new THREE.Group();
+    camera.add(heldWeaponGroup);
+    
+    // Dynamic Solid Color mesh for weapons, vehicles, limbs
+    const solidGeo = new THREE.BufferGeometry();
+    const solidMat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+    });
+    dynamicSolidMesh = new THREE.Mesh(solidGeo, solidMat);
+    scene.add(dynamicSolidMesh);
+    
+    // Dynamic transparent mesh for clouds
+    const cloudGeo = new THREE.BufferGeometry();
+    const cloudMat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false
+    });
+    dynamicCloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+    scene.add(dynamicCloudMesh);
+    
+    // Dynamic Player Steve skin mesh
+    const playerGeo = new THREE.BufferGeometry();
+    const playerMat = new THREE.MeshStandardMaterial({
+        map: getPlayerTexture(),
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+    });
+    dynamicPlayerMesh = new THREE.Mesh(playerGeo, playerMat);
+    scene.add(dynamicPlayerMesh);
+    
+    // Dynamic Zombie skin mesh
+    const zombieGeo = new THREE.BufferGeometry();
+    const zombieMat = new THREE.MeshStandardMaterial({
+        map: getZombieTexture(),
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+    });
+    dynamicZombieMesh = new THREE.Mesh(zombieGeo, zombieMat);
+    scene.add(dynamicZombieMesh);
+    
+    threeInitialized = true;
+}
+
+// Check if viewport size changed and update renderer
+function checkResize() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        if (threeInitialized) {
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+    }
+}
+
+// Convert chunk faces from WASM/JS mesher to persistent BufferGeometries in Three.js
+function updateChunkMesh(key, faces) {
+    if (threeChunks.has(key)) {
+        const cached = threeChunks.get(key);
+        scene.remove(cached.solidMesh);
+        if (cached.solidMesh) cached.solidMesh.geometry.dispose();
+        scene.remove(cached.waterMesh);
+        if (cached.waterMesh) cached.waterMesh.geometry.dispose();
+        if (cached.entities) {
+            for (let sprite of cached.entities) {
+                scene.remove(sprite);
+            }
+        }
+        threeChunks.delete(key);
+    }
+    
+    if (!faces || faces.length === 0) return;
+    
+    const solidFaces = [];
+    const waterFaces = [];
+    for (let f of faces) {
+        if (f.isWater) waterFaces.push(f);
+        else solidFaces.push(f);
+    }
+    
+    const solidMesh = buildFacesMesh(solidFaces, false);
+    const waterMesh = buildFacesMesh(waterFaces, true);
+    
+    if (solidMesh) scene.add(solidMesh);
+    if (waterMesh) scene.add(waterMesh);
+    
+    // Build static billboards inside chunk (trees, rocks, flowers, cactuses, skulls)
+    let [cx, cy] = key.split(',').map(Number);
+    let chunkEntities = getMapChunk(cx, cy);
+    const entitiesSprites = [];
+    
+    for (let obj of chunkEntities) {
+        let ambientVal = getAmbientLight(gameTime);
+        let texture = ThreeTextureCache.get(obj.emoji, false, false, ambientVal);
+        let mat = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            fog: true
+        });
+        let sprite = new THREE.Sprite(mat);
+        let size = obj.size;
+        
+        // Base aligned coordinate system mapping
+        sprite.position.set(obj.wx, obj.h + size / 2, obj.wy);
+        sprite.scale.set(size * 1.5, size * 1.5, 1.0);
+        scene.add(sprite);
+        entitiesSprites.push(sprite);
+    }
+    
+    threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: entitiesSprites });
+}
+
+// Helper to batch faces to single BufferGeometry mesh
+function buildFacesMesh(faces, isWater) {
+    if (faces.length === 0) return null;
+    
+    const positions = [];
+    const colors = [];
+    const normals = [];
+    const indices = [];
+    let vertCount = 0;
+    
+    for (let f of faces) {
+        const pts = f.pts;
+        if (pts.length < 3) continue;
+        
+        for (let pt of pts) {
+            positions.push(pt.x, pt.z, pt.y);
+            
+            // Apply AO / directional shading factor baked into vertex color
+            const r = (f.col.r / 255) * f.shade;
+            const g = (f.col.g / 255) * f.shade;
+            const b = (f.col.b / 255) * f.shade;
+            const a = f.col.a !== undefined ? f.col.a : 1.0;
+            colors.push(r, g, b, a);
+            
+            normals.push(f.norm.x, f.norm.z, f.norm.y);
+        }
+        
+        // Split quads into triangles
+        indices.push(vertCount, vertCount + 1, vertCount + 2);
+        if (pts.length === 4) {
+            indices.push(vertCount, vertCount + 2, vertCount + 3);
+            vertCount += 4;
+        } else {
+            vertCount += 3;
+        }
+    }
+    
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setIndex(indices);
+    
+    let material;
+    if (isWater) {
+        material = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.1,
+            metalness: 0.1,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide
+        });
+    } else {
+        material = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.8,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+    }
+    
+    return new THREE.Mesh(geometry, material);
+}
+
+// Temporary geometry buffer arrays for dynamic frame-by-frame batched models
+const dynamicBuffers = {
+    solid: { positions: [], colors: [], normals: [], indices: [], vertCount: 0 },
+    cloud: { positions: [], colors: [], normals: [], indices: [], vertCount: 0 },
+    player: { positions: [], colors: [], normals: [], uvs: [], indices: [], vertCount: 0 },
+    zombie: { positions: [], colors: [], normals: [], uvs: [], indices: [], vertCount: 0 }
+};
+
+// Add triangle/quad faces to frame buffers
+function addFaceToDynamicBuffer(bufferType, facePts, colorObj, norm, uvs = null) {
+    const buf = dynamicBuffers[bufferType];
+    const vStart = buf.vertCount;
+    
+    for (let i = 0; i < facePts.length; i++) {
+        const pt = facePts[i];
+        buf.positions.push(pt.x, pt.z, pt.y);
+        
+        const r = colorObj.r / 255;
+        const g = colorObj.g / 255;
+        const b = colorObj.b / 255;
+        const a = colorObj.a !== undefined ? colorObj.a : 1.0;
+        buf.colors.push(r, g, b, a);
+        
+        buf.normals.push(norm.x, norm.z, norm.y);
+        
+        if (uvs && uvs[i]) {
+            buf.uvs.push(uvs[i].u, uvs[i].v);
+        }
+    }
+    
+    buf.indices.push(vStart, vStart + 1, vStart + 2);
+    if (facePts.length === 4) {
+        buf.indices.push(vStart, vStart + 2, vStart + 3);
+        buf.vertCount += 4;
+    } else {
+        buf.vertCount += 3;
+    }
+}
+
+// Upload frame dynamic buffers to dynamic geometries
+function uploadDynamicBuffers() {
+    updateBufferGeometry(dynamicSolidMesh.geometry, dynamicBuffers.solid, false);
+    updateBufferGeometry(dynamicCloudMesh.geometry, dynamicBuffers.cloud, false);
+    updateBufferGeometry(dynamicPlayerMesh.geometry, dynamicBuffers.player, true);
+    updateBufferGeometry(dynamicZombieMesh.geometry, dynamicBuffers.zombie, true);
+}
+
+function updateBufferGeometry(geometry, data, hasUVs) {
+    if (data.vertCount === 0) {
+        geometry.setIndex([]);
+        return;
+    }
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 4));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+    if (hasUVs) {
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
+    }
+    geometry.setIndex(data.indices);
+    geometry.computeBoundingSphere();
+}
+
+// Render dynamic billboards (monsters, chests, animals) using pooled Canvas textures
+const activeSpritesThisFrame = new Set();
+const activePointLightsThisFrame = new Set();
+
+function drawBillboardEmoji(obj, emoji, size, x, y, z, targeted = false, ghost = false, dead = false, spinScaleX = undefined) {
+    let key = obj;
+    activeSpritesThisFrame.add(key);
+    
+    let sprite = threeDynamicSprites.get(key);
+    let ambientVal = getAmbientLight(gameTime);
+    let texture = ThreeTextureCache.get(emoji, targeted, false, ambientVal);
+    
+    if (!sprite) {
+        let mat = new THREE.SpriteMaterial({ map: texture, transparent: true, fog: true });
+        sprite = new THREE.Sprite(mat);
+        scene.add(sprite);
+        threeDynamicSprites.set(key, sprite);
+    } else {
+        sprite.material.map = texture;
+        sprite.material.opacity = ghost ? 0.5 : 1.0;
+        sprite.material.needsUpdate = true;
+    }
+    
+    sprite.position.set(x, z + size / 2, y);
+    
+    let scaleX = size * 1.5;
+    if (spinScaleX !== undefined) {
+        scaleX *= spinScaleX;
+    }
+    sprite.scale.set(scaleX, size * 1.5, 1.0);
+}
+
+// Render point light sources for torches
+function drawTorchLight(c) {
+    let key = c;
+    activePointLightsThisFrame.add(key);
+    
+    let light = threePointLights.get(key);
+    if (!light) {
+        light = new THREE.PointLight(0xffaa44, 2.0, 22, 1.5);
+        scene.add(light);
+        threePointLights.set(key, light);
+    }
+    light.position.set(c.x, c.z + 0.5, c.y);
+    light.intensity = c.flicker * 2.0;
+}
+
+// Rebuild and attach the held weapon model in first-person view
+let lastHeldWeaponId = null;
+
+function updateHeldWeapon(wData) {
+    let wName = wData.name.toLowerCase();
+    let model = WEAPON_MODELS[wName];
+    if (!model || wData.isMelee) {
+        heldWeaponGroup.visible = false;
+        return;
+    }
+    
+    heldWeaponGroup.visible = true;
+    if (lastHeldWeaponId === wData.name) return;
+    lastHeldWeaponId = wData.name;
+    
+    while(heldWeaponGroup.children.length > 0) {
+        let child = heldWeaponGroup.children[0];
+        heldWeaponGroup.remove(child);
+        child.geometry.dispose();
+    }
+    
+    let conf = WEAPON_MODEL_CONFIG[wName] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
+    const positions = [];
+    const colors = [];
+    const normals = [];
+    const indices = [];
+    let vertCount = 0;
+    
+    for (let f of model.faces) {
+        let pts = [];
+        for (let v of f.pts) {
+            let r = rotate3D(v.x, v.y, v.z, conf.rotX, conf.rotY, conf.rotZ);
+            let mx = r.x * conf.scale;
+            let my = -r.z * conf.scale;
+            let mz = r.y * conf.scale;
+            pts.push({ x: mx, y: mz, z: -my });
+        }
+        
+        for (let pt of pts) {
+            positions.push(pt.x, pt.y, pt.z);
+            colors.push(f.color.r / 255, f.color.g / 255, f.color.b / 255, 1.0);
+        }
+        
+        let ux = pts[1].x - pts[0].x, uy = pts[1].y - pts[0].y, uz = pts[1].z - pts[0].z;
+        let wx = pts[2].x - pts[0].x, wy = pts[2].y - pts[0].y, wz = pts[2].z - pts[0].z;
+        let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+        let len = Math.hypot(nx, ny, nz);
+        
+        for (let i = 0; i < pts.length; i++) {
+            normals.push(nx/len, ny/len, nz/len);
+        }
+        
+        indices.push(vertCount, vertCount + 1, vertCount + 2);
+        vertCount += 3;
+    }
+    
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geom.setIndex(indices);
+    
+    const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.5,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+    });
+    
+    const mesh = new THREE.Mesh(geom, mat);
+    heldWeaponGroup.add(mesh);
+}
+
+// MAIN RENDER LOOP ROUTINE
 function render() {
     if (isLoading) return;
     if (isPaused && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen) return;
-
-    // Coordinate picker item sync
-    let equippedItem = inventory[hotbarSelection];
-    let isCoordPickerEquipped = equippedItem && equippedItem.id === 'coord_picker';
-    let panel = document.getElementById('picker-panel');
-    if (panel) {
-        if (isCoordPickerEquipped) {
-            panel.style.display = 'block';
-            coordPickerActive = true;
-        } else {
-            panel.style.display = 'none';
-            coordPickerActive = false;
-        }
+    
+    checkResize();
+    
+    if (!threeInitialized) {
+        initThree();
     }
-
-    meshesBuiltThisFrame = 0;
-
-    let animTime = performance.now() * 0.0015;
-
+    
     let realPlayerX = player.x;
     let realPlayerY = player.y;
-
+    
     let bestPickDepth = Infinity;
     let bestPickPoint = null;
     let bestPickVehicle = null;
-
+    
     let waterBob = player.isSubmerged ? Math.sin(gameTime * 200) * 0.05 : 0;
     let camX, camY, camZ;
     let renderAngle, renderPitch;
-
+    
     if (freecam) {
         camX = freecamX;
         camY = freecamY;
@@ -43,9 +552,9 @@ function render() {
         camX = player.x;
         camY = player.y;
         camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
-
+        
         if (!player.inVehicle && (player.view === '3rd_back' || player.view === '3rd_front')) {
-            let dist = 4.2; // Pulled back from 3.2
+            let dist = 4.2;
             let startX = player.x;
             let startY = player.y;
             let startZ = player.z + 1.0;
@@ -63,12 +572,12 @@ function render() {
                 }
             }
             if (reachedDist < 0.25) reachedDist = 0.25;
-
+            
             camX = player.x + Math.cos(player.angle) * dirSign * reachedDist;
             camY = player.y + Math.sin(player.angle) * dirSign * reachedDist;
             camZ = startZ + (0.2 / dist) * reachedDist + (player.zOffset || 0) + waterBob;
         }
-
+        
         renderAngle = player.angle;
         renderPitch = player.pitch;
         let isFrontView = (player.inVehicle ? player.vehicleView === '3rd_front' : player.view === '3rd_front');
@@ -77,77 +586,133 @@ function render() {
             renderPitch = -player.pitch;
         }
     }
-
+    
     player.x = camX;
     player.y = camY;
-
-    // Set file-level globals for sub-drawing functions:
+    
     currentCamX = camX;
     currentCamY = camY;
     currentCamZ = camZ;
     currentCamAngle = renderAngle;
     currentCamPitch = renderPitch;
-
-    const fov = canvas.width * currentZoom, hY = canvas.height/2 + renderPitch;
-    const cosA = Math.cos(renderAngle), sinA = Math.sin(renderAngle);
-    const pitchAngle = Math.atan2(renderPitch, fov);
-    const cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
-    const aimX = cosA * Math.cos(pitchAngle), aimY = sinA * Math.cos(pitchAngle), aimZ = Math.sin(pitchAngle);
-
-    renderCount = 0; 
+    
+    // Position and rotate Three.js camera
+    camera.position.set(camX, camZ, camY);
+    camera.rotation.set(0, 0, 0, 'YXZ');
+    camera.rotation.y = -renderAngle - Math.PI / 2;
+    camera.rotation.x = Math.atan2(renderPitch, canvas.width * currentZoom);
+    
+    // Smooth camera FOV zooming updates
+    let fovDegrees = parseInt(document.getElementById('dbg-fov').value || 80);
+    let targetHFov = isZooming ? fovDegrees / 2.0 : fovDegrees;
+    let aspect = window.innerWidth / window.innerHeight;
+    camera.fov = (2 * Math.atan(Math.tan((targetHFov * Math.PI) / 360) / aspect) * 180) / Math.PI;
+    camera.updateProjectionMatrix();
+    
     let sky = getSkyColor(gameTime);
     let fogColor = (gameState === 'overworld') ? sky : { r: 10, g: 13, b: 4 };
-    let ambient = getAmbientLight(gameTime);
-    let visibleTorches = torches.filter(c => Math.hypot(c.x - player.x, c.y - player.y) < VIEW_DIST);
-
-    ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = `rgb(${sky.r|0}, ${sky.g|0}, ${sky.b|0})`; 
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    function project3D(px, py, pz) {
-        let dx = px - player.x, dy = py - player.y, dz = pz - camZ;
-        let rx = dx * cosA + dy * sinA;
-        let ry = dx * -sinA + dy * cosA;
-        let rz = dz;
-        let cx = ry;
-        let cy = rz * cosP - rx * sinP;
-        let cz = rz * sinP + rx * cosP;
-        if (cz < 0.1) return null; 
-        let sx = canvas.width/2 + (cx / cz) * fov;
-        let sy = canvas.height/2 - (cy / cz) * fov;
-        return { sx, sy, depth: cz };
+    let fogColorHex = (fogColor.r << 16) | (fogColor.g << 8) | fogColor.b;
+    let ambientVal = getAmbientLight(gameTime);
+    
+    // Update sky color and dynamic GPU fog
+    renderer.setClearColor(fogColorHex, 1.0);
+    scene.background = new THREE.Color(fogColorHex);
+    
+    if (thickFogEnabled) {
+        scene.fog = new THREE.Fog(fogColorHex, VIEW_DIST * 0.25, VIEW_DIST * 0.8);
+    } else {
+        scene.fog = new THREE.Fog(fogColorHex, VIEW_DIST * 0.5, VIEW_DIST * 1.1);
     }
-
-    const getDepth = (x, y, z) => {
-        let dx = x - player.x, dy = y - player.y, dz = z - camZ;
-        let rx = dx * cosA + dy * sinA;
-        let rz = dz;
-        return rz * sinP + rx * cosP;
-    };
-
-    let fovMult = 0.7 / currentZoom; 
+    
+    // Sync ambient and directional lighting
+    ambientLight.color.setRGB(sky.r / 255, sky.g / 255, sky.b / 255);
+    ambientLight.intensity = (gameState === 'overworld') ? ambientVal * 0.5 + 0.1 : 0.15;
+    
+    let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
+    let sunDx = Math.cos(sunTimeAngle) * 500;
+    let sunDz = Math.sin(sunTimeAngle) * 500;
+    let sunDy = 150;
+    sunLight.position.set(sunDx, sunDz, sunDy).normalize();
+    
+    if (sunDz > 0) {
+        sunLight.color.setRGB(1.0, 0.95, 0.9);
+        sunLight.intensity = (sunDz / 500) * 0.9;
+    } else {
+        sunLight.color.setRGB(0.5, 0.6, 0.8);
+        sunLight.intensity = (Math.abs(sunDz) / 500) * 0.25;
+    }
+    if (gameState !== 'overworld') {
+        sunLight.intensity = 0.02;
+    }
+    
+    // Update player flashlight spotlight
+    if (isFlashlightOn) {
+        flashlight.intensity = 2.5;
+    } else {
+        flashlight.intensity = 0.0;
+    }
+    
+    // Clear frame temporary dynamic buffers
+    dynamicBuffers.solid = { positions: [], colors: [], normals: [], indices: [], vertCount: 0 };
+    dynamicBuffers.cloud = { positions: [], colors: [], normals: [], indices: [], vertCount: 0 };
+    dynamicBuffers.player = { positions: [], colors: [], normals: [], uvs: [], indices: [], vertCount: 0 };
+    dynamicBuffers.zombie = { positions: [], colors: [], normals: [], uvs: [], indices: [], vertCount: 0 };
+    
+    activeSpritesThisFrame.clear();
+    activePointLightsThisFrame.clear();
+    
+    // Sync static chunks terrain persistent meshes
+    let pCx = Math.floor(player.x / CHUNK_SIZE);
+    let pCy = Math.floor(player.y / CHUNK_SIZE);
     let maxForwardDist = VIEW_DIST * 1.15;
-    let cloudViewDist = VIEW_DIST * 4.0;
+    let chunkRadius = Math.ceil(maxForwardDist / CHUNK_SIZE);
+    
+    const visibleChunks = new Set();
+    
     if (gameState === 'overworld') {
-        let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
-        let sunDx = Math.cos(sunTimeAngle) * 50000;
-        let sunDz = Math.sin(sunTimeAngle) * 50000;
-        let sunDy = 15000; 
-        let distSqCel = sunDx*sunDx + sunDy*sunDy + sunDz*sunDz;
-        
-        let sunRotX = sunDx * cosA + sunDy * sinA;
-        if (sunRotX > 0) {
-            let o = getRenderItem(); o.type = 'celestial'; o.emoji = '☀️'; o.depthSq = distSqCel;
-            o.wX = player.x + sunDx; o.wY = player.y + sunDy; o.h = camZ + sunDz; o.size = 6000;
+        for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
+            for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
+                let dx = cx * CHUNK_SIZE + CHUNK_SIZE/2 - player.x, dy = cy * CHUNK_SIZE + CHUNK_SIZE/2 - player.y;
+                let dist2D = Math.hypot(dx, dy);
+                if (dist2D > maxForwardDist + CHUNK_SIZE * 2.0) continue;
+                
+                let key = `${cx},${cy}`;
+                visibleChunks.add(key);
+                
+                let faces = chunkMeshes.get(key);
+                if (!faces) {
+                    getMapChunk(cx, cy);
+                    faces = getChunkMesh(cx, cy);
+                }
+                
+                let cached = threeChunks.get(key);
+                if (!cached || cached.facesRef !== faces) {
+                    updateChunkMesh(key, faces);
+                }
+            }
         }
-        
-        let moonDx = -sunDx, moonDy = -sunDy, moonDz = -sunDz;
-        let moonRotX = moonDx * cosA + moonDy * sinA;
-        if (moonRotX > 0) {
-            let o = getRenderItem(); o.type = 'celestial'; o.emoji = '🌕'; o.depthSq = distSqCel;
-            o.wX = player.x + moonDx; o.wY = player.y + moonDy; o.h = camZ + moonDz; o.size = 5000;
+    }
+    
+    // Evict distant chunk terrain meshes
+    for (let key of threeChunks.keys()) {
+        if (!visibleChunks.has(key)) {
+            const cached = threeChunks.get(key);
+            scene.remove(cached.solidMesh);
+            if (cached.solidMesh) cached.solidMesh.geometry.dispose();
+            scene.remove(cached.waterMesh);
+            if (cached.waterMesh) cached.waterMesh.geometry.dispose();
+            if (cached.entities) {
+                for (let sprite of cached.entities) {
+                    scene.remove(sprite);
+                }
+            }
+            threeChunks.delete(key);
         }
-
+    }
+    
+    // Run FBM clouds generator
+    if (gameState === 'overworld') {
+        let cloudViewDist = VIEW_DIST * 4.0;
         let cloudHeight = 130;
         let cloudGrid = 20;
         let cloudRad = Math.ceil(cloudViewDist / cloudGrid);
@@ -165,14 +730,13 @@ function render() {
                 cloudNoise[x + y * cGridSize] = fbm2D(cx * cloudGrid * 0.012, cy * cloudGrid * 0.012, 2);
             }
         }
-
-        let cH = 12; 
-        let colorTop = { r: 255, g: 255, b: 255 };
-        let colorBottom = { r: 210, g: 210, b: 210 };
-        let colorSide1 = { r: 235, g: 235, b: 235 };
-        let colorSide2 = { r: 220, g: 220, b: 220 };
-        let cloudAlpha = 0.5;
-
+        
+        let cH = 12;
+        let colorTop = { r: 255, g: 255, b: 255, a: 0.5 };
+        let colorBottom = { r: 210, g: 210, b: 210, a: 0.5 };
+        let colorSide1 = { r: 235, g: 235, b: 235, a: 0.5 };
+        let colorSide2 = { r: 220, g: 220, b: 220, a: 0.5 };
+        
         for (let x = 1; x < cGridSize - 1; x++) {
             for (let y = 1; y < cGridSize - 1; y++) {
                 if (cloudNoise[x + y * cGridSize] > 0.45) {
@@ -181,36 +745,21 @@ function render() {
                     let wx = cx * cloudGrid + cloudMoveX;
                     let wy = cy * cloudGrid;
                     
-                    // Cell-level pre-culling (horizontal yaw & distance)
-                    let cellCenterX = wx + cloudGrid * 0.5;
-                    let cellCenterY = wy + cloudGrid * 0.5;
-                    let cellDx = cellCenterX - player.x;
-                    let cellDy = cellCenterY - player.y;
-                    
-                    let rx = cellDx * cosA + cellDy * sinA;
-                    if (rx < -cloudGrid * 1.5 || rx > cloudViewDist) continue;
-                    let ry = cellDx * -sinA + cellDy * cosA;
-                    if (Math.abs(ry) > rx * fovMult + cloudGrid * 2.5) continue;
-                    
                     let n_px = cloudNoise[(x + 1) + y * cGridSize] > 0.45;
                     let n_nx = cloudNoise[(x - 1) + y * cGridSize] > 0.45;
                     let n_py = cloudNoise[x + (y + 1) * cGridSize] > 0.45;
                     let n_ny = cloudNoise[x + (y - 1) * cGridSize] > 0.45;
                     
                     let addCloudFace = (pts, col) => {
-                        let cX = (pts[0].x + pts[2].x)/2, cY = (pts[0].y + pts[2].y)/2, cZ = (pts[0].z + pts[2].z)/2;
-                        let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
-                        let rotX = dX * cosA + dY * sinA;
-                        if (rotX > -cloudGrid && rotX < cloudViewDist) {
-                            let fRotY = dX * -sinA + dY * cosA;
-                            if (Math.abs(fRotY) <= Math.max(0, rotX) * fovMult + cloudGrid * 2) {
-                                let o = getRenderItem();
-                                o.type = 'cloudPoly'; o.pts = pts; o.color = col; o.baseAlpha = cloudAlpha;
-                                o.depthSq = rotX * rotX;
-                            }
-                        }
+                        let u = { x: pts[1].x - pts[0].x, y: pts[1].y - pts[0].y, z: pts[1].z - pts[0].z };
+                        let w = { x: pts[2].x - pts[0].x, y: pts[2].y - pts[0].y, z: pts[2].z - pts[0].z };
+                        let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
+                        let len = Math.hypot(nx, ny, nz);
+                        let norm = { x: nx/len, y: ny/len, z: nz/len };
+                        
+                        addFaceToDynamicBuffer('cloud', pts, col, norm);
                     };
-
+                    
                     addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight} ], colorBottom);
                     addCloudFace([ {x: wx, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], colorTop);
                     
@@ -221,472 +770,294 @@ function render() {
                 }
             }
         }
-
-        let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
-        let chunkRadius = Math.ceil(maxForwardDist / CHUNK_SIZE);
+    }
+    
+    // Position revolving sun/moon billboards in the sky
+    if (gameState === 'overworld') {
+        let sunDx = Math.cos(sunTimeAngle) * 200;
+        let sunDz = Math.sin(sunTimeAngle) * 200;
+        let sunDy = 60;
         
-        for (let cx = pCx - chunkRadius; cx <= pCx + chunkRadius; cx++) {
-            for (let cy = pCy - chunkRadius; cy <= pCy + chunkRadius; cy++) {
-                let dx = cx * CHUNK_SIZE + CHUNK_SIZE/2 - player.x, dy = cy * CHUNK_SIZE + CHUNK_SIZE/2 - player.y;
-                let cRotX = dx * cosA + dy * sinA;
-                let cRotY = dx * -sinA + dy * cosA;
-                
-                if (cRotX < -CHUNK_SIZE * 1.5) continue; 
-                if (Math.abs(cRotY) > cRotX * fovMult + CHUNK_SIZE * 1.5) continue;
-                
-                let dist2D = Math.hypot(dx, dy);
-                if (dist2D > maxForwardDist + CHUNK_SIZE * 2.0) continue;
-                
-                let faces = getChunkMesh(cx, cy);
-                for (let i = 0; i < faces.length; i++) {
-                    let f = faces[i];
-                    let cX = f.cx, cY = f.cy, cZ = f.cz;
-                    let dX = cX - player.x, dY = cY - player.y, dZ = cZ - camZ;
-                    
-                    let rx = dX * cosA + dY * sinA;
-                    let ry = dX * -sinA + dY * cosA;
-                    let rz = dZ;
-                    let cz = rz * sinP + rx * cosP;
-                    
-                    if (cz > 0.1) {
-                        let cx_cam = ry;
-                        if (Math.abs(cx_cam) > cz * fovMult + 3.0) continue;
-                        
-                        let nx = f.norm.x, ny = f.norm.y, nz = f.norm.z;
-                        if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
-                        
-                        let o = getRenderItem();
-                        o.type = 'chunk_face';
-                        o.face = f;
-                        o.depthSq = cz * cz;
-                        o.wX = cX; o.wY = cY; o.h = cZ;
-                    }
-                }
-                
-                let chunk = getMapChunk(cx, cy);
-                for (let i = 0; i < chunk.length; i++) {
-                    let obj = chunk[i];
-                    let cz = getDepth(obj.wx, obj.wy, obj.h);
-                    if (cz > 0.2) {
-                        let dx = obj.wx - player.x, dy = obj.wy - player.y;
-                        let rx = dx * cosA + dy * sinA;
-                        let ry = dx * -sinA + dy * cosA;
-                        if (Math.abs(ry) < cz * fovMult + 3.0) {
-                            let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = cz*cz; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
-                        }
-                    }
-                }
+        if (!sunSprite) {
+            let texture = ThreeTextureCache.get('☀️', false, false, 1.0);
+            sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, fog: false }));
+            scene.add(sunSprite);
+        }
+        sunSprite.position.set(camera.position.x + sunDx, camera.position.y + sunDz, camera.position.z + sunDy);
+        sunSprite.scale.set(20, 20, 1);
+        
+        if (!moonSprite) {
+            let texture = ThreeTextureCache.get('🌕', false, false, 1.0);
+            moonSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, fog: false }));
+            scene.add(moonSprite);
+        }
+        moonSprite.position.set(camera.position.x - sunDx, camera.position.y - sunDz, camera.position.z - sunDy);
+        moonSprite.scale.set(16, 16, 1);
+    } else {
+        if (sunSprite) sunSprite.visible = false;
+        if (moonSprite) moonSprite.visible = false;
+    }
+    
+    // Reset CPU activeRenderList counts for dynamic skeletons mesher
+    renderCount = 0;
+    
+    // Render interior building structures
+    if (gameState === 'interior') {
+        let walls = getInteriorWalls();
+        for (let w of walls) {
+            if (w.pts) {
+                let pt0 = w.pts[0], pt1 = w.pts[1], pt2 = w.pts[2], pt3 = w.pts[3];
+                let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
+                let wx = pt2.x - pt0.x, wy = pt2.y - pt0.y, wz = pt2.z - pt0.z;
+                let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                let len = Math.hypot(nx, ny, nz);
+                let norm = { x: nx/len, y: ny/len, z: nz/len };
+                let color = typeof w.color === 'string' ? hexToRgb(w.color) : w.color;
+                addFaceToDynamicBuffer('solid', w.pts, color, norm);
+            } else {
+                let p1 = w.p1;
+                let p2 = w.p2;
+                let wh = activeBuilding.wallH;
+                let pts = [
+                    { x: p1.x, y: p1.y, z: 0 },
+                    { x: p2.x, y: p2.y, z: 0 },
+                    { x: p2.x, y: p2.y, z: wh },
+                    { x: p1.x, y: p1.y, z: wh }
+                ];
+                let ux = p2.x - p1.x, uy = p2.y - p1.y;
+                let norm = { x: -uy, y: ux, z: 0 };
+                let len = Math.hypot(norm.x, norm.y);
+                norm.x /= len; norm.y /= len;
+                let color = typeof w.color === 'string' ? hexToRgb(w.color) : w.color;
+                addFaceToDynamicBuffer('solid', pts, color, norm);
             }
         }
-
-        for (let v of vehicles) {
-            let cz = getDepth(v.x, v.y, v.z);
-            if (cz < -10) continue;
-            let dx = v.x - player.x, dy = v.y - player.y;
-            let rx = dx * cosA + dy * sinA;
-            let ry = dx * -sinA + dy * cosA;
-            if (Math.abs(ry) > cz * fovMult + 10.0) continue;
+        
+        let interiorEnts = getInteriorEntities();
+        for (let e of interiorEnts) {
+            drawBillboardEmoji(e, e.emoji, e.size, e.x, e.y, e.z, e === interactTarget);
+        }
+    }
+    
+    // Draw dynamic containers
+    for (let e of containers) {
+        let dist = Math.hypot(e.x - player.x, e.y - player.y);
+        if (dist < VIEW_DIST) {
+            drawBillboardEmoji(e, e.emoji, e.size, e.x, e.y, e.z, e === interactTarget);
+        }
+    }
+    
+    // Draw dynamic animals
+    for (let e of animals) {
+        let dist = Math.hypot(e.x - player.x, e.y - player.y);
+        if (dist < VIEW_DIST) {
+            drawBillboardEmoji(e, e.emoji, e.size, e.x, e.y, e.z, e === interactTarget, false, e.dead);
+        }
+    }
+    
+    // Draw dynamic buildings
+    for (let b of buildings) {
+        let dist = Math.hypot(b.x - player.x, b.y - player.y);
+        if (dist < VIEW_DIST) {
+            drawBillboardEmoji(b, b.emoji, 4.5, b.x, b.y, b.z, b === interactTarget);
+        }
+    }
+    
+    // Draw dynamic dropped items
+    for (let e of droppedItems) {
+        let dist = Math.hypot(e.x - player.x, e.y - player.y);
+        if (gameState === 'interior' || dist < VIEW_DIST) {
+            let itemId = e.item.id;
+            let model = itemId ? WEAPON_MODELS[itemId] : null;
+            let bobZ = Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
+            let itemZ = e.z + bobZ;
             
-            let vDist2D = Math.hypot(dx, dy);
-            if (vDist2D >= maxForwardDist * 1.5) continue;
-            if (player.inVehicle === v && player.vehicleView === '1st' && !freecam) continue; 
-            
-            let model = WEAPON_MODELS[v.type];
             if (model) {
-                let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
-                let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
+                let conf = WEAPON_MODEL_CONFIG[itemId] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
+                let scale = conf.scale * 1.5;
+                let spinAngle = e.hoverTime * 0.012;
+                let ryaw = conf.rotZ + spinAngle;
                 
                 for (let f of model.faces) {
                     let wPts = [];
                     for (let pt of f.pts) {
-                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
-                        p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
-                        
-                        let cp = Math.cos(v.pitch), sp = Math.sin(v.pitch); 
-                        let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
-                        
-                        let p2x = p1.x * cp - p1.z * sp;
-                        let p2y = p1.y;
-                        let p2z = p1.x * sp + p1.z * cp;
-                        
-                        let p3x = p2x;
-                        let p3y = p2y * cr - p2z * sr;
-                        let p3z = p2y * sr + p2z * cr;
-                        
-                        let wx = p3x * vcx - p3y * vsx;
-                        let wy = p3x * vsx + p3y * vcx;
-                        
-                        wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z + (conf.offsetZ || 0) });
+                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, ryaw);
+                        wPts.push({
+                            x: e.x + p1.x * scale,
+                            y: e.y + p1.y * scale,
+                            z: itemZ + p1.z * scale + 0.15
+                        });
                     }
                     
-                    let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
-                    let w = { x: wPts[2].x - wPts[0].x, y: wPts[2].y - wPts[0].y, z: wPts[2].z - wPts[0].z };
-                    let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
+                    let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
+                    let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
+                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                    let len = Math.hypot(nx, ny, nz);
+                    let norm = { x: nx/len, y: ny/len, z: nz/len };
                     
-                    if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
-                    
-                    let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
-                    let czFace = getDepth(cX, cY, cZ);
-                    
-                    if (czFace > 0.1) {
-                        let o = getRenderItem();
-                        o.type = 'objWorldFace'; o.pts = wPts; o.color = f.color; o.depthSq = czFace * czFace;
-                        o.wX = cX; o.wY = cY; o.h = cZ; o.norm = {x: nx, y: ny, z: nz};
-                        o.vehicle = v;
-                    }
+                    let color = e === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
+                    addFaceToDynamicBuffer('solid', wPts, color, norm);
                 }
             } else {
-                let o = getRenderItem(); o.type = 'emoji'; o.emoji = '🚚'; o.size = 4; o.depthSq = cz*cz; o.h = v.z; o.wX = v.x; o.wY = v.y; o.targeted = (v === interactTarget);
+                drawBillboardEmoji(e, e.item.emoji, 0.55, e.x, e.y, itemZ, e === interactTarget, false, false, Math.cos(e.hoverTime * 0.012));
             }
         }
-        
-        for (let e of enemies) {
-            let cz = getDepth(e.x, e.y, e.z);
-            if (cz > 0.2) {
-                let dx = e.x - player.x, dy = e.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 4.0) {
-                    let eDist2D = Math.hypot(dx, dy);
-                    if (eDist2D >= maxForwardDist) continue;
-                    
-                    if (e.type === 'zombie3d') {
-                        add3DZombieFaces(e, ambient);
-                    } else {
-                        let o = getRenderItem();
-                        o.hp = e.hp;
-                        o.flash = e.flash;
-                        o.depthSq = cz * cz;
-                        o.size = e.size;
-                        o.h = e.z;
-                        o.wX = e.x;
-                        o.wY = e.y;
-                        if (e.type === 'experimental' || e.type === 'zombie') {
-                            o.type = 'locationalEnemy';
-                            o.obj = e;
-                        } else {
-                            o.type = 'emoji';
-                            o.emoji = e.emoji || '👽';
-                        }
-                    }
-                }
+    }
+    
+    // Draw dynamic torches
+    for (let c of torches) {
+        let dist = Math.hypot(c.x - player.x, c.y - player.y);
+        if (dist < VIEW_DIST) {
+            drawBillboardEmoji(c, c.emoji, c.size, c.x, c.y, c.z);
+            drawTorchLight(c);
+        }
+    }
+    
+    // Draw dynamic projectiles
+    for (let p of projectiles) {
+        let dist = Math.hypot(p.x - player.x, p.y - player.y);
+        if (dist < VIEW_DIST) {
+            let size = 0.05;
+            let pts = [
+                { x: p.x - size, y: p.y - size, z: p.z - size },
+                { x: p.x + size, y: p.y - size, z: p.z - size },
+                { x: p.x + size, y: p.y + size, z: p.z - size },
+                { x: p.x - size, y: p.y + size, z: p.z - size },
+                { x: p.x - size, y: p.y - size, z: p.z + size },
+                { x: p.x + size, y: p.y - size, z: p.z + size },
+                { x: p.x + size, y: p.y + size, z: p.z + size },
+                { x: p.x - size, y: p.y + size, z: p.z + size }
+            ];
+            const BOX_FACES = [
+                [2, 3, 7, 6], [0, 1, 5, 4], [3, 0, 4, 7], [1, 2, 6, 5], [4, 5, 6, 7], [3, 2, 1, 0]
+            ];
+            let color = p.owner === 'player' ? { r: 255, g: 255, b: 0 } : { r: 255, g: 50, b: 50 };
+            for (let fIdx of BOX_FACES) {
+                let ptsArray = [ pts[fIdx[0]], pts[fIdx[1]], pts[fIdx[2]], pts[fIdx[3]] ];
+                addFaceToDynamicBuffer('solid', ptsArray, color, { x: 0, y: 0, z: 1 });
             }
         }
-        for (let c of torches) {
-            let cz = getDepth(c.x, c.y, c.z);
-            if (cz > 0.2) {
-                let dx = c.x - player.x, dy = c.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 4.0) {
-                    let cDist2D = Math.hypot(dx, dy);
-                    if (cDist2D >= maxForwardDist) continue;
-                    
-                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = cz*cz; o.h = c.z; o.wX = c.x; o.wY = c.y;
-                    if (ambient < 1.0) {
-                        let g = getRenderItem(); g.type = 'torchBloom'; g.depthSq = cz*cz - 0.1; g.h = c.z; g.flicker = c.flicker; g.size = c.size; g.wX = c.x; g.wY = c.y;
-                    }
-                }
-            }
+    }
+    
+    // Draw dynamic particles (blood, dirt)
+    for (let b of bloodParticles) {
+        if (b.isLimb && b.is3D) {
+            add3DLimbFaces(b, ambientVal);
+        } else {
+            let size = b.size;
+            let pts = [
+                { x: b.x - size, y: b.y - size, z: b.z },
+                { x: b.x + size, y: b.y - size, z: b.z },
+                { x: b.x + size, y: b.y + size, z: b.z },
+                { x: b.x - size, y: b.y + size, z: b.z }
+            ];
+            addFaceToDynamicBuffer('solid', pts, b.color, { x: 0, y: 0, z: 1 });
         }
-        for (let e of containers) {
-            let cz = getDepth(e.x, e.y, e.z);
-            if (cz > 0.2) {
-                let dx = e.x - player.x, dy = e.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 4.0) {
-                    let eDist2D = Math.hypot(dx, dy);
-                    if (eDist2D >= maxForwardDist) continue;
-                    
-                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y;
-                }
+    }
+    
+    // Draw dynamic coordinate picker candidate box highlight
+    if (typeof placementItem !== 'undefined' && placementItem !== null) {
+        let target = getPlacementTarget();
+        drawBillboardEmoji(placementItem, placementItem.emoji, placementItem.type === 'torch' ? 0.4 : 4.5, target.x, target.y, target.z, false, true);
+    }
+    
+    // Draw targeted voxel highlight box outline
+    let activeItem = inventory[hotbarSelection];
+    let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+    if (curW && (curW.type === 'block' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
+        let aim = getAimVoxel(curW.range);
+        if (aim) {
+            let isPlace = (curW.type === 'block');
+            let targetX = isPlace ? aim.placeX : aim.hitX;
+            let targetY = isPlace ? aim.placeY : aim.hitY;
+            let targetZ = isPlace ? aim.placeZ : aim.hitZ;
+            let isFine = (curW.type === 'block' && isVoxelCube(curW.blockId)) || curW.toolType === 'pickaxe';
+            
+            let mx = isFine ? Math.floor(targetX) : targetX;
+            let my = isFine ? Math.floor(targetY) : targetY;
+            let mz = isFine ? Math.floor(targetZ) : targetZ;
+            
+            if (isFine) {
+                aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
+                aimBox.scale.set(1, 1, 1);
+            } else {
+                aimBox.position.set(mx, mz, my);
+                aimBox.scale.set(1.4, 1.4, 1.4);
             }
-        }
-        for (let e of animals) {
-            let cz = getDepth(e.x, e.y, e.z);
-            if (cz > 0.2) {
-                let dx = e.x - player.x, dy = e.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 4.0) {
-                    let aDist2D = Math.hypot(dx, dy);
-                    if (aDist2D >= maxForwardDist) continue;
-                    
-                    let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y;
-                }
-            }
-        }
-        for (let b of buildings) {
-            let cz = getDepth(b.x, b.y, b.z);
-            if (cz > 0.2) {
-                let dx = b.x - player.x, dy = b.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 8.0) {
-                    let bDist2D = Math.hypot(dx, dy);
-                    if (bDist2D >= maxForwardDist) continue;
-                    
-                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = cz*cz; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y;
-                }
-            }
-        }
-        for (let d of damageTexts) {
-            let cz = getDepth(d.x, d.y, d.z);
-            if (cz > 0.2) {
-                let dx = d.x - player.x, dy = d.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 2.0) {
-                    let dDist2D = Math.hypot(dx, dy);
-                    if (dDist2D >= maxForwardDist) continue;
-                    
-                    let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = cz*cz; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;
-                }
-            }
-        }
-        for (let b of bloodParticles) {
-            let cz = getDepth(b.x, b.y, b.z);
-            if (cz > 0.1) {
-                let dx = b.x - player.x, dy = b.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 2.0) {
-                    let bDist2D = Math.hypot(dx, dy);
-                    if (bDist2D >= maxForwardDist) continue;
-                    
-                    if (b.isLimb && b.is3D) {
-                        add3DLimbFaces(b, ambient);
-                    } else {
-                        let o = getRenderItem();
-                        o.type = 'blood';
-                        o.color = b.color;
-                        o.size = b.size;
-                        o.depthSq = cz * cz;
-                        o.h = b.z;
-                        o.life = b.life;
-                        o.wX = b.x;
-                        o.wY = b.y;
-                        o.onGround = b.onGround;
-                        o.isPooling = b.isPooling;
-                        if (b.isLimb) {
-                            o.isLimb = true;
-                            o.limbType = b.limbType;
-                            o.vx = b.vx;
-                            o.vy = b.vy;
-                            o.vz = b.vz;
-                            o.landedAngle = b.landedAngle;
-                        }
-                    }
-                }
-            }
-        }
-        
-        if (typeof placementItem !== 'undefined' && placementItem !== null) {
-            let target = getPlacementTarget();
-            let cz = getDepth(target.x, target.y, target.z);
-            if (cz > 0.1) {
-                let dx = target.x - player.x, dy = target.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 4.0) {
-                    let pDist2D = Math.hypot(dx, dy);
-                    if (pDist2D < maxForwardDist) {
-                        let o = getRenderItem(); 
-                        o.type = 'emoji'; 
-                        o.emoji = placementItem.emoji; 
-                        o.size = placementItem.type === 'torch' ? 0.4 : 4.5; 
-                        o.depthSq = cz*cz; 
-                        o.h = target.z; 
-                        o.wX = target.x; 
-                        o.wY = target.y; 
-                        o.ghost = true;
-                    }
-                }
-            }
-        }
-
-        let activeItem = inventory[hotbarSelection];
-        let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
-
-        if (curW && (curW.type === 'block' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
-            let aim = getAimVoxel(curW.range);
-            if (aim) {
-                let isPlace = (curW.type === 'block');
-                let targetX = isPlace ? aim.placeX : aim.hitX;
-                let targetY = isPlace ? aim.placeY : aim.hitY;
-                let targetZ = isPlace ? aim.placeZ : aim.hitZ;
-                let isFine = (curW.type === 'block' && isVoxelCube(curW.blockId)) || curW.toolType === 'pickaxe';
-                
-                let mx = isFine ? Math.floor(targetX) : targetX;
-                let my = isFine ? Math.floor(targetY) : targetY;
-                let mz = isFine ? Math.floor(targetZ) : targetZ;
-                
-                let cx = mx, cy = my, cz = mz;
-                let sz = isFine ? 1.0 : 1.4;
-                if (!isFine) {
-                    cx -= sz/2; cy -= sz/2; cz -= sz/2;
-                }
-
-                let p000 = {x:cx, y:cy, z:cz}, p100 = {x:cx+sz, y:cy, z:cz}, p110 = {x:cx+sz, y:cy+sz, z:cz}, p010 = {x:cx, y:cy+sz, z:cz};
-                let p001 = {x:cx, y:cy, z:cz+sz}, p101 = {x:cx+sz, y:cy, z:cz+sz}, p111 = {x:cx+sz, y:cy+sz, z:cz+sz}, p011 = {x:cx, y:cy+sz, z:cz+sz};
-                
-                let col;
-                if (curW.type === 'block') {
-                    if (isVoxelCube(curW.blockId)) {
-                        let vCol = getVoxelColor(0, 0, 0, curW.blockId);
-                        col = { r: vCol.r, g: vCol.g, b: vCol.b, a: 0.35 };
-                    } else {
-                        col = { r: 120, g: 255, b: 120, a: 0.35 };
-                    }
-                } else {
-                    col = { r: 255, g: 80, b: 80, a: 0.35 };
-                } 
-
-                let addPF = (p1, p2, p3, p4) => {
-                    let tCx = (p1.x+p3.x)/2, tCy = (p1.y+p3.y)/2, tCz = (p1.z+p3.z)/2;
-                    let czDepth = getDepth(tCx, tCy, tCz);
-                    if (czDepth > 0.1) {
-                        let dx = tCx - player.x, dy = tCy - player.y;
-                        let rx = dx * cosA + dy * sinA;
-                        let pDist2D = Math.hypot(dx, dy);
-                        if (pDist2D >= maxForwardDist) return;
-                        
-                        let o = getRenderItem(); o.type = 'face'; 
-                        o.face = { pts: [p1,p2,p3,p4], col: col, shade: 1.0, isWater: false };
-                        o.depthSq = czDepth * czDepth;
-                        o.wX = tCx; o.wY = tCy; o.h = tCz;
-                    }
-                };
-                addPF(p001, p101, p111, p011);
-                addPF(p010, p110, p100, p000);
-                addPF(p000, p100, p101, p001);
-                addPF(p110, p010, p011, p111);
-                addPF(p100, p110, p111, p101);
-                addPF(p010, p000, p001, p011);
-            }
+            aimBox.visible = true;
+        } else {
+            aimBox.visible = false;
         }
     } else {
-        ctx.fillStyle = '#0a0d04'; ctx.fillRect(0, 0, canvas.width, hY); ctx.fillStyle = patternArmyGreenFloor; ctx.fillRect(0, Math.max(0, hY), canvas.width, canvas.height - Math.max(0, hY));
-        let interiorEnts = getInteriorEntities();
-        for (let e of interiorEnts) {
-            let cz = getDepth(e.x, e.y, e.z);
-            if (cz > 0.2) {
-                let dx = e.x - player.x, dy = e.y - player.y;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                if (Math.abs(ry) < cz * fovMult + 4.0) {
-                    let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y;
+        aimBox.visible = false;
+    }
+    
+    // Draw pick coordination highlight box
+    if (coordPickerActive && lastPickedCoord && lastPickedCoord.world) {
+        let w = lastPickedCoord.world;
+        pickerBox.position.set(w.x, w.z, w.y);
+        pickerBox.visible = true;
+    } else {
+        pickerBox.visible = false;
+    }
+    
+    // Draw vehicles
+    for (let v of vehicles) {
+        let model = WEAPON_MODELS[v.type];
+        if (model) {
+            let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+            let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
+            
+            for (let f of model.faces) {
+                let wPts = [];
+                for (let pt of f.pts) {
+                    let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
+                    p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+                    
+                    let cp = Math.cos(v.pitch), sp = Math.sin(v.pitch);
+                    let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
+                    
+                    let p2x = p1.x * cp - p1.z * sp;
+                    let p2y = p1.y;
+                    let p2z = p1.x * sp + p1.z * cp;
+                    
+                    let p3x = p2x;
+                    let p3y = p2y * cr - p2z * sr;
+                    let p3z = p2y * sr + p2z * cr;
+                    
+                    let wx = p3x * vcx - p3y * vsx;
+                    let wy = p3x * vsx + p3y * vcx;
+                    
+                    wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z + (conf.offsetZ || 0) });
                 }
+                
+                let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
+                let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
+                let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                let len = Math.hypot(nx, ny, nz);
+                let norm = { x: nx/len, y: ny/len, z: nz/len };
+                
+                let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
+                addFaceToDynamicBuffer('solid', wPts, color, norm);
             }
+        } else {
+            drawBillboardEmoji(v, '🚚', 4.0, v.x, v.y, v.z, v === interactTarget);
         }
-        let walls = getInteriorWalls();
-        for (let w of walls) {
-            if (w.pts) {
-                let cX = (w.pts[0].x + w.pts[2].x)/2, cY = (w.pts[0].y + w.pts[2].y)/2, cZ = (w.pts[0].z + w.pts[2].z)/2;
-                let cz = getDepth(cX, cY, cZ);
-                if (cz > 0.1) {
-                    let o = getRenderItem(); o.type = 'wallPoly'; o.pts = w.pts; o.color = w.color; o.depthSq = cz*cz;
-                }
+    }
+    
+    // Draw dynamic enemies
+    for (let e of enemies) {
+        let dist = Math.hypot(e.x - player.x, e.y - player.y);
+        if (dist < VIEW_DIST) {
+            if (e.type === 'zombie3d' || e.type === 'zombie' || e.type === 'experimental') {
+                add3DZombieFaces(e, ambientVal);
             } else {
-                let r1 = getDepth(w.p1.x, w.p1.y, 0), r2 = getDepth(w.p2.x, w.p2.y, 0);
-                if (r1 > 0.1 || r2 > 0.1) {
-                    let o = getRenderItem(); o.type = 'wall'; o.p1 = w.p1; o.p2 = w.p2; o.color = w.color; o.depthSq = Math.min(r1, r2)**2;
-                }
+                drawBillboardEmoji(e, e.emoji || '👽', e.size, e.x, e.y, e.z);
             }
         }
     }
-
-    // Render Dropped Items (in both overworld & interior states)
-    for (let e of droppedItems) {
-        let cz = getDepth(e.x, e.y, e.z);
-        if (cz > 0.2) {
-            let dx = e.x - player.x, dy = e.y - player.y;
-            let rx = dx * cosA + dy * sinA;
-            let ry = dx * -sinA + dy * cosA;
-            if (Math.abs(ry) < cz * fovMult + 4.0) {
-                if (gameState === 'overworld') {
-                    let eDist2D = Math.hypot(dx, dy);
-                    if (eDist2D >= maxForwardDist) continue;
-                }
-                
-                let itemId = e.item.id;
-                let model = itemId ? WEAPON_MODELS[itemId] : null;
-                
-                // Bobbing hover effect
-                let bobZ = Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
-                let itemZ = e.z + bobZ;
-
-                if (model) {
-                    // Render as 3D Model
-                    let conf = WEAPON_MODEL_CONFIG[itemId] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
-                    let scale = conf.scale * 1.5;
-                    let spinAngle = e.hoverTime * 0.012;
-                    let ryaw = conf.rotZ + spinAngle;
-
-                    for (let f of model.faces) {
-                        let wPts = [];
-                        for (let pt of f.pts) {
-                            let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, ryaw);
-                            let wx = p1.x * scale;
-                            let wy = p1.y * scale;
-                            let wz = p1.z * scale;
-                            wPts.push({ x: e.x + wx, y: e.y + wy, z: itemZ + wz + 0.15 });
-                        }
-                        
-                        let u = { x: wPts[1].x - wPts[0].x, y: wPts[1].y - wPts[0].y, z: wPts[1].z - wPts[0].z };
-                        let w = { x: wPts[2].x - wPts[0].x, y: wPts[2].y - wPts[0].y, z: wPts[2].z - wPts[0].z };
-                        let nx = u.y*w.z - u.z*w.y, ny = u.z*w.x - u.x*w.z, nz = u.x*w.y - u.y*w.x;
-                        
-                        if (nx*(wPts[0].x - player.x) + ny*(wPts[0].y - player.y) + nz*(wPts[0].z - camZ) > 0) continue;
-                        
-                        let cX = (wPts[0].x+wPts[1].x+wPts[2].x)/3, cY = (wPts[0].y+wPts[1].y+wPts[2].y)/3, cZ = (wPts[0].z+wPts[1].z+wPts[2].z)/3;
-                        let czFace = getDepth(cX, cY, cZ);
-                        
-                        if (czFace > 0.1) {
-                            let o = getRenderItem();
-                            o.type = 'objWorldFace'; 
-                            o.pts = wPts; 
-                            o.color = f.color; 
-                            o.depthSq = czFace * czFace;
-                            o.wX = cX; 
-                            o.wY = cY; 
-                            o.h = cZ; 
-                            o.norm = {x: nx, y: ny, z: nz};
-                            o.targeted = (e === interactTarget);
-                        }
-                    }
-                } else {
-                    let o = getRenderItem();
-                    o.type = 'droppedItem';
-                    o.emoji = e.item.emoji;
-                    o.size = 0.55;
-                    o.depthSq = cz * cz;
-                    o.h = itemZ;
-                    o.targeted = (e === interactTarget);
-                    o.wX = e.x;
-                    o.wY = e.y;
-                    o.spinScaleX = Math.cos(e.hoverTime * 0.012);
-                }
-            }
-        }
-    }
-
-    for (let p of projectiles) {
-        let cz = getDepth(p.x, p.y, p.z);
-        if (cz > 0.1) {
-            let dx = p.x - player.x, dy = p.y - player.y;
-            let rx = dx * cosA + dy * sinA;
-            let ry = dx * -sinA + dy * cosA;
-            if (Math.abs(ry) < cz * fovMult + 2.0) {
-                let pDist2D = Math.hypot(dx, dy);
-                if (pDist2D >= maxForwardDist) continue;
-                
-                let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = cz*cz; o.h = p.z; o.wX = p.x; o.wY = p.y;
-            }
-        }
-    }
-
+    
+    // Draw player in third person views
     let shouldRenderPlayer = false;
     if (freecam) {
         shouldRenderPlayer = true;
@@ -695,946 +1066,185 @@ function render() {
     } else {
         shouldRenderPlayer = (player.view === '3rd_back' || player.view === '3rd_front');
     }
-
     if (shouldRenderPlayer) {
-        add3DPlayerFaces(ambient, realPlayerX, realPlayerY);
+        add3DPlayerFaces(ambientVal, realPlayerX, realPlayerY);
     }
-
-    if (coordPickerActive && lastPickedCoord && lastPickedCoord.world) {
-        let mx = lastPickedCoord.world.x;
-        let my = lastPickedCoord.world.y;
-        let mz = lastPickedCoord.world.z;
-        let rSize = 0.12;
-        let pts = [
-            { x: mx - rSize, y: my - rSize, z: mz - rSize },
-            { x: mx + rSize, y: my - rSize, z: mz - rSize },
-            { x: mx + rSize, y: my + rSize, z: mz - rSize },
-            { x: mx - rSize, y: my + rSize, z: mz - rSize },
-            { x: mx - rSize, y: my - rSize, z: mz + rSize },
-            { x: mx + rSize, y: my - rSize, z: mz + rSize },
-            { x: mx + rSize, y: my + rSize, z: mz + rSize },
-            { x: mx - rSize, y: my + rSize, z: mz + rSize }
-        ];
-        
-        const BOX_FACES = [
-            [2, 3, 7, 6], // Front (+Y)
-            [0, 1, 5, 4], // Back (-Y)
-            [3, 0, 4, 7], // Left (-X)
-            [1, 2, 6, 5], // Right (+X)
-            [4, 5, 6, 7], // Top (+Z)
-            [3, 2, 1, 0]  // Bottom (-Z)
-        ];
-        
-        for (let faceIndex = 0; faceIndex < BOX_FACES.length; faceIndex++) {
-            let fIdx = BOX_FACES[faceIndex];
-            let pt0 = pts[fIdx[0]];
-            let pt1 = pts[fIdx[1]];
-            let pt2 = pts[fIdx[2]];
-            let pt3 = pts[fIdx[3]];
-            
-            let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
-            let wx = pt2.x - pt0.x, wy = pt2.y - pt0.y, wz = pt2.z - pt0.z;
-            let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-            
-            let cx = (pt0.x+pt1.x+pt2.x+pt3.x)/4;
-            let cy = (pt0.y+pt1.y+pt2.y+pt3.y)/4;
-            let cz = (pt0.z+pt1.z+pt2.z+pt3.z)/4;
-            let cz_depth = getDepth(cx, cy, cz);
-            
-            if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
-                let o = getRenderItem();
-                o.type = 'objWorldFace';
-                o.pts = [pt0, pt1, pt2, pt3];
-                o.color = { r: 255, g: 0, b: 0 };
-                o.depthSq = cz_depth * cz_depth;
-                o.wX = cx;
-                o.wY = cy;
-                o.h = cz;
-                o.norm = { x: nx, y: ny, z: nz };
-            }
-        }
-    }
-
-    activeRenderList.length = renderCount;
-    for(let i=0; i < renderCount; i++) activeRenderList[i] = renderPool[i];
-    activeRenderList.sort((a,b) => b.depthSq - a.depthSq); 
     
-    // Draw Budgeting: Scale budget dynamically from 5,000 at VIEW_DIST=80 up to 30,000 at VIEW_DIST=600
-    let drawBudget = Math.max(5000, Math.floor(5000 + (VIEW_DIST - 80) * 100));
-    if (activeRenderList.length > drawBudget) {
-        let celestials = activeRenderList.filter(o => o.type === 'celestial');
-        let clouds = activeRenderList.filter(o => o.type === 'cloudPoly');
+    // Draw floating damage numbers
+    for (let d of damageTexts) {
+        let key = d;
+        activeSpritesThisFrame.add(key);
         
-        let others = activeRenderList.filter(o => o.type !== 'celestial' && o.type !== 'cloudPoly');
-        let othersBudget = Math.max(1000, drawBudget - celestials.length - clouds.length);
-        let budgetedOthers = others.slice(others.length - othersBudget);
-        
-        // Re-combine and sort clouds and other visible items by depth to maintain correct 3D overlaps
-        activeRenderList = celestials.concat(clouds.concat(budgetedOthers).sort((a, b) => b.depthSq - a.depthSq));
+        let sprite = threeDynamicSprites.get(key);
+        let texture = DmgTextCache.get(String(Math.round(d.amt * 10) / 10));
+        if (!sprite) {
+            let mat = new THREE.SpriteMaterial({ map: texture, transparent: true, fog: true });
+            sprite = new THREE.Sprite(mat);
+            scene.add(sprite);
+            threeDynamicSprites.set(key, sprite);
+        }
+        sprite.position.set(d.x, d.z + 1.2, d.y);
+        sprite.scale.set(1.5, 0.75, 1.0);
+        sprite.material.opacity = d.life / 60.0;
+        sprite.material.needsUpdate = true;
     }
-
-    if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
-    ctx.lineJoin = 'round'; 
-
-    for (let i = 0; i < activeRenderList.length; i++) {
-        let o = activeRenderList[i];
-        
-        let objLight = gameState === 'overworld' ? ambient : 1.0;
-        
-        let depth = Math.max(0.1, Math.sqrt(Math.max(0, o.depthSq))); 
-        
-        let distRatio = 0;
-        if (o.wX !== undefined && o.wY !== undefined) {
-            let dx = o.wX - player.x, dy = o.wY - player.y;
-            let rx = dx * cosA + dy * sinA;
-            if (gameState === 'overworld') {
-                if (rx < -5) {
-                    distRatio = 999999;
-                } else {
-                    let dist2D = Math.hypot(dx, dy);
-                    distRatio = dist2D / VIEW_DIST;
+    
+    // Process standard renderPool faces (populate dynamic buffers)
+    for (let i = 0; i < renderCount; i++) {
+        let o = renderPool[i];
+        if (o.type === 'objWorldFace') {
+            let bufferType = 'solid';
+            let uvs = null;
+            if (o.texture) {
+                if (o.texture === minecraftZombieSkinImg || o.texture === fallbackSkinCanvas) {
+                    bufferType = 'zombie';
+                } else if (o.texture === minecraftPlayerSkinImg || o.texture === fallbackPlayerSkinCanvas) {
+                    bufferType = 'player';
                 }
-            } else {
-                distRatio = depth / VIEW_DIST;
-            }
-        } else {
-            distRatio = depth / VIEW_DIST;
-        }
-        let fog = 0;
-        if (thickFogEnabled) {
-            let fogStart = 0.35;
-            let fogEnd = 0.80;
-            if (gameState !== 'overworld') {
-                fogStart = 0.25;
-                fogEnd = 0.75;
-            }
-            if (distRatio > fogStart) {
-                fog = Math.min(1.0, (distRatio - fogStart) / (fogEnd - fogStart));
-            }
-        } else {
-            fog = Math.min(1, distRatio);
-        }
-        
-        let isUnderground = o.type === 'face' && !o.face.isWater && o.face.underground;
-        if (isUnderground) objLight = 0.05; 
-
-        if (objLight < 1.0 && o.type !== 'torchBloom') {
-            let lightIntensity = 0;
-            let cx = o.wX, cy = o.wY, cz = o.type === 'face' || o.type === 'objWorldFace' ? o.h : o.h + (o.size?o.size/2:0);
-            
-            if (isFlashlightOn) {
-                let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ; 
-                let lDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                if (lDist > 0.1 && lDist < 45) {
-                    let dot = (dx/lDist)*aimX + (dy/lDist)*aimY + (dz/lDist)*aimZ; 
-                    if (dot > 0.90) { 
-                        let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - lDist/45, 2);
-                        lightIntensity += att * 1.5;
-                    }
-                }
-            }
-            for (let c of visibleTorches) {
-                let dist = Math.hypot(cx - c.x, cy - c.y, cz - c.z); 
-                if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
-            }
-            objLight = Math.min(1.0, objLight + lightIntensity);
-        }
-
-        if (o.type === 'chunk_face') {
-            let f = o.face;
-            let ptsArray = f.pts;
-            let camPts = [];
-            for (let k = 0; k < ptsArray.length; k++) {
-                let z_pt = ptsArray[k].z;
-                if (f.isWater) {
-                    let zFract = z_pt - Math.floor(z_pt);
-                    if (zFract > 0.1 && zFract < 0.9) {
-                        let waveVal = Math.sin(ptsArray[k].x * 0.5 + animTime) * 
-                                      Math.cos(ptsArray[k].y * 0.5 + animTime * 0.8) * 0.08 +
-                                      Math.sin(ptsArray[k].x * 0.15 - animTime * 0.5) * 0.03;
-                        z_pt += waveVal;
-                    }
-                }
-                let dx_pt = ptsArray[k].x - player.x, dy_pt = ptsArray[k].y - player.y, dz_pt = z_pt - camZ;
-                let rx = dx_pt * cosA + dy_pt * sinA;
-                let ry = dx_pt * -sinA + dy_pt * cosA;
-                let rz = dz_pt;
-                let cx = ry;
-                let cy = rz * cosP - rx * sinP;
-                let cz = rz * sinP + rx * cosP;
-                camPts.push({ cx, cy, cz });
+                uvs = o.uvs;
             }
             
-            let clipped = [];
-            let zNear = 0.1;
-            for (let j = 0; j < camPts.length; j++) {
-                let p1 = camPts[j], p2 = camPts[(j + 1) % camPts.length];
-                if (p1.cz >= zNear) clipped.push(p1);
-                if ((p1.cz >= zNear) !== (p2.cz >= zNear)) {
-                    let t = (zNear - p1.cz) / (p2.cz - p1.cz);
-                    clipped.push({ cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear });
-                }
+            let normalizedUVs = null;
+            if (uvs) {
+                let imgW = o.texture.naturalWidth || o.texture.width || 64;
+                let imgH = o.texture.naturalHeight || o.texture.height || 64;
+                normalizedUVs = uvs.map(pt => ({
+                    u: pt.u / imgW,
+                    v: 1.0 - (pt.v / imgH)
+                }));
             }
             
-            if (clipped.length >= 3) {
-                let depth = Math.max(0.1, Math.sqrt(o.depthSq));
-                let objLightVal = objLight;
-                let isUnderground = !f.isWater && f.underground;
-                if (isUnderground) objLightVal = 0.05;
-                
-                if (objLightVal < 1.0) {
-                    let lightIntensity = 0;
-                    let cz_val = f.cz + 0.5;
-                    if (isFlashlightOn) {
-                        let dx = f.cx - player.x, dy = f.cy - player.y, dz = cz_val - camZ;
-                        let lDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                        if (lDist > 0.1 && lDist < 45) {
-                            let dot = (dx/lDist)*aimX + (dy/lDist)*aimY + (dz/lDist)*aimZ;
-                            if (dot > 0.90) {
-                                let att = (Math.max(0, (dot - 0.98) / 0.02) * 0.6 + Math.pow(Math.max(0, (dot - 0.90) / 0.08), 2.0) * 0.4) * Math.pow(1 - lDist/45, 2);
-                                lightIntensity += att * 1.5;
-                            }
-                        }
-                    }
-                    for (let c of visibleTorches) {
-                        let dist = Math.hypot(f.cx - c.x, f.cy - c.y, cz_val - c.z);
-                        if (dist < 22) { lightIntensity += Math.pow(1 - dist/22, 2.5) * c.flicker * 1.5; }
-                    }
-                    objLightVal = Math.min(1.0, objLightVal + lightIntensity);
-                }
-                
-                let shade = f.shade * objLightVal;
-                let fr = f.col.r * shade | 0, fg = f.col.g * shade | 0, fb = f.col.b * shade | 0;
-                let fAlpha = f.col.a;
-                
-                if (f.isWater) {
-                    let shimmer = Math.sin(f.cx * 1.0 + animTime) * 
-                                  Math.cos(f.cy * 1.0 + animTime * 0.7) * 0.15;
-                    
-                    shade = Math.min(1.0, Math.max(0.2, shade + shimmer * 0.2));
-                    fr = f.col.r * shade | 0;
-                    fg = f.col.g * shade | 0;
-                    fb = f.col.b * shade | 0;
-                    
-                    if (fAlpha !== undefined) {
-                        fAlpha = Math.min(0.85, Math.max(0.35, fAlpha + shimmer * 0.1));
-                    }
-                    
-                    if (shimmer > 0.05) {
-                        let highlight = (shimmer - 0.05) * 1.5;
-                        fr = Math.min(255, fr + highlight * 120) | 0;
-                        fg = Math.min(255, fg + highlight * 100) | 0;
-                        fb = Math.min(255, fb + highlight * 50) | 0;
-                    }
-                }
-                
-                if (player.isSubmerged) {
-                    let wFog = 0;
-                    if (thickFogEnabled) {
-                        let wStart = 0.1;
-                        let wEnd = 0.5;
-                        if (distRatio > wStart) {
-                            wFog = Math.min(1.0, (distRatio - wStart) / (wEnd - wStart));
-                        }
-                    } else {
-                        wFog = Math.min(1, distRatio / 0.6);
-                    }
-                    fr = fr * (1 - wFog) + 15 * wFog | 0;
-                    fg = fg * (1 - wFog) + 50 * wFog | 0;
-                    fb = fb * (1 - wFog) + 120 * wFog | 0;
-                } else {
-                    fr = fr * (1 - fog) + fogColor.r * fog | 0;
-                    fg = fg * (1 - fog) + fogColor.g * fog | 0;
-                    fb = fb * (1 - fog) + fogColor.b * fog | 0;
-                }
-                
-                let colorKey;
-                if (fAlpha !== undefined) {
-                    colorKey = `rgba(${fr}, ${fg}, ${fb}, ${fAlpha})`;
-                } else {
-                    colorKey = `rgb(${fr}, ${fg}, ${fb})`;
-                }
-                
-                ctx.lineWidth = 2.0;
-                ctx.fillStyle = colorKey;
-                ctx.strokeStyle = colorKey;
-                ctx.beginPath();
-                
-                let sx = canvas.width/2 + (clipped[0].cx / clipped[0].cz) * fov;
-                let sy = canvas.height/2 - (clipped[0].cy / clipped[0].cz) * fov;
-                ctx.moveTo(sx, sy);
-                for (let j = 1; j < clipped.length; j++) {
-                    let sx_pt = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                    let sy_pt = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
-                    ctx.lineTo(sx_pt, sy_pt);
-                }
-                ctx.closePath();
-                ctx.fill();
-                if (depth <= 35.0 && !f.isWater) {
-                    ctx.stroke();
-                }
+            let pts = o.pts;
+            let ux = pts[1].x - pts[0].x, uy = pts[1].y - pts[0].y, uz = pts[1].z - pts[0].z;
+            let wx = pts[2].x - pts[0].x, wy = pts[2].y - pts[0].y, wz = pts[2].z - pts[0].z;
+            let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+            let len = Math.hypot(nx, ny, nz);
+            let norm = len > 0 ? { x: nx/len, y: ny/len, z: nz/len } : { x: 0, y: 0, z: 1 };
+            
+            let color = o.flash ? { r: 255, g: 255, b: 255 } : o.color;
+            if (o.targeted) {
+                color = { r: Math.min(255, color.r + 40), g: Math.min(255, color.g + 40), b: Math.min(255, color.b + 40) };
             }
-        } else if (o.type === 'face' || o.type === 'wallPoly' || o.type === 'objWorldFace' || o.type === 'cloudPoly') {
-            let ptsArray = (o.type === 'objWorldFace') ? o.pts : (o.type === 'face' ? o.face.pts : o.pts);
-            let camPts = [];
-            for (let k = 0; k < ptsArray.length; k++) {
-                let dx = ptsArray[k].x - player.x, dy = ptsArray[k].y - player.y, dz = ptsArray[k].z - camZ;
-                let rx = dx * cosA + dy * sinA;
-                let ry = dx * -sinA + dy * cosA;
-                let rz = dz;
-                let cx = ry;
-                let cy = rz * cosP - rx * sinP;
-                let cz = rz * sinP + rx * cosP;
-                let cp = { cx, cy, cz };
-                if (o.uvs && o.uvs[k]) {
-                    cp.u = o.uvs[k].u;
-                    cp.v = o.uvs[k].v;
-                }
-                camPts.push(cp);
-            }
-
-            let clipped = [];
-            let zNear = 0.1;
-            for(let j=0; j<camPts.length; j++) {
-                let p1 = camPts[j], p2 = camPts[(j+1)%camPts.length];
-                if(p1.cz >= zNear) clipped.push(p1);
-                if((p1.cz >= zNear) !== (p2.cz >= zNear)) {
-                    let t = (zNear - p1.cz) / (p2.cz - p1.cz);
-                    let cp = { cx: p1.cx + t * (p2.cx - p1.cx), cy: p1.cy + t * (p2.cy - p1.cy), cz: zNear };
-                    if (o.uvs) {
-                        cp.u = p1.u + t * (p2.u - p1.u);
-                        cp.v = p1.v + t * (p2.v - p1.v);
-                    }
-                    clipped.push(cp);
-                }
+            if (o.alpha !== undefined && o.alpha < 1.0) {
+                color.a = o.alpha;
             }
             
-            if (clipped.length < 3) continue; 
-
-            if (o.type === 'face') {
-                let shade = o.face.shade * objLight;
-                let fr = o.face.col.r * shade | 0, fg = o.face.col.g * shade | 0, fb = o.face.col.b * shade | 0;
-
-                if (player.isSubmerged) {
-                    let wFog = 0;
-                    if (thickFogEnabled) {
-                        let wStart = 0.1;
-                        let wEnd = 0.5;
-                        if (distRatio > wStart) {
-                            wFog = Math.min(1.0, (distRatio - wStart) / (wEnd - wStart));
-                        }
-                    } else {
-                        wFog = Math.min(1, distRatio / 0.6);
-                    }
-                    fr = fr * (1 - wFog) + 15 * wFog | 0; 
-                    fg = fg * (1 - wFog) + 50 * wFog | 0; 
-                    fb = fb * (1 - wFog) + 120 * wFog | 0;
-                } else {
-                    fr = fr * (1 - fog) + fogColor.r * fog | 0; 
-                    fg = fg * (1 - fog) + fogColor.g * fog | 0; 
-                    fb = fb * (1 - fog) + fogColor.b * fog | 0;
-                }
-                if (o.face.col.a !== undefined) {
-                    ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${o.face.col.a})`;
-                    ctx.strokeStyle = ctx.fillStyle; 
-                } else {
-                    ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`; ctx.strokeStyle = ctx.fillStyle; 
-                }
-            } else if (o.type === 'objWorldFace') {
-                if (triggerCoordPick && clipped.length >= 3) {
-                    let poly = [];
-                    for (let j = 0; j < clipped.length; j++) {
-                        let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                        let sy = hY - (clipped[j].cy / clipped[j].cz) * fov;
-                        poly.push({ x: sx, y: sy });
-                    }
-                    let px_screen = pickX_screen;
-                    let py_screen = pickY_screen;
-                    let inside = false;
-                    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-                        let xi = poly[i].x, yi = poly[i].y;
-                        let xj = poly[j].x, yj = poly[j].y;
-                        let intersect = ((yi > py_screen) !== (yj > py_screen))
-                            && (px_screen < (xj - xi) * (py_screen - yi) / (yj - yi) + xi);
-                        if (intersect) inside = !inside;
-                    }
-                    if (inside) {
-                        let v_cx = (px_screen - canvas.width / 2) / fov;
-                        let v_cy = (hY - py_screen) / fov;
-                        let v_cz = 1.0;
-                        
-                        let ry = v_cx;
-                        let rx = v_cz * cosP - v_cy * sinP;
-                        let rz = v_cz * sinP + v_cy * cosP;
-                        
-                        let rayX = rx * cosA - ry * sinA;
-                        let rayY = rx * sinA + ry * cosA;
-                        let rayZ = rz;
-                        
-                        let rLen = Math.hypot(rayX, rayY, rayZ);
-                        rayX /= rLen;
-                        rayY /= rLen;
-                        rayZ /= rLen;
-
-                        let pt0 = o.pts[0];
-                        let nx = o.norm.x, ny = o.norm.y, nz = o.norm.z;
-                        let denom = rayX * nx + rayY * ny + rayZ * nz;
-                        if (Math.abs(denom) > 1e-6) {
-                            let t = ((pt0.x - camX) * nx + (pt0.y - camY) * ny + (pt0.z - camZ) * nz) / denom;
-                            if (t > 0 && t < bestPickDepth) {
-                                bestPickDepth = t;
-                                bestPickPoint = { x: camX + rayX * t, y: camY + rayY * t, z: camZ + rayZ * t };
-                                bestPickVehicle = o.vehicle || null;
-                            }
-                        }
-                    }
-                }
-
-                let len = Math.hypot(o.norm.x, o.norm.y, o.norm.z);
-                let nx = o.norm.x/len, ny = o.norm.y/len, nz = o.norm.z/len;
-                let sunDot = Math.max(0, nx*0.3 + ny*0.5 + nz*0.8);
-                let shade = (0.4 + sunDot * 0.6) * objLight;
-                
-                if (o.texture && o.uvs) {
-                    // Render textured triangles
-                    for (let j = 1; j < clipped.length - 1; j++) {
-                        let p0 = clipped[0];
-                        let p1 = clipped[j];
-                        let p2 = clipped[j+1];
-
-                        let sx0 = canvas.width/2 + (p0.cx / p0.cz) * fov;
-                        let sy0 = canvas.height/2 - (p0.cy / p0.cz) * fov;
-                        let sx1 = canvas.width/2 + (p1.cx / p1.cz) * fov;
-                        let sy1 = canvas.height/2 - (p1.cy / p1.cz) * fov;
-                        let sx2 = canvas.width/2 + (p2.cx / p2.cz) * fov;
-                        let sy2 = canvas.height/2 - (p2.cy / p2.cz) * fov;
-
-                        drawTexturedTriangle(
-                            ctx, o.texture,
-                            sx0, sy0, sx1, sy1, sx2, sy2,
-                            p0.u, p0.v, p1.u, p1.v, p2.u, p2.v,
-                            shade, o.flash, fog, fogColor,
-                            o.alpha !== undefined ? o.alpha : 1.0
-                        );
-                    }
-                    
-                    if (depth <= 35.0 || o.targeted) {
-                        ctx.strokeStyle = o.targeted ? 'rgba(255, 255, 255, 0.8)' : (o.flash ? 'white' : `rgba(0,0,0,0.15)`);
-                        ctx.lineWidth = 1.0;
-                        ctx.beginPath();
-                        for (let j = 0; j < clipped.length; j++) {
-                            let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                            let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
-                            if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-                        }
-                        ctx.closePath();
-                        ctx.stroke();
-                    }
-                } else {
-                    let fr = o.flash ? 255 : (o.color.r * shade * (1-fog) + fogColor.r * fog | 0);
-                    let fg = o.flash ? 255 : (o.color.g * shade * (1-fog) + fogColor.g * fog | 0);
-                    let fb = o.flash ? 255 : (o.color.b * shade * (1-fog) + fogColor.b * fog | 0);
-                    if (o.targeted) {
-                        fr = Math.min(255, fr + 40);
-                        fg = Math.min(255, fg + 40);
-                        fb = Math.min(255, fb + 40);
-                    }
-                    if (o.alpha !== undefined && o.alpha < 1.0) {
-                        ctx.fillStyle = `rgba(${fr}, ${fg}, ${fb}, ${o.alpha})`;
-                        ctx.strokeStyle = o.targeted ? `rgba(255, 255, 255, ${o.alpha * 0.8})` : (o.flash ? `rgba(255, 255, 255, ${o.alpha})` : ctx.fillStyle);
-                    } else {
-                        ctx.fillStyle = `rgb(${fr}, ${fg}, ${fb})`;
-                        ctx.strokeStyle = o.targeted ? 'rgba(255, 255, 255, 0.8)' : (o.flash ? 'white' : ctx.fillStyle);
-                    }
-                    ctx.lineWidth = 2.0;
-                    ctx.beginPath();
-                    for (let j = 0; j < clipped.length; j++) {
-                        let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                        let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
-                        if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-                    }
-                    ctx.closePath();
-                    ctx.fill();
-                    if (depth <= 35.0 || o.targeted) {
-                        ctx.stroke();
-                    }
-                }
-            } else if (o.type === 'cloudPoly') {
-                let dist = depth;
-                let fadeStart = cloudViewDist * 0.7;
-                let alphaScale = 1.0;
-                if (dist > fadeStart) {
-                    alphaScale = Math.max(0, 1.0 - (dist - fadeStart) / (cloudViewDist - fadeStart));
-                }
-                let alpha = o.baseAlpha * alphaScale;
-                let colStr = `rgba(${o.color.r}, ${o.color.g}, ${o.color.b}, ${alpha})`;
-                ctx.fillStyle = colStr;
-                ctx.strokeStyle = colStr;
-                ctx.lineWidth = 1.0;
-            } else {
-                ctx.fillStyle = o.color; ctx.strokeStyle = '#000';
-            }
-            
-            if (o.type !== 'objWorldFace') {
-                ctx.lineWidth = 2.0; 
-                ctx.beginPath();
-                for (let j = 0; j < clipped.length; j++) {
-                    let sx = canvas.width/2 + (clipped[j].cx / clipped[j].cz) * fov;
-                    let sy = canvas.height/2 - (clipped[j].cy / clipped[j].cz) * fov;
-                    if (j===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-                }
-                ctx.closePath(); 
-                ctx.fill(); 
-                // Stroke Culling: Avoid expensive strokes on far-away faces since seams are invisible at distance.
-                if (depth <= 35.0 || o.targeted) {
-                    ctx.stroke();
-                }
-            }
-            
-        } else if (o.type === 'wall') {
-            let p1 = project3D(o.p1.x, o.p1.y, 0), p2 = project3D(o.p2.x, o.p2.y, 0), p3 = project3D(o.p2.x, o.p2.y, activeBuilding.wallH), p4 = project3D(o.p1.x, o.p1.y, activeBuilding.wallH);
-            if (p1 && p2 && p3 && p4) { ctx.fillStyle = o.color; ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.lineTo(p3.sx, p3.sy); ctx.lineTo(p4.sx, p4.sy); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-        } else {
-            let p = project3D(o.wX, o.wY, o.h);
-            if (!p) continue;
-            let sx = p.sx, sy = p.sy, sz = (fov/depth)*o.size; 
-            
-            if (o.type === 'torchBloom') {
-                let f = o.flicker, flameCenterY = sy - (0.4 * o.size / depth) * fov; 
-                let distFade = Math.min(1, 40 / depth); 
-                ctx.globalCompositeOperation = 'lighter';
-                let airRad = (15.0 * o.size / depth) * fov;
-                ctx.save(); ctx.translate(sx, flameCenterY); 
-                let aGrad = ctx.createRadialGradient(0,0,0, 0,0, airRad);
-                let aAlpha = 0.15 * f * (1 - objLight) * distFade; 
-                aGrad.addColorStop(0, `rgba(255, 140, 50, ${aAlpha})`); aGrad.addColorStop(0.3, `rgba(255, 80, 20, ${aAlpha * 0.5})`); aGrad.addColorStop(1, `rgba(150, 10, 0, 0)`);
-                ctx.fillStyle = aGrad; ctx.fillRect(-airRad, -airRad, airRad*2, airRad*2); ctx.restore();
-                ctx.globalCompositeOperation = 'source-over';
-            } else if (o.type === 'celestial') {
-                ctx.fillStyle = o.emoji === '☀️' ? '#ffd700' : '#fff';
-                ctx.font = sz + 'px sans-serif';
-                ctx.textBaseline = 'middle';
-                ctx.textAlign = 'center';
-                ctx.fillText(o.emoji, sx, sy);
-                _lastFont = ''; _lastBaseline = ''; _lastAlign = '';
-            } else if (o.type === 'locationalEnemy') {
-                ctx.save();
-                ctx.globalAlpha = 1 - fog;
-                let e = o.obj, isFlash = e.flash > 0, isZombie = e.type === 'zombie';
-                let legH = sz * 0.44, abdH = sz * 0.28, chestH = sz * 0.16, headR = sz * 0.12;
-                
-                let color1 = isFlash ? 'white' : (isZombie ? `rgb(${30*objLight|0},${86*objLight|0},${34*objLight|0})` : `rgb(${100*objLight|0},${100*objLight|0},${100*objLight|0})`);
-                let color2 = isFlash ? 'white' : (isZombie ? `rgb(${46*objLight|0},${125*objLight|0},${50*objLight|0})` : `rgb(${136*objLight|0},${136*objLight|0},${136*objLight|0})`);
-                
-                if (isZombie && e.hasHead !== undefined) {
-                    let redColor = `rgb(${150*objLight|0}, 0, 0)`;
-                    if (e.isCrawling) {
-                        // Crawling layout (low to the ground, legs dragged horizontally behind)
-                        let topChest = sy - (abdH + chestH);
-                        
-                        // Draw Torso
-                        const torsoSprite = ZombieTorsoCache.get(isFlash, objLight);
-                        if (torsoSprite) {
-                            ctx.drawImage(torsoSprite, sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
-                        } else {
-                            ctx.fillStyle = color2;
-                            ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
-                        }
-                        
-                        // Draw Arms (dragging on ground)
-                        if (e.hasLeftUpperArm) {
-                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx - sz * 0.15, topChest + chestH, sz * 0.06, chestH * 0.7);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx - sz * 0.15, topChest + chestH, sz * 0.06, chestH * 0.7);
-                            }
-                            if (e.hasLeftLowerArm) {
-                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 1.7, sz * 0.06, chestH * 0.15);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx - sz * 0.12, topChest + chestH, sz * 0.04, sz * 0.04);
-                        }
-                        
-                        if (e.hasRightUpperArm) {
-                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx + sz * 0.09, topChest + chestH, sz * 0.06, chestH * 0.7);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx + sz * 0.09, topChest + chestH, sz * 0.06, chestH * 0.7);
-                            }
-                            if (e.hasRightLowerArm) {
-                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.8);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 1.7, sz * 0.06, chestH * 0.15);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx + sz * 0.08, topChest + chestH, sz * 0.04, sz * 0.04);
-                        }
-
-                        // Draw Head or Neck Stump
-                        if (e.hasHead) {
-                            const headSprite = ZombieHeadCache.get(isFlash, objLight);
-                            let headScale = (headR * 2) / 128;
-                            let headW = headSprite.width * headScale;
-                            let headH = headSprite.height * headScale;
-                            let headX = sx - headW / 2;
-                            let headY = topChest - (headSprite.height - 20) * headScale;
-                            ctx.drawImage(headSprite, headX, headY, headW, headH);
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx - (sz * 0.06)/2, topChest - sz * 0.04, sz * 0.06, sz * 0.04);
-                        }
-
-                        // Draw Crawling Legs (horizontal)
-                        // Left Leg
-                        if (e.hasLeftUpperLeg) {
-                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx - sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx - sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                            }
-                            if (e.hasLeftLowerLeg) {
-                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx - sz * 0.32, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx - sz * 0.32, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx - sz * 0.23, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx - sz * 0.09, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                        }
-                        // Right Leg
-                        if (e.hasRightUpperLeg) {
-                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx + sz * 0.08, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx + sz * 0.08, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                            }
-                            if (e.hasRightLowerLeg) {
-                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx + sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.12, sz * 0.06);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx + sz * 0.20, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx + sz * 0.06, sy - sz * 0.06, sz * 0.03, sz * 0.06);
-                        }
-                    } else {
-                        // Standing layout (upper and lower segments)
-                        let topLegs = sy - legH;
-                        let topChest = topLegs - (abdH + chestH);
-
-                        // Draw Legs separately (standing)
-                        // Left Leg
-                        if (e.hasLeftUpperLeg) {
-                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.5);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.5);
-                            }
-                            if (e.hasLeftLowerLeg) {
-                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx - sz * 0.09, topLegs + legH * 0.5, sz * 0.07, legH * 0.1);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx - sz * 0.09, topLegs, sz * 0.07, legH * 0.1);
-                        }
-                        
-                        // Right Leg
-                        if (e.hasRightUpperLeg) {
-                            const sprite = ZombieLegUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.5);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.5);
-                            }
-                            if (e.hasRightLowerLeg) {
-                                const spriteL = ZombieLegLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.5);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx + sz * 0.02, topLegs + legH * 0.5, sz * 0.07, legH * 0.1);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx + sz * 0.02, topLegs, sz * 0.07, legH * 0.1);
-                        }
-
-                        // Draw Torso
-                        const torsoSprite = ZombieTorsoCache.get(isFlash, objLight);
-                        if (torsoSprite) {
-                            ctx.drawImage(torsoSprite, sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
-                        } else {
-                            ctx.fillStyle = color2;
-                            ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
-                        }
-
-                        // Draw Arms (standing)
-                        // Left Arm
-                        if (e.hasLeftUpperArm) {
-                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx - sz * 0.15, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
-                            }
-                            if (e.hasLeftLowerArm) {
-                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx - sz * 0.15, topChest + chestH * 0.9, sz * 0.06, chestH * 0.15);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx - sz * 0.12, topChest + chestH * 0.2, sz * 0.04, sz * 0.04);
-                        }
-                        
-                        // Right Arm
-                        if (e.hasRightUpperArm) {
-                            const sprite = ZombieArmUpperCache.get(isFlash, objLight);
-                            if (sprite) {
-                                ctx.drawImage(sprite, sx + sz * 0.09, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
-                            } else {
-                                ctx.fillStyle = color1;
-                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.2, sz * 0.06, chestH * 0.7);
-                            }
-                            if (e.hasRightLowerArm) {
-                                const spriteL = ZombieArmLowerCache.get(isFlash, objLight);
-                                if (spriteL) {
-                                    ctx.drawImage(spriteL, sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
-                                } else {
-                                    ctx.fillStyle = color1;
-                                    ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.8);
-                                }
-                            } else {
-                                ctx.fillStyle = redColor;
-                                ctx.fillRect(sx + sz * 0.09, topChest + chestH * 0.9, sz * 0.06, chestH * 0.15);
-                            }
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx + sz * 0.08, topChest + chestH * 0.2, sz * 0.04, sz * 0.04);
-                        }
-
-                        // Draw Head or Neck Stump
-                        if (e.hasHead) {
-                            const headSprite = ZombieHeadCache.get(isFlash, objLight);
-                            let headScale = (headR * 2) / 128;
-                            let headW = headSprite.width * headScale;
-                            let headH = headSprite.height * headScale;
-                            let headX = sx - headW / 2;
-                            let headY = topChest - (headSprite.height - 20) * headScale;
-                            ctx.drawImage(headSprite, headX, headY, headW, headH);
-                        } else {
-                            ctx.fillStyle = redColor;
-                            ctx.fillRect(sx - (sz * 0.06)/2, topChest - sz * 0.04, sz * 0.06, sz * 0.04);
-                        }
-                    }
-
-                } else {
-                    // Fallback for non-zombies (experimental/alien)
-                    let topLegs = sy - legH;
-                    let topChest = topLegs - abdH - chestH;
-                    ctx.fillStyle = color1;
-                    ctx.fillRect(sx - (sz * 0.20)/2, topLegs, sz * 0.20, legH);
-                    ctx.fillStyle = color2;
-                    ctx.fillRect(sx - (sz * 0.18)/2, topChest, sz * 0.18, abdH + chestH);
-                    const headSprite = isZombie ? ZombieHeadCache.get(isFlash, objLight) : SpriteCache.get('👽', isFlash, false, objLight);
-                    let headScale = (headR * 2) / 128;
-                    let headW = headSprite.width * headScale;
-                    let headH = headSprite.height * headScale;
-                    let headX = sx - headW / 2;
-                    let headY = topChest - (headSprite.height - 20) * headScale;
-                    ctx.drawImage(headSprite, headX, headY, headW, headH);
-                }
-                ctx.restore();
-            } else if (o.type === 'dmgText') {
-                ctx.save();
-                ctx.globalAlpha = 1 - fog;
-                ctx.fillStyle = `rgba(255, 50, 50, ${o.life/60})`; let df = 'bold ' + Math.max(12, 24/depth) + 'px sans-serif';
-                if (_lastFont !== df) { ctx.font = df; _lastFont = df; } if (_lastBaseline !== 'middle') { ctx.textBaseline = 'middle'; _lastBaseline = 'middle'; }
-                ctx.fillText(o.text, sx, sy);
-                ctx.restore();
-            } else if (o.type === 'blood') {
-                ctx.save();
-                ctx.globalAlpha = (1 - fog) * Math.min(1.0, o.life / 60.0);
-                let bsz = Math.max(1, (fov/depth) * o.size);
-                if (o.isLimb) {
-                    ctx.save();
-                    ctx.translate(sx, sy);
-                    let isMoving = (o.vx !== 0 || o.vy !== 0 || o.vz !== 0);
-                    let spinAngle = isMoving ? (o.life * 0.15) : (o.landedAngle !== undefined ? o.landedAngle : Math.PI / 2);
-                    ctx.rotate(spinAngle);
-                    
-                    if (o.limbType === 'head') {
-                        const headSprite = ZombieHeadCache.get(false, objLight);
-                        ctx.drawImage(headSprite, -bsz/2, -bsz/2, bsz, bsz);
-                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
-                        ctx.fillRect(-bsz/4, bsz/3, bsz/2, bsz/6);
-                    } else if (o.limbType.endsWith('UpperArm') || o.limbType === 'upperArm') {
-                        const sprite = ZombieArmUpperCache.get(false, objLight);
-                        if (sprite) {
-                            ctx.drawImage(sprite, -bsz/4, -bsz/2, bsz/2, bsz);
-                        } else {
-                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
-                            ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz);
-                        }
-                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
-                        ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz/4);
-                    } else if (o.limbType.endsWith('LowerArm') || o.limbType === 'lowerArm') {
-                        const sprite = ZombieArmLowerCache.get(false, objLight);
-                        if (sprite) {
-                            ctx.drawImage(sprite, -bsz/4, -bsz/2, bsz/2, bsz);
-                        } else {
-                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
-                            ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz);
-                        }
-                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
-                        ctx.fillRect(-bsz/4, -bsz/2, bsz/2, bsz/4);
-                    } else if (o.limbType.endsWith('UpperLeg') || o.limbType === 'upperLeg') {
-                        const sprite = ZombieLegUpperCache.get(false, objLight);
-                        if (sprite) {
-                            ctx.drawImage(sprite, -bsz/3, -bsz/2, bsz*0.66, bsz);
-                        } else {
-                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
-                            ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
-                        }
-                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
-                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz/4);
-                    } else if (o.limbType.endsWith('LowerLeg') || o.limbType === 'lowerLeg') {
-                        const sprite = ZombieLegLowerCache.get(false, objLight);
-                        if (sprite) {
-                            ctx.drawImage(sprite, -bsz/3, -bsz/2, bsz*0.66, bsz);
-                        } else {
-                            ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
-                            ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
-                        }
-                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
-                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz/4);
-                    } else {
-                        ctx.fillStyle = `rgb(${30 * objLight | 0}, ${86 * objLight | 0}, ${34 * objLight | 0})`;
-                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz);
-                        ctx.fillStyle = `rgb(${150 * objLight | 0}, 0, 0)`;
-                        ctx.fillRect(-bsz/3, -bsz/2, bsz*0.66, bsz/4);
-                    }
-                    ctx.restore();
-                } else {
-                    ctx.fillStyle = `rgba(${o.color.r * objLight | 0}, ${o.color.g * objLight | 0}, ${o.color.b * objLight | 0}, 1.0)`;
-                    ctx.fillRect(sx - bsz/2, sy - bsz/2, bsz, bsz);
-                }
-                ctx.restore();
-            } else if (o.type === 'emoji' || o.type === 'animal' || o.type === 'droppedItem') {
-                const sprite = SpriteCache.get(o.emoji, o.targeted || (o.flash > 0), o.dead, objLight);
-                let scale = sz / 128;
-                
-                ctx.save();
-                ctx.globalAlpha = (1 - fog) * (o.ghost ? 0.5 : 1.0);
-                
-                if (o.spinScaleX !== undefined) {
-                    let drawW = sprite.width * scale;
-                    let drawH = sprite.height * scale;
-                    ctx.translate(sx, sy - drawH / 2 + 10 * scale);
-                    ctx.scale(o.spinScaleX, 1.0);
-                    ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
-                } else {
-                    ctx.drawImage(sprite, sx - (sprite.width/2)*scale, sy - (sprite.height - 20)*scale, sprite.width * scale, sprite.height * scale);
-                }
-                
-                if (o.ghost) ctx.globalAlpha = 1.0;
-                ctx.restore();
-            } else {
-                ctx.save();
-                ctx.globalAlpha = 1 - fog;
-                ctx.fillStyle = o.owner==='player'?'#ff0':'#f33'; ctx.beginPath(); ctx.arc(sx, sy, Math.max(1, 15/depth), 0, 7); ctx.fill();
-                ctx.restore();
-            }
+            addFaceToDynamicBuffer(bufferType, pts, color, norm, normalizedUVs);
         }
     }
-
+    
+    // Upload dynamic meshes to GPU
+    uploadDynamicBuffers();
+    
+    // Draw held weapon in first person view
     let isFirstPerson = (player.inVehicle ? player.vehicleView === '1st' : player.view === '1st');
     if (isFirstPerson && !freecam) {
-        renderWeaponModel();
+        let activeItem = inventory[hotbarSelection];
+        let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+        if (curW) {
+            updateHeldWeapon(curW);
+            
+            let wName = curW.name.toLowerCase();
+            let conf = WEAPON_MODEL_CONFIG[wName] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 };
+            
+            let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+            let bobX = isMoving && !flightMode ? Math.cos(gameTime * 200) * 0.01 : 0;
+            let bobY = isMoving && !flightMode ? Math.abs(Math.sin(gameTime * 200)) * 0.02 : 0;
+            let recoilOffset = fireCooldown > 0 ? (fireCooldown / curW.fireRate) * 0.1 : 0;
+            
+            let targetOffsetX = isZooming ? (conf.zoomOffsetX !== undefined ? conf.zoomOffsetX : 0) : conf.offsetX;
+            let targetOffsetY = isZooming ? (conf.zoomOffsetY !== undefined ? conf.zoomOffsetY : conf.offsetY - 0.1) : conf.offsetY;
+            let targetOffsetZ = isZooming ? (conf.zoomOffsetZ !== undefined ? conf.zoomOffsetZ : conf.offsetZ + 0.05) : conf.offsetZ;
+            
+            let ox = targetOffsetX + bobX;
+            let oy = targetOffsetY - recoilOffset;
+            let oz = targetOffsetZ - bobY + (recoilOffset * 0.2);
+            
+            heldWeaponGroup.position.set(ox, oz, -oy);
+        } else {
+            heldWeaponGroup.visible = false;
+        }
+    } else {
+        heldWeaponGroup.visible = false;
     }
-
-    if (!player.inVehicle || player.vehicleView === '1st' || freecam) {
-        let pitchVal = freecam ? freecamPitch : player.pitch;
-        ctx.strokeStyle = fireCooldown > 0 ? 'red' : 'white'; ctx.lineWidth = isZooming?1:2; ctx.beginPath(); let cs = isZooming?4:8;
-        ctx.moveTo(canvas.width/2-cs, hY-pitchVal); ctx.lineTo(canvas.width/2+cs, hY-pitchVal);
-        ctx.moveTo(canvas.width/2, hY-pitchVal-cs); ctx.lineTo(canvas.width/2, hY-pitchVal+cs); ctx.stroke();
+    
+    // Clean up dynamic sprites that were not rendered
+    for (let [key, sprite] of threeDynamicSprites.entries()) {
+        if (!activeSpritesThisFrame.has(key)) {
+            scene.remove(sprite);
+            threeDynamicSprites.delete(key);
+        }
     }
-
-    if (player.isSubmerged) {
-        ctx.fillStyle = 'rgba(10, 50, 130, 0.4)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Clean up torch point lights that were not rendered
+    for (let [key, light] of threePointLights.entries()) {
+        if (!activePointLightsThisFrame.has(key)) {
+            scene.remove(light);
+            threePointLights.delete(key);
+        }
     }
-
-    // Process picked coordinate candidate
+    
+    // Run WebGL Render Call
+    renderer.render(scene, camera);
+    
+    // Update HTML overlay indicators
+    let crosshairEl = document.getElementById('crosshair');
+    if (crosshairEl) {
+        if (isFirstPerson && !freecam) {
+            crosshairEl.className = 'visible';
+            if (fireCooldown > 0) crosshairEl.classList.add('recoil');
+            if (isZooming) crosshairEl.classList.add('zoomed');
+        } else {
+            crosshairEl.className = '';
+        }
+    }
+    
+    let submergedEl = document.getElementById('submerged-overlay');
+    if (submergedEl) {
+        if (player.isSubmerged) {
+            submergedEl.classList.add('visible');
+        } else {
+            submergedEl.classList.remove('visible');
+        }
+    }
+    
+    // Process picked coordinate candidate raycasting
     if (triggerCoordPick) {
-        if (bestPickPoint) {
-            let px = bestPickPoint.x;
-            let py = bestPickPoint.y;
-            let pz = bestPickPoint.z;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        if (document.pointerLockElement === canvas) {
+            mouse.x = 0;
+            mouse.y = 0;
+        } else {
+            let rect = canvas.getBoundingClientRect();
+            mouse.x = ((pickX_screen - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((pickY_screen - rect.top) / rect.height) * 2 + 1;
+        }
+        
+        raycaster.setFromCamera(mouse, camera);
+        
+        const targets = [];
+        for (let chunk of threeChunks.values()) {
+            if (chunk.solidMesh) targets.push(chunk.solidMesh);
+        }
+        
+        const intersects = raycaster.intersectObjects(targets, true);
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+            const p = hit.point;
+            
+            bestPickPoint = { x: p.x, y: p.z, z: p.y };
+            bestPickDepth = hit.distance;
+            
+            bestPickVehicle = null;
+            for (let v of vehicles) {
+                let dist = Math.hypot(v.x - bestPickPoint.x, v.y - bestPickPoint.y, v.z - bestPickPoint.z);
+                if (dist < 4.0) {
+                    bestPickVehicle = v;
+                    break;
+                }
+            }
             
             let localCoords = null;
             let vType = null;
@@ -1643,9 +1253,9 @@ function render() {
                 vType = v.type;
                 let cosA = Math.cos(v.angle);
                 let sinA = Math.sin(v.angle);
-                let dx = (px - v.x) * cosA + (py - v.y) * sinA;
-                let dy = -(px - v.x) * sinA + (py - v.y) * cosA;
-                let dz = pz - v.z;
+                let dx = (bestPickPoint.x - v.x) * cosA + (bestPickPoint.y - v.y) * sinA;
+                let dy = -(bestPickPoint.x - v.x) * sinA + (bestPickPoint.y - v.y) * cosA;
+                let dz = bestPickPoint.z - v.z;
                 localCoords = { dx, dy, dz };
             }
             
@@ -1655,15 +1265,16 @@ function render() {
                 vehicleType: vType,
                 time: performance.now()
             };
-            console.log("PICKED COORDS:", lastPickedCoord);
+            
+            console.log("PICKED COORDS (Raycast):", lastPickedCoord);
             if (window.updatePickerPanelUI) {
                 window.updatePickerPanelUI();
             }
         }
         triggerCoordPick = false;
     }
-
-    // Restore player position
+    
+    // Restore player coordinate states
     player.x = realPlayerX;
     player.y = realPlayerY;
 }
