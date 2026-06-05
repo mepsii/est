@@ -33,6 +33,18 @@ function loop(timestamp) {
     requestAnimationFrame(loop); 
     
     const now = timestamp || performance.now();
+    
+    // Check if player crossed chunk boundary to update background preload queue
+    if (!isLoading && hasLoaded) {
+        const pCx = Math.floor(player.x / CHUNK_SIZE);
+        const pCy = Math.floor(player.y / CHUNK_SIZE);
+        if (pCx !== lastPreloadPlayerChunkX || pCy !== lastPreloadPlayerChunkY) {
+            lastPreloadPlayerChunkX = pCx;
+            lastPreloadPlayerChunkY = pCy;
+            rebuildPreloadQueue(pCx, pCy);
+            evictDistantChunks(pCx, pCy);
+        }
+    }
     let dt = now - lastLoopTime;
     if (dt > 250) dt = 250; // Cap dt to avoid "spiral of death" during lag spikes
     lastLoopTime = now;
@@ -67,6 +79,20 @@ function loop(timestamp) {
         if (fpsValEl) fpsValEl.innerText = fps;
         frames = 0;
         lastTime = now;
+    }
+
+    // Background preloader processing
+    if (!isLoading && hasLoaded && backgroundPreloadQueue.length > 0) {
+        const loopElapsed = performance.now() - now;
+        const frameBudget = lockFps30 ? 25 : 12;
+        if (loopElapsed < frameBudget) {
+            const chunk = backgroundPreloadQueue.shift();
+            if (chunk && !chunkMeshes.has(`${chunk.cx},${chunk.cy}`)) {
+                getMapChunk(chunk.cx, chunk.cy);
+                const mesh = buildChunkMesh(chunk.cx, chunk.cy);
+                chunkMeshes.set(`${chunk.cx},${chunk.cy}`, mesh);
+            }
+        }
     }
 }
 loop();
@@ -140,5 +166,50 @@ function processPreload() {
             isLoading = false;
             hasLoaded = true;
         }, 500);
+    }
+}
+
+// --- Background Chunk Preloading System ---
+let lastPreloadPlayerChunkX = null;
+let lastPreloadPlayerChunkY = null;
+let backgroundPreloadQueue = [];
+
+function rebuildPreloadQueue(pCx, pCy) {
+    backgroundPreloadQueue = [];
+    const preloadRadius = Math.ceil((VIEW_DIST * 1.5) / CHUNK_SIZE);
+    
+    for (let cx = pCx - preloadRadius; cx <= pCx + preloadRadius; cx++) {
+        for (let cy = pCy - preloadRadius; cy <= pCy + preloadRadius; cy++) {
+            const dx = cx - pCx;
+            const dy = cy - pCy;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= preloadRadius) {
+                const key = `${cx},${cy}`;
+                if (!chunkMeshes.has(key)) {
+                    backgroundPreloadQueue.push({ cx, cy, dist });
+                }
+            }
+        }
+    }
+    
+    // Sort closest chunks first so they load immediately
+    backgroundPreloadQueue.sort((a, b) => a.dist - b.dist);
+}
+
+function evictDistantChunks(pCx, pCy) {
+    const evictRadius = Math.ceil((VIEW_DIST * 2.2) / CHUNK_SIZE);
+    
+    for (let key of chunkMeshes.keys()) {
+        const [cx, cy] = key.split(',').map(Number);
+        if (Math.hypot(cx - pCx, cy - pCy) > evictRadius) {
+            chunkMeshes.delete(key);
+        }
+    }
+    
+    for (let key of mapChunks.keys()) {
+        const [cx, cy] = key.split(',').map(Number);
+        if (Math.hypot(cx - pCx, cy - pCy) > evictRadius) {
+            mapChunks.delete(key);
+        }
     }
 }

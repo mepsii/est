@@ -145,7 +145,7 @@ function getTerrainFast(x, y) {
     if (val !== undefined) return val;
     let t = getTerrain(x, y);
     terrainCache.set(key, t);
-    if (terrainCache.size > 20000) terrainCache.clear();
+    if (terrainCache.size > 300000) terrainCache.clear();
     return t;
 }
 
@@ -645,11 +645,12 @@ function getEntityBaseInfo(x, y) {
         }
         result = { emoji: em, size: finalSize, solid, plantOffset };
     }
+    if (entityInfoCache.size > 100000) entityInfoCache.clear();
     entityInfoCache.set(key, result); return result;
 }
 
 function getMapChunk(cx, cy) {
-    const key = cx * 2003 + cy; 
+    const key = `${cx},${cy}`; 
     if (mapChunks.has(key)) return mapChunks.get(key);
     
     let chunk = [];
