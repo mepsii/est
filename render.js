@@ -6,6 +6,7 @@ let ambientLight, sunLight, flashlight;
 let threeChunks = new Map();
 let threeDynamicSprites = new Map();
 let threePointLights = new Map();
+let threeTorchGlows = new Map();
 let dynamicSolidMesh;
 let dynamicCloudMesh;
 let dynamicPlayerMesh;
@@ -17,6 +18,8 @@ let pickerBox;
 let sunSprite = null;
 let moonSprite = null;
 let heldWeaponGroup;
+let billboardGeo;
+let activeBillboardMeshes = new Set();
 
 // Helper to convert hex colors to rgb
 function hexToRgb(hex) {
@@ -50,6 +53,66 @@ const ThreeTextureCache = {
     clear() {
         for (let t of this.textures.values()) t.dispose();
         this.textures.clear();
+    }
+};
+
+// Cache radial gradient glow textures for fires/torches
+const GlowTextureCache = {
+    texture: null,
+    get() {
+        if (this.texture) return this.texture;
+        const c = document.createElement('canvas');
+        c.width = 16; c.height = 16;
+        const cx = c.getContext('2d');
+        for (let x = 0; x < 16; x++) {
+            for (let y = 0; y < 16; y++) {
+                let dx = x - 7.5;
+                let dy = y - 7.5;
+                let dist = Math.hypot(dx, dy) / 8.0;
+                if (dist < 1.0) {
+                    let intensity = 1.0 - dist;
+                    let steps = Math.ceil(intensity * 4) / 4;
+                    let alpha = steps * 0.45;
+                    cx.fillStyle = `rgba(255, 140, 40, ${alpha})`;
+                    cx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+        this.texture = new THREE.CanvasTexture(c);
+        this.texture.minFilter = THREE.NearestFilter;
+        this.texture.magFilter = THREE.NearestFilter;
+        return this.texture;
+    }
+};
+
+// Cache pixelated projection map for the flashlight
+const FlashlightTextureCache = {
+    texture: null,
+    get() {
+        if (this.texture) return this.texture;
+        const c = document.createElement('canvas');
+        c.width = 16; c.height = 16;
+        const cx = c.getContext('2d');
+        cx.fillStyle = 'black';
+        cx.fillRect(0, 0, 16, 16);
+        for (let x = 0; x < 16; x++) {
+            for (let y = 0; y < 16; y++) {
+                let dx = x - 7.5;
+                let dy = y - 7.5;
+                let dist = Math.hypot(dx, dy) / 8.0;
+                if (dist < 1.0) {
+                    let intensity = 1.0 - dist;
+                    let steps = Math.ceil(intensity * 4) / 4;
+                    let val = Math.floor(steps * 255);
+                    cx.fillStyle = `rgb(${val}, ${val}, ${val})`;
+                    cx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+        this.texture = new THREE.CanvasTexture(c);
+        this.texture.minFilter = THREE.NearestFilter;
+        this.texture.magFilter = THREE.NearestFilter;
+        return this.texture;
     }
 };
 
@@ -118,11 +181,11 @@ function initThree() {
     sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
     scene.add(sunLight);
     
-    // Flashlight Spotlight (attached to camera)
-    flashlight = new THREE.SpotLight(0xffffff, 2.0, 45, Math.PI / 5, 0.5, 1);
-    camera.add(flashlight);
-    camera.add(flashlight.target);
-    flashlight.target.position.set(0, 0, -1);
+    // Flashlight Spotlight
+    flashlight = new THREE.SpotLight(0xffffff, 3.5, 80, Math.PI / 15, 0.2, 1.0);
+    flashlight.map = FlashlightTextureCache.get();
+    scene.add(flashlight);
+    scene.add(flashlight.target);
     
     scene.add(camera);
     
@@ -198,6 +261,8 @@ function initThree() {
     dynamicZombieMesh = new THREE.Mesh(zombieGeo, zombieMat);
     scene.add(dynamicZombieMesh);
     
+    billboardGeo = new THREE.PlaneGeometry(1, 1);
+    
     threeInitialized = true;
 }
 
@@ -253,21 +318,23 @@ function updateChunkMesh(key, faces) {
     const entitiesSprites = [];
     
     for (let obj of chunkEntities) {
-        let ambientVal = getAmbientLight(gameTime);
-        let texture = ThreeTextureCache.get(obj.emoji, false, false, ambientVal);
-        let mat = new THREE.SpriteMaterial({
+        let texture = ThreeTextureCache.get(obj.emoji, false, false, 1.0);
+        let mat = new THREE.MeshStandardMaterial({
             map: texture,
             transparent: true,
-            fog: true
+            alphaTest: 0.5,
+            roughness: 1.0,
+            metalness: 0.0,
+            side: THREE.DoubleSide
         });
-        let sprite = new THREE.Sprite(mat);
+        let mesh = new THREE.Mesh(billboardGeo, mat);
         let size = obj.size;
         
         // Base aligned coordinate system mapping
-        sprite.position.set(obj.wx, obj.h + size / 2, obj.wy);
-        sprite.scale.set(size * 1.5, size * 1.5, 1.0);
-        scene.add(sprite);
-        entitiesSprites.push(sprite);
+        mesh.position.set(obj.wx, obj.h + size / 2, obj.wy);
+        mesh.scale.set(size * 1.5, size * 1.5, 1.0);
+        scene.add(mesh);
+        entitiesSprites.push(mesh);
     }
     
     threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: entitiesSprites });
@@ -301,9 +368,9 @@ function buildFacesMesh(faces, isWater) {
         }
         
         // Split quads into triangles
-        indices.push(vertCount, vertCount + 1, vertCount + 2);
+        indices.push(vertCount, vertCount + 2, vertCount + 1);
         if (pts.length === 4) {
-            indices.push(vertCount, vertCount + 2, vertCount + 3);
+            indices.push(vertCount, vertCount + 3, vertCount + 2);
             vertCount += 4;
         } else {
             vertCount += 3;
@@ -368,9 +435,9 @@ function addFaceToDynamicBuffer(bufferType, facePts, colorObj, norm, uvs = null)
         }
     }
     
-    buf.indices.push(vStart, vStart + 1, vStart + 2);
+    buf.indices.push(vStart, vStart + 2, vStart + 1);
     if (facePts.length === 4) {
-        buf.indices.push(vStart, vStart + 2, vStart + 3);
+        buf.indices.push(vStart, vStart + 3, vStart + 2);
         buf.vertCount += 4;
     } else {
         buf.vertCount += 3;
@@ -403,33 +470,42 @@ function updateBufferGeometry(geometry, data, hasUVs) {
 // Render dynamic billboards (monsters, chests, animals) using pooled Canvas textures
 const activeSpritesThisFrame = new Set();
 const activePointLightsThisFrame = new Set();
+const activeTorchGlowsThisFrame = new Set();
 
 function drawBillboardEmoji(obj, emoji, size, x, y, z, targeted = false, ghost = false, dead = false, spinScaleX = undefined) {
     let key = obj;
     activeSpritesThisFrame.add(key);
     
-    let sprite = threeDynamicSprites.get(key);
-    let ambientVal = getAmbientLight(gameTime);
-    let texture = ThreeTextureCache.get(emoji, targeted, false, ambientVal);
+    let mesh = threeDynamicSprites.get(key);
+    let texture = ThreeTextureCache.get(emoji, targeted, false, 1.0);
     
-    if (!sprite) {
-        let mat = new THREE.SpriteMaterial({ map: texture, transparent: true, fog: true });
-        sprite = new THREE.Sprite(mat);
-        scene.add(sprite);
-        threeDynamicSprites.set(key, sprite);
+    if (!mesh) {
+        let mat = new THREE.MeshStandardMaterial({
+            map: texture,
+            transparent: true,
+            alphaTest: 0.5,
+            roughness: 1.0,
+            metalness: 0.0,
+            side: THREE.DoubleSide
+        });
+        mesh = new THREE.Mesh(billboardGeo, mat);
+        scene.add(mesh);
+        threeDynamicSprites.set(key, mesh);
     } else {
-        sprite.material.map = texture;
-        sprite.material.opacity = ghost ? 0.5 : 1.0;
-        sprite.material.needsUpdate = true;
+        mesh.material.map = texture;
+        mesh.material.opacity = ghost ? 0.5 : 1.0;
+        mesh.material.needsUpdate = true;
     }
     
-    sprite.position.set(x, z + size / 2, y);
+    mesh.position.set(x, z + size / 2, y);
     
     let scaleX = size * 1.5;
     if (spinScaleX !== undefined) {
         scaleX *= spinScaleX;
     }
-    sprite.scale.set(scaleX, size * 1.5, 1.0);
+    mesh.scale.set(scaleX, size * 1.5, 1.0);
+    
+    activeBillboardMeshes.add(mesh);
 }
 
 // Render point light sources for torches
@@ -439,12 +515,29 @@ function drawTorchLight(c) {
     
     let light = threePointLights.get(key);
     if (!light) {
-        light = new THREE.PointLight(0xffaa44, 2.0, 22, 1.5);
+        light = new THREE.PointLight(0xffaa44, 5.0, 30, 1.0);
         scene.add(light);
         threePointLights.set(key, light);
     }
     light.position.set(c.x, c.z + 0.5, c.y);
-    light.intensity = c.flicker * 2.0;
+    light.intensity = c.flicker * 5.0;
+    
+    // Add atmospheric orange glow billboard
+    activeTorchGlowsThisFrame.add(key);
+    let glow = threeTorchGlows.get(key);
+    if (!glow) {
+        let glowMat = new THREE.SpriteMaterial({
+            map: GlowTextureCache.get(),
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        glow = new THREE.Sprite(glowMat);
+        scene.add(glow);
+        threeTorchGlows.set(key, glow);
+    }
+    glow.position.set(c.x, c.z + 0.4, c.y);
+    glow.scale.set(c.size * 10 * c.flicker, c.size * 10 * c.flicker, 1.0);
 }
 
 // Rebuild and attach the held weapon model in first-person view
@@ -625,21 +718,41 @@ function render() {
     }
     
     // Sync ambient and directional lighting
-    ambientLight.color.setRGB(sky.r / 255, sky.g / 255, sky.b / 255);
-    ambientLight.intensity = (gameState === 'overworld') ? ambientVal * 0.5 + 0.1 : 0.15;
+    let ambientR = sky.r / 255;
+    let ambientG = sky.g / 255;
+    let ambientB = sky.b / 255;
+    
+    // Add blue-tinted moonlight ambient boost at night
+    if (gameState === 'overworld') {
+        let nightFactor = 1.0 - ambientVal;
+        if (nightFactor > 0) {
+            ambientR = Math.max(ambientR, nightFactor * 0.06);
+            ambientG = Math.max(ambientG, nightFactor * 0.09);
+            ambientB = Math.max(ambientB, nightFactor * 0.20);
+        }
+    }
+    
+    ambientLight.color.setRGB(ambientR, ambientG, ambientB);
+    ambientLight.intensity = (gameState === 'overworld') ? ambientVal * 0.5 + 0.15 : 0.15;
     
     let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
     let sunDx = Math.cos(sunTimeAngle) * 500;
     let sunDz = Math.sin(sunTimeAngle) * 500;
     let sunDy = 150;
-    sunLight.position.set(sunDx, sunDz, sunDy).normalize();
+    
+    // If night (sun below horizon), point moonLight from above
+    let lightDz = sunDz;
+    if (lightDz < 0) {
+        lightDz = -lightDz;
+    }
+    sunLight.position.set(sunDx, lightDz, sunDy).normalize();
     
     if (sunDz > 0) {
         sunLight.color.setRGB(1.0, 0.95, 0.9);
         sunLight.intensity = (sunDz / 500) * 0.9;
     } else {
-        sunLight.color.setRGB(0.5, 0.6, 0.8);
-        sunLight.intensity = (Math.abs(sunDz) / 500) * 0.25;
+        sunLight.color.setRGB(0.25, 0.4, 0.7);
+        sunLight.intensity = (Math.abs(sunDz) / 500) * 0.15;
     }
     if (gameState !== 'overworld') {
         sunLight.intensity = 0.02;
@@ -647,7 +760,12 @@ function render() {
     
     // Update player flashlight spotlight
     if (isFlashlightOn) {
-        flashlight.intensity = 2.5;
+        flashlight.intensity = 3.5;
+        flashlight.position.copy(camera.position);
+        camera.updateMatrixWorld();
+        let targetPos = new THREE.Vector3(0, 0, -30);
+        targetPos.applyMatrix4(camera.matrixWorld);
+        flashlight.target.position.copy(targetPos);
     } else {
         flashlight.intensity = 0.0;
     }
@@ -660,6 +778,8 @@ function render() {
     
     activeSpritesThisFrame.clear();
     activePointLightsThisFrame.clear();
+    activeTorchGlowsThisFrame.clear();
+    activeBillboardMeshes.clear();
     
     // Sync static chunks terrain persistent meshes
     let pCx = Math.floor(player.x / CHUNK_SIZE);
@@ -688,6 +808,12 @@ function render() {
                 let cached = threeChunks.get(key);
                 if (!cached || cached.facesRef !== faces) {
                     updateChunkMesh(key, faces);
+                    cached = threeChunks.get(key);
+                }
+                if (cached && cached.entities) {
+                    for (let mesh of cached.entities) {
+                        activeBillboardMeshes.add(mesh);
+                    }
                 }
             }
         }
@@ -1182,6 +1308,19 @@ function render() {
             scene.remove(light);
             threePointLights.delete(key);
         }
+    }
+    
+    // Clean up torch glows that were not rendered
+    for (let [key, glow] of threeTorchGlows.entries()) {
+        if (!activeTorchGlowsThisFrame.has(key)) {
+            scene.remove(glow);
+            threeTorchGlows.delete(key);
+        }
+    }
+    
+    // Orient all active billboard meshes to face the camera
+    for (let mesh of activeBillboardMeshes) {
+        mesh.quaternion.copy(camera.quaternion);
     }
     
     // Run WebGL Render Call
