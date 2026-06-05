@@ -257,11 +257,6 @@ function render() {
                         let nx = f.norm.x, ny = f.norm.y, nz = f.norm.z;
                         if (dX * nx + dY * ny + dZ * nz > 0 && !f.isWater) continue;
                         
-                        let faceDist2D = Math.hypot(dX, dY);
-                        let faceCosTheta = rx / Math.max(0.1, faceDist2D);
-                        let faceMaxDist = maxForwardDist * Math.pow(Math.max(0, faceCosTheta), 1.5);
-                        if (faceDist2D >= faceMaxDist * 0.98) continue;
-                        
                         let o = getRenderItem();
                         o.type = 'chunk_face';
                         o.face = f;
@@ -279,10 +274,6 @@ function render() {
                         let rx = dx * cosA + dy * sinA;
                         let ry = dx * -sinA + dy * cosA;
                         if (Math.abs(ry) < cz * fovMult + 3.0) {
-                            let objDist2D = Math.hypot(dx, dy);
-                            let objCosTheta = rx / Math.max(0.1, objDist2D);
-                            let objMaxDist = maxForwardDist * Math.pow(Math.max(0, objCosTheta), 1.5);
-                            if (objDist2D >= objMaxDist) continue;
                             let o = getRenderItem(); o.type = obj.type; o.emoji = obj.emoji; o.size = obj.size; o.hp = obj.hp; o.depthSq = cz*cz; o.h = obj.h; o.wX = obj.wx; o.wY = obj.wy;
                         }
                     }

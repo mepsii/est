@@ -83,15 +83,18 @@ function loop(timestamp) {
 
     // Background preloader processing
     if (!isLoading && hasLoaded && backgroundPreloadQueue.length > 0) {
-        const loopElapsed = performance.now() - now;
+        let loopElapsed = performance.now() - now;
         const frameBudget = lockFps30 ? 25 : 12;
-        if (loopElapsed < frameBudget) {
+        let chunksProcessedThisFrame = 0;
+        while (loopElapsed < frameBudget && chunksProcessedThisFrame < 8 && backgroundPreloadQueue.length > 0) {
             const chunk = backgroundPreloadQueue.shift();
             if (chunk && !chunkMeshes.has(`${chunk.cx},${chunk.cy}`)) {
                 getMapChunk(chunk.cx, chunk.cy);
                 const mesh = buildChunkMesh(chunk.cx, chunk.cy);
                 chunkMeshes.set(`${chunk.cx},${chunk.cy}`, mesh);
+                chunksProcessedThisFrame++;
             }
+            loopElapsed = performance.now() - now;
         }
     }
 }
@@ -176,7 +179,7 @@ let backgroundPreloadQueue = [];
 
 function rebuildPreloadQueue(pCx, pCy) {
     backgroundPreloadQueue = [];
-    const preloadRadius = Math.ceil((VIEW_DIST * 1.5) / CHUNK_SIZE);
+    const preloadRadius = Math.ceil((VIEW_DIST * 3.0) / CHUNK_SIZE);
     
     for (let cx = pCx - preloadRadius; cx <= pCx + preloadRadius; cx++) {
         for (let cy = pCy - preloadRadius; cy <= pCy + preloadRadius; cy++) {
@@ -197,7 +200,7 @@ function rebuildPreloadQueue(pCx, pCy) {
 }
 
 function evictDistantChunks(pCx, pCy) {
-    const evictRadius = Math.ceil((VIEW_DIST * 2.2) / CHUNK_SIZE);
+    const evictRadius = Math.ceil((VIEW_DIST * 4.0) / CHUNK_SIZE);
     
     for (let key of chunkMeshes.keys()) {
         const [cx, cy] = key.split(',').map(Number);

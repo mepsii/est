@@ -145,7 +145,7 @@ function getTerrainFast(x, y) {
     if (val !== undefined) return val;
     let t = getTerrain(x, y);
     terrainCache.set(key, t);
-    if (terrainCache.size > 300000) terrainCache.clear();
+    if (terrainCache.size > 15000000) terrainCache.clear();
     return t;
 }
 
@@ -645,7 +645,7 @@ function getEntityBaseInfo(x, y) {
         }
         result = { emoji: em, size: finalSize, solid, plantOffset };
     }
-    if (entityInfoCache.size > 100000) entityInfoCache.clear();
+    if (entityInfoCache.size > 5000000) entityInfoCache.clear();
     entityInfoCache.set(key, result); return result;
 }
 

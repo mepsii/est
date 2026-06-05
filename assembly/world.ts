@@ -149,7 +149,7 @@ function getTerrainFast(x: i32, y: i32): TerrainData {
   }
   let t = getTerrain(x as f64, y as f64);
   terrainCache.set(key, t);
-  if (terrainCache.size > 300000) {
+  if (terrainCache.size > 15000000) {
     terrainCache.clear();
   }
   return t;
