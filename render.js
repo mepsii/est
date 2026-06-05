@@ -126,7 +126,7 @@ function render() {
     };
 
     let fovMult = 0.7 / currentZoom; 
-    let maxForwardDist = VIEW_DIST * 1.45;
+    let maxForwardDist = VIEW_DIST * 1.15;
     let cloudViewDist = VIEW_DIST * 4.0;
     if (gameState === 'overworld') {
         let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
@@ -235,9 +235,7 @@ function render() {
                 if (Math.abs(cRotY) > cRotX * fovMult + CHUNK_SIZE * 1.5) continue;
                 
                 let dist2D = Math.hypot(dx, dy);
-                let cosTheta = cRotX / Math.max(0.1, dist2D);
-                let maxDist = maxForwardDist * Math.pow(Math.max(0, cosTheta), 1.5);
-                if (dist2D > maxDist + CHUNK_SIZE * 3.0) continue;
+                if (dist2D > maxForwardDist + CHUNK_SIZE * 2.0) continue;
                 
                 let faces = getChunkMesh(cx, cy);
                 for (let i = 0; i < faces.length; i++) {
@@ -290,9 +288,7 @@ function render() {
             if (Math.abs(ry) > cz * fovMult + 10.0) continue;
             
             let vDist2D = Math.hypot(dx, dy);
-            let vCosTheta = rx / Math.max(0.1, vDist2D);
-            let vMaxDist = maxForwardDist * Math.pow(Math.max(0, vCosTheta), 1.5);
-            if (vDist2D >= vMaxDist * 1.5) continue;
+            if (vDist2D >= maxForwardDist * 1.5) continue;
             if (player.inVehicle === v && player.vehicleView === '1st' && !freecam) continue; 
             
             let model = WEAPON_MODELS[v.type];
@@ -352,9 +348,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 4.0) {
                     let eDist2D = Math.hypot(dx, dy);
-                    let eCosTheta = rx / Math.max(0.1, eDist2D);
-                    let eMaxDist = maxForwardDist * Math.pow(Math.max(0, eCosTheta), 1.5);
-                    if (eDist2D >= eMaxDist) continue;
+                    if (eDist2D >= maxForwardDist) continue;
                     
                     if (e.type === 'zombie3d') {
                         add3DZombieFaces(e, ambient);
@@ -386,9 +380,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 4.0) {
                     let cDist2D = Math.hypot(dx, dy);
-                    let cCosTheta = rx / Math.max(0.1, cDist2D);
-                    let cMaxDist = maxForwardDist * Math.pow(Math.max(0, cCosTheta), 1.5);
-                    if (cDist2D >= cMaxDist) continue;
+                    if (cDist2D >= maxForwardDist) continue;
                     
                     let o = getRenderItem(); o.type = 'emoji'; o.emoji = c.emoji; o.size = c.size; o.depthSq = cz*cz; o.h = c.z; o.wX = c.x; o.wY = c.y;
                     if (ambient < 1.0) {
@@ -405,9 +397,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 4.0) {
                     let eDist2D = Math.hypot(dx, dy);
-                    let eCosTheta = rx / Math.max(0.1, eDist2D);
-                    let eMaxDist = maxForwardDist * Math.pow(Math.max(0, eCosTheta), 1.5);
-                    if (eDist2D >= eMaxDist) continue;
+                    if (eDist2D >= maxForwardDist) continue;
                     
                     let o = getRenderItem(); o.type = 'emoji'; o.emoji = e.emoji; o.size = e.size; o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.wX = e.x; o.wY = e.y;
                 }
@@ -421,9 +411,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 4.0) {
                     let aDist2D = Math.hypot(dx, dy);
-                    let aCosTheta = rx / Math.max(0.1, aDist2D);
-                    let aMaxDist = maxForwardDist * Math.pow(Math.max(0, aCosTheta), 1.5);
-                    if (aDist2D >= aMaxDist) continue;
+                    if (aDist2D >= maxForwardDist) continue;
                     
                     let o = getRenderItem(); o.type = 'animal'; o.emoji = e.emoji; o.size = e.size; o.hp = (!e.dead ? e.hp : undefined); o.depthSq = cz*cz; o.h = e.z; o.targeted = e === interactTarget; o.dead = e.dead; o.wX = e.x; o.wY = e.y;
                 }
@@ -437,9 +425,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 8.0) {
                     let bDist2D = Math.hypot(dx, dy);
-                    let bCosTheta = rx / Math.max(0.1, bDist2D);
-                    let bMaxDist = maxForwardDist * Math.pow(Math.max(0, bCosTheta), 1.5);
-                    if (bDist2D >= bMaxDist) continue;
+                    if (bDist2D >= maxForwardDist) continue;
                     
                     let o = getRenderItem(); o.type = 'emoji'; o.emoji = b.emoji; o.size = 4.5; o.depthSq = cz*cz; o.h = b.z; o.targeted = b === interactTarget; o.wX = b.x; o.wY = b.y;
                 }
@@ -453,9 +439,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 2.0) {
                     let dDist2D = Math.hypot(dx, dy);
-                    let dCosTheta = rx / Math.max(0.1, dDist2D);
-                    let dMaxDist = maxForwardDist * Math.pow(Math.max(0, dCosTheta), 1.5);
-                    if (dDist2D >= dMaxDist) continue;
+                    if (dDist2D >= maxForwardDist) continue;
                     
                     let o = getRenderItem(); o.type = 'dmgText'; o.text = Math.round(d.amt*10)/10; o.depthSq = cz*cz; o.h = d.z; o.life = d.life; o.wX = d.x; o.wY = d.y;
                 }
@@ -469,9 +453,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 2.0) {
                     let bDist2D = Math.hypot(dx, dy);
-                    let bCosTheta = rx / Math.max(0.1, bDist2D);
-                    let bMaxDist = maxForwardDist * Math.pow(Math.max(0, bCosTheta), 1.5);
-                    if (bDist2D >= bMaxDist) continue;
+                    if (bDist2D >= maxForwardDist) continue;
                     
                     if (b.isLimb && b.is3D) {
                         add3DLimbFaces(b, ambient);
@@ -509,9 +491,7 @@ function render() {
                 let ry = dx * -sinA + dy * cosA;
                 if (Math.abs(ry) < cz * fovMult + 4.0) {
                     let pDist2D = Math.hypot(dx, dy);
-                    let pCosTheta = rx / Math.max(0.1, pDist2D);
-                    let pMaxDist = maxForwardDist * Math.pow(Math.max(0, pCosTheta), 1.5);
-                    if (pDist2D < pMaxDist) {
+                    if (pDist2D < maxForwardDist) {
                         let o = getRenderItem(); 
                         o.type = 'emoji'; 
                         o.emoji = placementItem.emoji; 
@@ -570,9 +550,7 @@ function render() {
                         let dx = tCx - player.x, dy = tCy - player.y;
                         let rx = dx * cosA + dy * sinA;
                         let pDist2D = Math.hypot(dx, dy);
-                        let pCosTheta = rx / Math.max(0.1, pDist2D);
-                        let pMaxDist = maxForwardDist * Math.pow(Math.max(0, pCosTheta), 1.5);
-                        if (pDist2D >= pMaxDist) return;
+                        if (pDist2D >= maxForwardDist) return;
                         
                         let o = getRenderItem(); o.type = 'face'; 
                         o.face = { pts: [p1,p2,p3,p4], col: col, shade: 1.0, isWater: false };
@@ -629,9 +607,7 @@ function render() {
             if (Math.abs(ry) < cz * fovMult + 4.0) {
                 if (gameState === 'overworld') {
                     let eDist2D = Math.hypot(dx, dy);
-                    let eCosTheta = rx / Math.max(0.1, eDist2D);
-                    let eMaxDist = minBaseDist + (maxForwardDist - minBaseDist) * Math.pow(Math.max(0, eCosTheta), 3.0);
-                    if (eDist2D >= eMaxDist) continue;
+                    if (eDist2D >= maxForwardDist) continue;
                 }
                 
                 let itemId = e.item.id;
@@ -704,9 +680,7 @@ function render() {
             let ry = dx * -sinA + dy * cosA;
             if (Math.abs(ry) < cz * fovMult + 2.0) {
                 let pDist2D = Math.hypot(dx, dy);
-                let pCosTheta = rx / Math.max(0.1, pDist2D);
-                let pMaxDist = maxForwardDist * Math.pow(Math.max(0, pCosTheta), 1.5);
-                if (pDist2D >= pMaxDist) continue;
+                if (pDist2D >= maxForwardDist) continue;
                 
                 let o = getRenderItem(); o.type = 'bullet'; o.owner = p.owner; o.depthSq = cz*cz; o.h = p.z; o.wX = p.x; o.wY = p.y;
             }
@@ -814,13 +788,11 @@ function render() {
             let dx = o.wX - player.x, dy = o.wY - player.y;
             let rx = dx * cosA + dy * sinA;
             if (gameState === 'overworld') {
-                if (rx < 0) {
+                if (rx < -5) {
                     distRatio = 999999;
                 } else {
                     let dist2D = Math.hypot(dx, dy);
-                    let cosTheta = rx / Math.max(0.1, dist2D);
-                    let maxDist = VIEW_DIST * Math.pow(Math.max(0, cosTheta), 1.5);
-                    distRatio = dist2D / Math.max(0.1, maxDist);
+                    distRatio = dist2D / VIEW_DIST;
                 }
             } else {
                 distRatio = depth / VIEW_DIST;
