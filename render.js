@@ -126,6 +126,7 @@ function render() {
 
     let fovMult = 0.7 / currentZoom; 
     let maxForwardDist = VIEW_DIST * 1.5;
+    let cloudViewDist = VIEW_DIST * 4.0;
     if (gameState === 'overworld') {
         let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
         let sunDx = Math.cos(sunTimeAngle) * 50000;
@@ -148,7 +149,6 @@ function render() {
 
         let cloudHeight = 130;
         let cloudGrid = 20;
-        let cloudViewDist = 200;
         let cloudRad = Math.ceil(cloudViewDist / cloudGrid);
         let cloudSpeed = 25;
         let cloudMoveX = gameTime * cloudSpeed;
@@ -166,10 +166,11 @@ function render() {
         }
 
         let cH = 12; 
-        let colorTop = 'rgba(255, 255, 255, 0.5)';
-        let colorBottom = 'rgba(210, 210, 210, 0.5)';
-        let colorSide1 = 'rgba(235, 235, 235, 0.5)';
-        let colorSide2 = 'rgba(220, 220, 220, 0.5)';
+        let colorTop = { r: 255, g: 255, b: 255 };
+        let colorBottom = { r: 210, g: 210, b: 210 };
+        let colorSide1 = { r: 235, g: 235, b: 235 };
+        let colorSide2 = { r: 220, g: 220, b: 220 };
+        let cloudAlpha = 0.5;
 
         for (let x = 1; x < cGridSize - 1; x++) {
             for (let y = 1; y < cGridSize - 1; y++) {
@@ -178,6 +179,17 @@ function render() {
                     let cy = pCyCloud - cloudRad - 1 + y;
                     let wx = cx * cloudGrid + cloudMoveX;
                     let wy = cy * cloudGrid;
+                    
+                    // Cell-level pre-culling (horizontal yaw & distance)
+                    let cellCenterX = wx + cloudGrid * 0.5;
+                    let cellCenterY = wy + cloudGrid * 0.5;
+                    let cellDx = cellCenterX - player.x;
+                    let cellDy = cellCenterY - player.y;
+                    
+                    let rx = cellDx * cosA + cellDy * sinA;
+                    if (rx < -cloudGrid * 1.5 || rx > cloudViewDist) continue;
+                    let ry = cellDx * -sinA + cellDy * cosA;
+                    if (Math.abs(ry) > rx * fovMult + cloudGrid * 2.5) continue;
                     
                     let n_px = cloudNoise[(x + 1) + y * cGridSize] > 0.45;
                     let n_nx = cloudNoise[(x - 1) + y * cGridSize] > 0.45;
@@ -192,7 +204,7 @@ function render() {
                             let fRotY = dX * -sinA + dY * cosA;
                             if (Math.abs(fRotY) <= Math.max(0, rotX) * fovMult + cloudGrid * 2) {
                                 let o = getRenderItem();
-                                o.type = 'cloudPoly'; o.pts = pts; o.color = col;
+                                o.type = 'cloudPoly'; o.pts = pts; o.color = col; o.baseAlpha = cloudAlpha;
                                 o.depthSq = rotX * rotX;
                             }
                         }
@@ -785,7 +797,14 @@ function render() {
     let drawBudget = Math.max(5000, Math.floor(5000 + (VIEW_DIST - 80) * 100));
     if (activeRenderList.length > drawBudget) {
         let celestials = activeRenderList.filter(o => o.type === 'celestial');
-        activeRenderList = celestials.concat(activeRenderList.slice(activeRenderList.length - drawBudget).filter(o => o.type !== 'celestial'));
+        let clouds = activeRenderList.filter(o => o.type === 'cloudPoly');
+        
+        let others = activeRenderList.filter(o => o.type !== 'celestial' && o.type !== 'cloudPoly');
+        let othersBudget = Math.max(1000, drawBudget - celestials.length - clouds.length);
+        let budgetedOthers = others.slice(others.length - othersBudget);
+        
+        // Re-combine and sort clouds and other visible items by depth to maintain correct 3D overlaps
+        activeRenderList = celestials.concat(clouds.concat(budgetedOthers).sort((a, b) => b.depthSq - a.depthSq));
     }
 
     if (_lastAlign !== 'center') { ctx.textAlign = 'center'; _lastAlign = 'center'; }
@@ -1146,8 +1165,16 @@ function render() {
                     }
                 }
             } else if (o.type === 'cloudPoly') {
-                ctx.fillStyle = o.color;
-                ctx.strokeStyle = o.color;
+                let dist = depth;
+                let fadeStart = cloudViewDist * 0.7;
+                let alphaScale = 1.0;
+                if (dist > fadeStart) {
+                    alphaScale = Math.max(0, 1.0 - (dist - fadeStart) / (cloudViewDist - fadeStart));
+                }
+                let alpha = o.baseAlpha * alphaScale;
+                let colStr = `rgba(${o.color.r}, ${o.color.g}, ${o.color.b}, ${alpha})`;
+                ctx.fillStyle = colStr;
+                ctx.strokeStyle = colStr;
                 ctx.lineWidth = 1.0;
             } else {
                 ctx.fillStyle = o.color; ctx.strokeStyle = '#000';
