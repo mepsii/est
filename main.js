@@ -34,15 +34,25 @@ function loop(timestamp) {
     
     const now = timestamp || performance.now();
     
-    // Check if player crossed chunk boundary to update background preload queue
+    // Check if player crossed chunk boundary or rotated significantly to update background preload queue
     if (!isLoading && hasLoaded) {
         const pCx = Math.floor(player.x / CHUNK_SIZE);
         const pCy = Math.floor(player.y / CHUNK_SIZE);
+        const angleDiff = Math.abs(player.angle - (lastPreloadPlayerAngle || 0));
+        
+        let shouldRebuild = false;
         if (pCx !== lastPreloadPlayerChunkX || pCy !== lastPreloadPlayerChunkY) {
             lastPreloadPlayerChunkX = pCx;
             lastPreloadPlayerChunkY = pCy;
-            rebuildPreloadQueue(pCx, pCy);
+            shouldRebuild = true;
             evictDistantChunks(pCx, pCy);
+        } else if (angleDiff > 0.35) { // ~20 degrees rotation
+            lastPreloadPlayerAngle = player.angle;
+            shouldRebuild = true;
+        }
+        
+        if (shouldRebuild) {
+            rebuildPreloadQueue(pCx, pCy);
         }
     }
     let dt = now - lastLoopTime;
@@ -84,17 +94,14 @@ function loop(timestamp) {
     // Background preloader processing
     if (!isLoading && hasLoaded && backgroundPreloadQueue.length > 0) {
         let loopElapsed = performance.now() - now;
-        const frameBudget = lockFps30 ? 25 : 12;
-        let chunksProcessedThisFrame = 0;
-        while (loopElapsed < frameBudget && chunksProcessedThisFrame < 8 && backgroundPreloadQueue.length > 0) {
+        const frameBudget = lockFps30 ? 20 : 6;
+        if (loopElapsed < frameBudget) {
             const chunk = backgroundPreloadQueue.shift();
             if (chunk && !chunkMeshes.has(`${chunk.cx},${chunk.cy}`)) {
                 getMapChunk(chunk.cx, chunk.cy);
                 const mesh = buildChunkMesh(chunk.cx, chunk.cy);
                 chunkMeshes.set(`${chunk.cx},${chunk.cy}`, mesh);
-                chunksProcessedThisFrame++;
             }
-            loopElapsed = performance.now() - now;
         }
     }
 }
@@ -110,13 +117,13 @@ function startPreloading() {
     if (preloadStarted) return;
     preloadStarted = true;
     
-    const chunkRadius = Math.ceil(VIEW_DIST / CHUNK_SIZE);
+    const chunkRadius = Math.ceil((VIEW_DIST * 3.0) / CHUNK_SIZE);
     chunksToPreload = [];
     
     for (let cx = -chunkRadius; cx <= chunkRadius; cx++) {
         for (let cy = -chunkRadius; cy <= chunkRadius; cy++) {
             const dist = Math.hypot((cx + 0.5) * CHUNK_SIZE, (cy + 0.5) * CHUNK_SIZE);
-            if (dist <= VIEW_DIST + CHUNK_SIZE) {
+            if (dist <= VIEW_DIST * 3.0 + CHUNK_SIZE) {
                 chunksToPreload.push({ cx, cy });
             }
         }
@@ -175,11 +182,13 @@ function processPreload() {
 // --- Background Chunk Preloading System ---
 let lastPreloadPlayerChunkX = null;
 let lastPreloadPlayerChunkY = null;
+let lastPreloadPlayerAngle = null;
 let backgroundPreloadQueue = [];
 
 function rebuildPreloadQueue(pCx, pCy) {
     backgroundPreloadQueue = [];
     const preloadRadius = Math.ceil((VIEW_DIST * 3.0) / CHUNK_SIZE);
+    const lookAngle = player.angle;
     
     for (let cx = pCx - preloadRadius; cx <= pCx + preloadRadius; cx++) {
         for (let cy = pCy - preloadRadius; cy <= pCy + preloadRadius; cy++) {
@@ -189,14 +198,24 @@ function rebuildPreloadQueue(pCx, pCy) {
             if (dist <= preloadRadius) {
                 const key = `${cx},${cy}`;
                 if (!chunkMeshes.has(key)) {
-                    backgroundPreloadQueue.push({ cx, cy, dist });
+                    // Calculate direction to chunk from player's chunk coordinates
+                    const chunkAngle = Math.atan2(dy, dx);
+                    let angleDiff = Math.abs(lookAngle - chunkAngle);
+                    
+                    // Normalize angle difference to [0, PI]
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    angleDiff = Math.abs(angleDiff);
+                    
+                    // Priority Score: closer chunks in player's FOV get priority
+                    const priorityScore = dist + angleDiff * 6.0;
+                    backgroundPreloadQueue.push({ cx, cy, dist, priorityScore });
                 }
             }
         }
     }
     
-    // Sort closest chunks first so they load immediately
-    backgroundPreloadQueue.sort((a, b) => a.dist - b.dist);
+    // Sort closest and look-aligned chunks first
+    backgroundPreloadQueue.sort((a, b) => a.priorityScore - b.priorityScore);
 }
 
 function evictDistantChunks(pCx, pCy) {

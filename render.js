@@ -126,7 +126,7 @@ function render() {
     };
 
     let fovMult = 0.7 / currentZoom; 
-    let maxForwardDist = VIEW_DIST * 1.25;
+    let maxForwardDist = VIEW_DIST * 1.45;
     let cloudViewDist = VIEW_DIST * 4.0;
     if (gameState === 'overworld') {
         let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
@@ -237,7 +237,7 @@ function render() {
                 let dist2D = Math.hypot(dx, dy);
                 let cosTheta = cRotX / Math.max(0.1, dist2D);
                 let maxDist = maxForwardDist * Math.pow(Math.max(0, cosTheta), 1.5);
-                if (dist2D > maxDist + CHUNK_SIZE * 1.5) continue;
+                if (dist2D > maxDist + CHUNK_SIZE * 3.0) continue;
                 
                 let faces = getChunkMesh(cx, cy);
                 for (let i = 0; i < faces.length; i++) {
