@@ -182,7 +182,7 @@ function initThree() {
     scene.add(sunLight);
     
     // Flashlight Spotlight
-    flashlight = new THREE.SpotLight(0xffffff, 3.5, 80, Math.PI / 15, 0.2, 1.0);
+    flashlight = new THREE.SpotLight(0xffffff, 1.5, 80, Math.PI / 12, 0.2, 1.0);
     flashlight.map = FlashlightTextureCache.get();
     scene.add(flashlight);
     scene.add(flashlight.target);
@@ -726,14 +726,14 @@ function render() {
     if (gameState === 'overworld') {
         let nightFactor = 1.0 - ambientVal;
         if (nightFactor > 0) {
-            ambientR = Math.max(ambientR, nightFactor * 0.06);
-            ambientG = Math.max(ambientG, nightFactor * 0.09);
-            ambientB = Math.max(ambientB, nightFactor * 0.20);
+            ambientR = Math.max(ambientR, nightFactor * 0.15);
+            ambientG = Math.max(ambientG, nightFactor * 0.20);
+            ambientB = Math.max(ambientB, nightFactor * 0.38);
         }
     }
     
     ambientLight.color.setRGB(ambientR, ambientG, ambientB);
-    ambientLight.intensity = (gameState === 'overworld') ? ambientVal * 0.5 + 0.15 : 0.15;
+    ambientLight.intensity = (gameState === 'overworld') ? ambientVal * 0.5 + 0.22 : 0.15;
     
     let sunTimeAngle = ((gameTime - 6) / 24) * Math.PI * 2;
     let sunDx = Math.cos(sunTimeAngle) * 500;
@@ -752,7 +752,7 @@ function render() {
         sunLight.intensity = (sunDz / 500) * 0.9;
     } else {
         sunLight.color.setRGB(0.25, 0.4, 0.7);
-        sunLight.intensity = (Math.abs(sunDz) / 500) * 0.15;
+        sunLight.intensity = (Math.abs(sunDz) / 500) * 0.22;
     }
     if (gameState !== 'overworld') {
         sunLight.intensity = 0.02;
@@ -760,7 +760,7 @@ function render() {
     
     // Update player flashlight spotlight
     if (isFlashlightOn) {
-        flashlight.intensity = 3.5;
+        flashlight.intensity = 1.5;
         flashlight.position.copy(camera.position);
         camera.updateMatrixWorld();
         let targetPos = new THREE.Vector3(0, 0, -30);
