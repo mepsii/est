@@ -781,6 +781,10 @@ function render() {
     activeTorchGlowsThisFrame.clear();
     activeBillboardMeshes.clear();
     
+    if (typeof meshesBuiltThisFrame !== 'undefined') {
+        meshesBuiltThisFrame = 0;
+    }
+    
     // Sync static chunks terrain persistent meshes
     let pCx = Math.floor(player.x / CHUNK_SIZE);
     let pCy = Math.floor(player.y / CHUNK_SIZE);
