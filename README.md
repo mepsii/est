@@ -1,5 +1,5 @@
 #a total experiment. just a basic voxel based survival-fps game.\
-#just wanted to see how far it could be taken with nothing but ai models.\
+#just wanted to see how far it could be taken with nothing but ai models writing code.\
 #done w essentially all gemini
 
 ![https://img.shields.io/badge/vibe-coded-blue?style=flat-square](https://img.shields.io/badge/vibe-coded-blue?style=flat-square)
