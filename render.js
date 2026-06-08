@@ -20,6 +20,7 @@ let moonSprite = null;
 let heldWeaponGroup;
 let billboardGeo;
 let activeBillboardMeshes = new Set();
+let waterMaterial = null;
 
 // Helper to convert hex colors to rgb
 function hexToRgb(hex) {
@@ -340,6 +341,63 @@ function updateChunkMesh(key, faces) {
     threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: entitiesSprites });
 }
 
+function getWaterMaterial() {
+    if (waterMaterial) return waterMaterial;
+    
+    waterMaterial = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.1,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide
+    });
+    
+    waterMaterial.userData = {
+        uTime: { value: 0 }
+    };
+    
+    waterMaterial.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = waterMaterial.userData.uTime;
+        
+        shader.vertexShader = `
+            uniform float uTime;
+            varying vec3 vWaterPos;
+        ` + shader.vertexShader;
+        
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `
+            #include <begin_vertex>
+            if (normal.y > 0.5) {
+                float waveVal = sin(position.x * 0.5 + uTime) * cos(position.z * 0.5 + uTime * 0.8) * 0.08 +
+                                sin(position.x * 0.15 - uTime * 0.5) * 0.03;
+                transformed.y += waveVal;
+            }
+            vWaterPos = transformed;
+            `
+        );
+        
+        shader.fragmentShader = `
+            uniform float uTime;
+            varying vec3 vWaterPos;
+        ` + shader.fragmentShader;
+        
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <color_fragment>',
+            `
+            #include <color_fragment>
+            float shimmer = sin(vWaterPos.x * 1.0 + uTime * 1.5) * cos(vWaterPos.z * 1.0 + uTime * 1.15) * 0.15 +
+                            sin(vWaterPos.x * 0.3 - uTime * 0.75) * 0.05;
+            diffuseColor.rgb = clamp(diffuseColor.rgb + shimmer * 0.15, vec3(0.0), vec3(1.0));
+            diffuseColor.a = clamp(diffuseColor.a + shimmer * 0.08, 0.35, 0.85);
+            `
+        );
+    };
+    
+    return waterMaterial;
+}
+
 // Helper to batch faces to single BufferGeometry mesh
 function buildFacesMesh(faces, isWater) {
     if (faces.length === 0) return null;
@@ -385,14 +443,7 @@ function buildFacesMesh(faces, isWater) {
     
     let material;
     if (isWater) {
-        material = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            roughness: 0.1,
-            metalness: 0.1,
-            transparent: true,
-            opacity: 0.6,
-            side: THREE.DoubleSide
-        });
+        material = getWaterMaterial();
     } else {
         material = new THREE.MeshStandardMaterial({
             vertexColors: true,
@@ -622,6 +673,10 @@ function render() {
     
     if (!threeInitialized) {
         initThree();
+    }
+    
+    if (waterMaterial) {
+        waterMaterial.userData.uTime.value = performance.now() * 0.0015;
     }
     
     let realPlayerX = player.x;
