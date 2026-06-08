@@ -1,5 +1,87 @@
 //THIS IS physics.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+// --- Footstep Sound Effects System ---
+const stepSoundsPool = [
+    Array.from({ length: 3 }, () => {
+        const audio = new Audio('sounds/step1.ogg');
+        audio.preload = 'auto';
+        return audio;
+    }),
+    Array.from({ length: 3 }, () => {
+        const audio = new Audio('sounds/step2.ogg');
+        audio.preload = 'auto';
+        return audio;
+    })
+];
+const nextStepSoundIdx = [0, 0];
+
+function playStepSound(stepType) {
+    try {
+        const pool = stepSoundsPool[stepType];
+        let idx = nextStepSoundIdx[stepType];
+        const sound = pool[idx];
+        sound.currentTime = 0;
+        
+        // Calculate distance from player to camera for volume attenuation
+        let camX = typeof currentCamX !== 'undefined' ? currentCamX : player.x;
+        let camY = typeof currentCamY !== 'undefined' ? currentCamY : player.y;
+        let camZ = typeof currentCamZ !== 'undefined' ? currentCamZ : player.z;
+        let dist = Math.hypot(player.x - camX, player.y - camY, player.z - camZ);
+        
+        // Quiet down base volume and filter by distance
+        sound.volume = 0.08 / Math.max(1.0, dist * 0.5);
+        
+        sound.play().catch(e => {
+            // Silence console warning if played before user gesture
+        });
+        nextStepSoundIdx[stepType] = (idx + 1) % pool.length;
+    } catch (e) {
+        console.error("Error playing step sound:", e);
+    }
+}
+
+const mobStepSoundsPool = [
+    Array.from({ length: 4 }, () => {
+        const audio = new Audio('sounds/step1.ogg');
+        audio.preload = 'auto';
+        return audio;
+    }),
+    Array.from({ length: 4 }, () => {
+        const audio = new Audio('sounds/step2.ogg');
+        audio.preload = 'auto';
+        return audio;
+    })
+];
+const nextMobStepSoundIdx = [0, 0];
+
+function playMobStepSound(x, y, z, stepType) {
+    try {
+        const pool = mobStepSoundsPool[stepType];
+        let idx = nextMobStepSoundIdx[stepType];
+        const sound = pool[idx];
+        sound.currentTime = 0;
+        
+        let camX = typeof currentCamX !== 'undefined' ? currentCamX : player.x;
+        let camY = typeof currentCamY !== 'undefined' ? currentCamY : player.y;
+        let camZ = typeof currentCamZ !== 'undefined' ? currentCamZ : player.z;
+        let dist = Math.hypot(x - camX, y - camY, z - camZ);
+        
+        if (dist > 35.0) return; // ignore sounds too far away to optimize
+        
+        // Attenuate volume based on distance (mobs are slightly quieter than player)
+        let finalVolume = 0.05 / Math.max(1.0, dist * 0.7);
+        if (finalVolume < 0.005) return;
+        
+        sound.volume = finalVolume;
+        sound.play().catch(e => {
+            // Silence console warning
+        });
+        nextMobStepSoundIdx[stepType] = (idx + 1) % pool.length;
+    } catch (e) {
+        console.error("Error playing mob step sound:", e);
+    }
+}
+
 // --- 3D Hitbox Math Helpers ---
 function rotateAroundPivot(x, y, z, px, py, pz, rx, ry, rz) {
     let tx = x - px;
@@ -276,13 +358,13 @@ function update() {
     staminaEl.innerText = Math.floor(player.stamina);
     
     if (isMoving && !player.inVehicle) {
-        let speed = isSprinting ? 0.15 : 0.08;
+        let speed = isSprinting ? 0.23 : 0.15;
         player.animTime = (player.animTime || 0) + speed;
     } else {
         if (player.animTime) {
             player.animTime %= Math.PI * 2;
-            if (player.animTime > 0.08) player.animTime -= 0.08;
-            else if (player.animTime < -0.08) player.animTime += 0.08;
+            if (player.animTime > 0.15) player.animTime -= 0.15;
+            else if (player.animTime < -0.15) player.animTime += 0.15;
             else player.animTime = 0;
         }
     }
@@ -528,6 +610,27 @@ function update() {
             if (!isSolid(nx, player.y)) player.x = nx;
             if (!isSolid(player.x, ny)) player.y = ny;
         }
+
+        // Footstep sounds trigger logic
+        if (isMoving && !flightMode && !player.inWater && !player.isSubmerged) {
+            let grounded = false;
+            if (gameState === 'interior') {
+                grounded = true;
+            } else {
+                grounded = checkCollision(player.x, player.y, player.z - 0.05);
+            }
+            if (grounded) {
+                let prevAnimTime = player.lastAnimTime || 0;
+                let currentAnimTime = player.animTime || 0;
+                let prevStepVal = Math.floor((prevAnimTime - Math.PI / 2) / Math.PI);
+                let currStepVal = Math.floor((currentAnimTime - Math.PI / 2) / Math.PI);
+                if (prevStepVal !== currStepVal) {
+                    let stepType = Math.abs(currStepVal) % 2; // alternates: 0 for left (step1), 1 for right (step2)
+                    playStepSound(stepType);
+                }
+            }
+        }
+        player.lastAnimTime = player.animTime;
     }
     }
 
@@ -910,17 +1013,30 @@ function update() {
                         nx = e.x + (player.x-e.x)/d * moveSpeed;
                         ny = e.y + (player.y-e.y)/d * moveSpeed;
                     }
+                    let prevX = e.x, prevY = e.y;
                     if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) e.x = nx;
                     else if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + 1.1))) { e.x = nx; e.z += 1.1; }
 
                     if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z))) e.y = ny;
                     else if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z + 1.1))) { e.y = ny; e.z += 1.1; }
                     
-                    if (e.type === 'zombie3d' || e.type === 'zombie') {
-                        if (e.bleedOutTimer === undefined) {
-                            e.angle = Math.atan2(player.y - e.y, player.x - e.x);
+                    if (e.bleedOutTimer === undefined && (e.type === 'zombie3d' || e.type === 'zombie')) {
+                        e.angle = Math.atan2(player.y - e.y, player.x - e.x);
+                    }
+                    
+                    // Trigger footsteps for all moving enemies
+                    let actualDist = Math.hypot(e.x - prevX, e.y - prevY);
+                    if (actualDist > 0.001) {
+                        let stepSpeed = moveSpeed * 8.0;
+                        e.animTime = (e.animTime || 0) + stepSpeed;
+                        
+                        let prevStepVal = Math.floor(((e.lastAnimTime || 0) - Math.PI / 2) / Math.PI);
+                        let currStepVal = Math.floor(((e.animTime || 0) - Math.PI / 2) / Math.PI);
+                        if (prevStepVal !== currStepVal) {
+                            let stepType = Math.abs(currStepVal) % 2;
+                            playMobStepSound(e.x, e.y, e.z, stepType);
                         }
-                        e.animTime = (e.animTime || 0) + moveSpeed * 8.0;
+                        e.lastAnimTime = e.animTime;
                     }
                 } else {
                     if (e.type === 'zombie3d' || e.type === 'zombie') {
@@ -948,6 +1064,7 @@ function update() {
                 a.moveTimer--; if (a.moveTimer <= 0) { a.moveAngle = Math.random() * Math.PI * 2; a.moveTimer = 50 + Math.random() * 100; } 
                 let anx = a.x + Math.cos(a.moveAngle) * a.speed, any = a.y + Math.sin(a.moveAngle) * a.speed; 
 
+                let prevX = a.x, prevY = a.y;
                 if (!getSolid(Math.floor(anx), Math.floor(a.y), Math.floor(a.z))) a.x = anx; 
                 else if (!getSolid(Math.floor(anx), Math.floor(a.y), Math.floor(a.z + 1.1))) { a.x = anx; a.z += 1.1; }
 
@@ -956,6 +1073,21 @@ function update() {
 
                 if (!getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z - 0.1))) a.z -= 0.1; 
                 else if (getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z))) a.z += 0.5; 
+
+                // Animal footsteps sound trigger
+                let actualDist = Math.hypot(a.x - prevX, a.y - prevY);
+                if (actualDist > 0.001) {
+                    let stepSpeed = a.speed * 8.0;
+                    a.animTime = (a.animTime || 0) + stepSpeed;
+                    
+                    let prevStepVal = Math.floor(((a.lastAnimTime || 0) - Math.PI / 2) / Math.PI);
+                    let currStepVal = Math.floor(((a.animTime || 0) - Math.PI / 2) / Math.PI);
+                    if (prevStepVal !== currStepVal) {
+                        let stepType = Math.abs(currStepVal) % 2;
+                        playMobStepSound(a.x, a.y, a.z, stepType);
+                    }
+                    a.lastAnimTime = a.animTime;
+                }
             }
         }
     }
