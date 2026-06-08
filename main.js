@@ -32,6 +32,10 @@ const pacingTolerance = 6; // 6ms tolerance window to align with display refresh
 function loop(timestamp) { 
     requestAnimationFrame(loop); 
     
+    if (typeof updateAmbiance === 'function') {
+        updateAmbiance();
+    }
+    
     const now = timestamp || performance.now();
     
     // Check if player crossed chunk boundary or rotated significantly to update background preload queue

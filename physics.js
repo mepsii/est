@@ -82,6 +82,100 @@ function playMobStepSound(x, y, z, stepType) {
     }
 }
 
+// --- Ambient Sound Effects System ---
+let ambianceAudio = null;
+let waterAudio = null;
+
+function updateAmbiance() {
+    if (!ambianceAudio) {
+        ambianceAudio = new Audio('sounds/ambiance1.wav');
+        ambianceAudio.loop = true;
+        ambianceAudio.volume = 0;
+    }
+    if (!waterAudio) {
+        waterAudio = new Audio('sounds/water1.wav');
+        waterAudio.loop = true;
+        waterAudio.volume = 0;
+    }
+    
+    let targetAmbianceVolume = 0;
+    let targetWaterVolume = 0;
+    
+    if (gameState === 'overworld' && !isLoading && hasLoaded && !isPaused) {
+        let px = Math.floor(player.x);
+        let py = Math.floor(player.y);
+        
+        // Find distance to nearest water column
+        let nearestWaterDist = Infinity;
+        let searchRadius = 8;
+        for (let dx = -searchRadius; dx <= searchRadius; dx += 2) {
+            for (let dy = -searchRadius; dy <= searchRadius; dy += 2) {
+                let tx = px + dx;
+                let ty = py + dy;
+                let t = getTerrainFast(tx, ty);
+                if (t.baseH <= 24.0 || t.isLake) { // 24 is WATER_LEVEL
+                    let dist = Math.hypot(dx, dy);
+                    if (dist < nearestWaterDist) {
+                        nearestWaterDist = dist;
+                    }
+                }
+            }
+        }
+        
+        let moisture = getBiome(player.x, player.y);
+        if (moisture >= 0.35) {
+            // Player is in a green biome
+            let waterFactor = 0;
+            if (nearestWaterDist <= 8.0) {
+                waterFactor = 1.0 - (nearestWaterDist / 8.0); // 1.0 at water, 0.0 at 8+ blocks away
+            }
+            
+            targetWaterVolume = 0.30 * waterFactor;
+            targetAmbianceVolume = 0.25 * (1.0 - waterFactor * 0.6); // fade green ambiance down by 60% near water
+        } else {
+            // Player is in desert biome, check if they are near a body of water (oasis/river)
+            if (nearestWaterDist <= 8.0) {
+                let waterFactor = 1.0 - (nearestWaterDist / 8.0);
+                targetWaterVolume = 0.30 * waterFactor;
+            }
+        }
+    }
+    
+    // Smoothly fade ambiance volume in/out
+    if (ambianceAudio.volume !== targetAmbianceVolume) {
+        let diff = targetAmbianceVolume - ambianceAudio.volume;
+        if (Math.abs(diff) < 0.01) {
+            ambianceAudio.volume = targetAmbianceVolume;
+        } else {
+            ambianceAudio.volume += Math.sign(diff) * 0.005;
+        }
+    }
+    
+    // Smoothly fade water volume in/out
+    if (waterAudio.volume !== targetWaterVolume) {
+        let diff = targetWaterVolume - waterAudio.volume;
+        if (Math.abs(diff) < 0.01) {
+            waterAudio.volume = targetWaterVolume;
+        } else {
+            waterAudio.volume += Math.sign(diff) * 0.005;
+        }
+    }
+    
+    // Control ambiance playback
+    if (targetAmbianceVolume > 0 && ambianceAudio.paused) {
+        ambianceAudio.play().catch(e => {});
+    } else if (targetAmbianceVolume === 0 && !ambianceAudio.paused && ambianceAudio.volume === 0) {
+        ambianceAudio.pause();
+    }
+    
+    // Control water playback
+    if (targetWaterVolume > 0 && waterAudio.paused) {
+        waterAudio.play().catch(e => {});
+    } else if (targetWaterVolume === 0 && !waterAudio.paused && waterAudio.volume === 0) {
+        waterAudio.pause();
+    }
+}
+
 // --- 3D Hitbox Math Helpers ---
 function rotateAroundPivot(x, y, z, px, py, pz, rx, ry, rz) {
     let tx = x - px;
