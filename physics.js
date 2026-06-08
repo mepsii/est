@@ -85,6 +85,7 @@ function playMobStepSound(x, y, z, stepType) {
 // --- Ambient Sound Effects System ---
 let ambianceAudio = null;
 let waterAudio = null;
+let desertAudio = null;
 
 function updateAmbiance() {
     if (!ambianceAudio) {
@@ -97,9 +98,15 @@ function updateAmbiance() {
         waterAudio.loop = true;
         waterAudio.volume = 0;
     }
+    if (!desertAudio) {
+        desertAudio = new Audio('sounds/desert1.wav');
+        desertAudio.loop = true;
+        desertAudio.volume = 0;
+    }
     
     let targetAmbianceVolume = 0;
     let targetWaterVolume = 0;
+    let targetDesertVolume = 0;
     
     if (gameState === 'overworld' && !isLoading && hasLoaded && !isPaused) {
         let px = Math.floor(player.x);
@@ -123,21 +130,21 @@ function updateAmbiance() {
         }
         
         let moisture = getBiome(player.x, player.y);
+        let waterFactor = 0;
+        if (nearestWaterDist <= 8.0) {
+            waterFactor = 1.0 - (nearestWaterDist / 8.0); // 1.0 at water, 0.0 at 8+ blocks away
+        }
+        
+        targetWaterVolume = 0.30 * waterFactor;
+        
         if (moisture >= 0.35) {
             // Player is in a green biome
-            let waterFactor = 0;
-            if (nearestWaterDist <= 8.0) {
-                waterFactor = 1.0 - (nearestWaterDist / 8.0); // 1.0 at water, 0.0 at 8+ blocks away
-            }
-            
-            targetWaterVolume = 0.30 * waterFactor;
             targetAmbianceVolume = 0.25 * (1.0 - waterFactor * 0.6); // fade green ambiance down by 60% near water
+            targetDesertVolume = 0;
         } else {
-            // Player is in desert biome, check if they are near a body of water (oasis/river)
-            if (nearestWaterDist <= 8.0) {
-                let waterFactor = 1.0 - (nearestWaterDist / 8.0);
-                targetWaterVolume = 0.30 * waterFactor;
-            }
+            // Player is in desert biome
+            targetAmbianceVolume = 0;
+            targetDesertVolume = 0.25 * (1.0 - waterFactor * 0.6); // fade desert ambiance down by 60% near water
         }
     }
     
@@ -161,6 +168,16 @@ function updateAmbiance() {
         }
     }
     
+    // Smoothly fade desert volume in/out
+    if (desertAudio.volume !== targetDesertVolume) {
+        let diff = targetDesertVolume - desertAudio.volume;
+        if (Math.abs(diff) < 0.01) {
+            desertAudio.volume = targetDesertVolume;
+        } else {
+            desertAudio.volume += Math.sign(diff) * 0.005;
+        }
+    }
+    
     // Control ambiance playback
     if (targetAmbianceVolume > 0 && ambianceAudio.paused) {
         ambianceAudio.play().catch(e => {});
@@ -173,6 +190,13 @@ function updateAmbiance() {
         waterAudio.play().catch(e => {});
     } else if (targetWaterVolume === 0 && !waterAudio.paused && waterAudio.volume === 0) {
         waterAudio.pause();
+    }
+    
+    // Control desert playback
+    if (targetDesertVolume > 0 && desertAudio.paused) {
+        desertAudio.play().catch(e => {});
+    } else if (targetDesertVolume === 0 && !desertAudio.paused && desertAudio.volume === 0) {
+        desertAudio.pause();
     }
 }
 
