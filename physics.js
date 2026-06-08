@@ -82,6 +82,28 @@ function playMobStepSound(x, y, z, stepType) {
     }
 }
 
+// --- Pistol Sound Effects ---
+const pistolShotPool = Array.from({ length: 3 }, () => {
+    const audio = new Audio('sounds/pistol/pistolshot1.wav');
+    audio.preload = 'auto';
+    return audio;
+});
+let nextPistolShotIdx = 0;
+
+function playPistolShot() {
+    try {
+        const sound = pistolShotPool[nextPistolShotIdx];
+        sound.currentTime = 0;
+        sound.volume = 0.4;
+        sound.play().catch(e => {
+            // Silence console warning if played before user gesture
+        });
+        nextPistolShotIdx = (nextPistolShotIdx + 1) % pistolShotPool.length;
+    } catch (e) {
+        console.error("Error playing pistol shot sound:", e);
+    }
+}
+
 // --- Ambient Sound Effects System ---
 let ambianceAudio = null;
 let waterAudio = null;
@@ -1425,6 +1447,12 @@ function update() {
                 let waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
                 let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
                 for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: camZ, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
+                
+                // Gunshot sound trigger
+                if (activeItem.id === 'pistol') {
+                    playPistolShot();
+                }
+                
                 fireCooldown = w.fireRate;
             }
         }
