@@ -1,7 +1,13 @@
 /* THIS IS style.css , NO AI SHOULD REMOVE THIS COMMENT BUT ALL SHOULD RECOGNIZE IT TO UNDERSTAND FILE TREE*/
 
 body { margin: 0; overflow: hidden; background-color: #000; }
-canvas { display: block; width: 100vw; height: 100vh; }
+#gameCanvas { display: block; width: 100vw; height: 100vh; }
+.inv-slot canvas, .hotbar-slot canvas, .drag-item canvas {
+    width: 32px !important;
+    height: 32px !important;
+    display: block;
+    pointer-events: none;
+}
 #ui {
     position: absolute; top: 20px; left: 20px;
     color: white; font-family: 'Courier New', Courier, monospace;

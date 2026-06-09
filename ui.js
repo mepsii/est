@@ -32,7 +32,8 @@ const ITEM_DETAILS = {
     'axe': { name: 'Axe', desc: 'Sharp melee weapon and harvesting tool. Used to harvest Wood from trees.', category: 'tool' },
     'pickaxe': { name: 'Pickaxe', desc: 'Pointy mining tool. Used to harvest Stone from rocks.', category: 'tool' },
     'shovel': { name: 'Shovel', desc: 'Digging tool. Used to dig up dirt.', category: 'tool' },
-    'coord_picker': { name: 'Coord Picker', desc: 'Developer tool to capture coordinates. Select it and click on vehicle models to copy local offset coordinates.', category: 'tool' }
+    'coord_picker': { name: 'Coord Picker', desc: 'Developer tool to capture coordinates. Select it and click on vehicle models to copy local offset coordinates.', category: 'tool' },
+    '.45acp': { name: '.45 ACP', desc: 'A standard .45 ACP handgun round.', category: 'ammo', emoji: '⚙️' }
 };
 
 function resolveItemDetails(item) {
@@ -292,10 +293,132 @@ function updateHotbarUI() {
     }
 }
 
+function renderModelToCanvas(modelName, canvas) {
+    if (typeof rotate3D !== 'function' || typeof WEAPON_MODELS === 'undefined') return;
+    let model = WEAPON_MODELS[modelName];
+    if (!model) return;
+    
+    let ctx = canvas.getContext('2d');
+    let w = canvas.width;
+    let h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    
+    // Set up standard rotation/isometric viewing angle for icon
+    let rotX = -0.5;
+    let rotY = 0.8;
+    let rotZ = 0.3;
+    
+    // Rotate and project all vertices
+    let projected = [];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    for (let v of model.vertices) {
+        let r = rotate3D(v.x, v.y, v.z, rotX, rotY, rotZ);
+        projected.push(r);
+        if (r.x < minX) minX = r.x;
+        if (r.x > maxX) maxX = r.x;
+        if (r.y < minY) minY = r.y;
+        if (r.y > maxY) maxY = r.y;
+    }
+    
+    // Scale and translate to fit canvas
+    let modelW = maxX - minX;
+    let modelH = maxY - minY;
+    if (modelW === 0) modelW = 1;
+    if (modelH === 0) modelH = 1;
+    
+    let scale = Math.min(w, h) * 0.75 / Math.max(modelW, modelH);
+    let cx = w / 2;
+    let cy = h / 2;
+    let modelCx = (minX + maxX) / 2;
+    let modelCy = (minY + maxY) / 2;
+    
+    // Project and draw faces
+    let facesToRender = [];
+    for (let f of model.faces) {
+        let pts = [];
+        let avgZ = 0;
+        for (let v of f.pts) {
+            let r = rotate3D(v.x, v.y, v.z, rotX, rotY, rotZ);
+            let sx = cx + (r.x - modelCx) * scale;
+            let sy = cy - (r.y - modelCy) * scale;
+            pts.push({ x: sx, y: sy });
+            avgZ += r.z;
+        }
+        avgZ /= f.pts.length;
+        
+        // Calculate simple lighting normals
+        let ux = f.pts[1].x - f.pts[0].x;
+        let uy = f.pts[1].y - f.pts[0].y;
+        let uz = f.pts[1].z - f.pts[0].z;
+        let vx = f.pts[2].x - f.pts[0].x;
+        let vy = f.pts[2].y - f.pts[0].y;
+        let vz = f.pts[2].z - f.pts[0].z;
+        let nx = uy*vz - uz*vy;
+        let ny = uz*vx - ux*vz;
+        let nz = ux*vy - uy*vx;
+        let len = Math.hypot(nx, ny, nz);
+        if (len > 0) { nx /= len; ny /= len; nz /= len; }
+        
+        // Directional light from top-right-front
+        let dot = nx * 0.4 + ny * 0.6 + nz * 0.7;
+        let shade = 0.45 + Math.max(0, dot) * 0.55;
+        
+        facesToRender.push({ pts, depth: avgZ, color: f.color, shade });
+    }
+    
+    // Painters algorithm sorting (furthest first)
+    facesToRender.sort((a, b) => a.depth - b.depth);
+    
+    for (let f of facesToRender) {
+        ctx.fillStyle = `rgb(${f.color.r * f.shade | 0}, ${f.color.g * f.shade | 0}, ${f.color.b * f.shade | 0})`;
+        ctx.strokeStyle = `rgba(0, 0, 0, 0.25)`;
+        ctx.lineWidth = 0.5;
+        
+        ctx.beginPath();
+        ctx.moveTo(f.pts[0].x, f.pts[0].y);
+        for (let i = 1; i < f.pts.length; i++) {
+            ctx.lineTo(f.pts[i].x, f.pts[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+}
+
+function countPlayerAmmo(ammoId) {
+    let total = 0;
+    for (let item of inventory) {
+        if (item && item.id === ammoId) {
+            total += item.count;
+        }
+    }
+    return total;
+}
+
+function consumePlayerAmmo(ammoId, amount) {
+    let consumed = 0;
+    for (let i = 0; i < inventory.length; i++) {
+        let item = inventory[i];
+        if (item && item.id === ammoId) {
+            let take = Math.min(amount - consumed, item.count);
+            item.count -= take;
+            consumed += take;
+            if (item.count <= 0) {
+                inventory[i] = null;
+            }
+            if (consumed >= amount) break;
+        }
+    }
+    if (typeof updateInventories === 'function') {
+        updateInventories();
+    }
+    return consumed;
+}
+
 function ensurePistolAmmo(item) {
     if (item && item.id === 'pistol') {
         if (item.bullets === undefined) item.bullets = 10;
-        if (item.reserve === undefined) item.reserve = 100;
     }
 }
 
@@ -311,7 +434,8 @@ function updateBulletCounterUI() {
         if (player.pistolReloadTimer > 0) {
             counterEl.innerHTML = `🔫 RELOADING...`;
         } else {
-            counterEl.innerHTML = `🔫 ${activeItem.bullets} / ${activeItem.reserve}`;
+            let reserve = countPlayerAmmo('.45acp');
+            counterEl.innerHTML = `🔫 ${activeItem.bullets} / ${reserve}`;
         }
     } else {
         counterEl.classList.remove('visible');
@@ -325,7 +449,21 @@ function updateInventories() {
         let item = inventory[i];
         if (item) ensurePistolAmmo(item);
         if (pSlots[i]) {
-            pSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+            if (item && item.id === '.45acp') {
+                pSlots[i].innerHTML = `<canvas width="40" height="40" style="display:block; margin-left:auto; margin-right:auto;"></canvas>${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}`;
+                let canvas = pSlots[i].querySelector('canvas');
+                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
+                    renderModelToCanvas('45shell1', canvas);
+                } else {
+                    setTimeout(() => {
+                        if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1'] && canvas.parentNode) {
+                            renderModelToCanvas('45shell1', canvas);
+                        }
+                    }, 100);
+                }
+            } else {
+                pSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+            }
         }
     }
     
@@ -335,7 +473,21 @@ function updateInventories() {
             let item = activeContainer.items[i];
             if (item) ensurePistolAmmo(item);
             if (cSlots[i]) {
-                cSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+                if (item && item.id === '.45acp') {
+                    cSlots[i].innerHTML = `<canvas width="40" height="40" style="display:block; margin-left:auto; margin-right:auto;"></canvas>${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}`;
+                    let canvas = cSlots[i].querySelector('canvas');
+                    if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
+                        renderModelToCanvas('45shell1', canvas);
+                    } else {
+                        setTimeout(() => {
+                            if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1'] && canvas.parentNode) {
+                                renderModelToCanvas('45shell1', canvas);
+                            }
+                        }, 100);
+                    }
+                } else {
+                    cSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
+                }
             }
         } 
     }
@@ -347,7 +499,21 @@ function updateInventories() {
         let slot = document.getElementById('hotbar-slot-' + i);
         if (slot) {
             let numLabel = `<span style="position:absolute; top:2px; left:4px; color: rgba(255,255,255,0.5); font-size: 10px; font-weight: bold;">${i+1}</span>`;
-            slot.innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}${numLabel}` : numLabel;
+            if (item && item.id === '.45acp') {
+                slot.innerHTML = `<canvas width="35" height="35" style="display:block; margin-top:5px; margin-left:auto; margin-right:auto;"></canvas>${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}${numLabel}`;
+                let canvas = slot.querySelector('canvas');
+                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
+                    renderModelToCanvas('45shell1', canvas);
+                } else {
+                    setTimeout(() => {
+                        if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1'] && canvas.parentNode) {
+                            renderModelToCanvas('45shell1', canvas);
+                        }
+                    }, 100);
+                }
+            } else {
+                slot.innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}${numLabel}` : numLabel;
+            }
         }
     }
 
@@ -571,7 +737,15 @@ invScreen.addEventListener('mousedown', (e) => {
 
             dragEl = document.createElement('div');
             dragEl.className = 'drag-item';
-            dragEl.innerHTML = `${item.emoji}${item.count > 1 ? '<span class="drag-count">'+item.count+'</span>' : ''}`;
+            if (item.id === '.45acp') {
+                dragEl.innerHTML = `<canvas width="45" height="45" style="display:block;"></canvas>${item.count > 1 ? '<span class="drag-count">'+item.count+'</span>' : ''}`;
+                let canvas = dragEl.querySelector('canvas');
+                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
+                    renderModelToCanvas('45shell1', canvas);
+                }
+            } else {
+                dragEl.innerHTML = `${item.emoji}${item.count > 1 ? '<span class="drag-count">'+item.count+'</span>' : ''}`;
+            }
             document.body.appendChild(dragEl);
             
             dragEl.style.left = e.clientX + 'px';

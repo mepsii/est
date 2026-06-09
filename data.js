@@ -175,7 +175,7 @@ let placementItem = null, placementIndex = -1;
 
 let inventory = new Array(24).fill(null); 
 // Assign initial starting gear to Hotbar slots
-inventory[0] = { id: 'pistol', type: 'weapon', emoji: '🔫', count: 1, bullets: 10, reserve: 100 };
+inventory[0] = { id: 'pistol', type: 'weapon', emoji: '🔫', count: 1, bullets: 10 };
 inventory[1] = { id: 'smg', type: 'weapon', emoji: '📠', count: 1 };
 inventory[2] = { id: 'shotgun', type: 'weapon', emoji: '🪈', count: 1 };
 inventory[3] = { id: 'axe', type: 'tool', emoji: '🪓', count: 1 };
@@ -184,6 +184,7 @@ inventory[5] = { id: 'shovel', type: 'tool', emoji: '🥄', count: 1 };
 inventory[6] = { id: 'dirt', type: 'block', emoji: '🟫', count: 64 };
 inventory[7] = { id: 'cube', type: 'block', emoji: '🧊', count: 64 };
 inventory[8] = { id: 'coord_picker', type: 'tool', emoji: '📐', count: 1 };
+inventory[9] = { id: '.45acp', type: 'ammo', emoji: '⚙️', count: 100 };
 
 let hotbarSelection = 0;
 

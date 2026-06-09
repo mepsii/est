@@ -105,7 +105,12 @@ function startPistolReload() {
     let activeItem = inventory[hotbarSelection];
     if (!activeItem || activeItem.id !== 'pistol') return;
     if (typeof ensurePistolAmmo === 'function') ensurePistolAmmo(activeItem);
-    if (activeItem.bullets >= 10 || activeItem.reserve <= 0) return;
+    if (activeItem.bullets >= 10) return;
+    
+    // Check if player has any .45 ACP ammo in inventory
+    let totalAmmo = (typeof countPlayerAmmo === 'function') ? countPlayerAmmo('.45acp') : 0;
+    if (totalAmmo <= 0) return;
+    
     if (player.pistolReloadTimer > 0) return;
     
     player.pistolReloadTimer = 60;
@@ -469,9 +474,10 @@ function update() {
             if (activeItem && activeItem.id === 'pistol') {
                 if (typeof ensurePistolAmmo === 'function') ensurePistolAmmo(activeItem);
                 let needed = 10 - activeItem.bullets;
-                let toAdd = Math.min(needed, activeItem.reserve);
-                activeItem.bullets += toAdd;
-                activeItem.reserve -= toAdd;
+                if (needed > 0) {
+                    let toAdd = (typeof consumePlayerAmmo === 'function') ? consumePlayerAmmo('.45acp', needed) : 0;
+                    activeItem.bullets += toAdd;
+                }
             }
         }
         if (typeof updateBulletCounterUI === 'function') updateBulletCounterUI();

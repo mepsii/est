@@ -123,6 +123,7 @@ loadObjModel('pistol');
 loadObjModel('shotgun');
 loadObjModel('smg');
 loadObjModel('truck');
+loadObjModel('45shell1');
 
 function rotate3D(x, y, z, rotX, rotY, rotZ) {
     let cx = Math.cos(rotX), sx = Math.sin(rotX);
