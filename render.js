@@ -18,6 +18,10 @@ let pickerBox;
 let sunSprite = null;
 let moonSprite = null;
 let heldWeaponGroup;
+let weaponSwayX = 0;
+let weaponSwayY = 0;
+let lastPlayerAngle = undefined;
+let lastPlayerPitch = undefined;
 let billboardGeo;
 let activeBillboardMeshes = new Set();
 let waterMaterial = null;
@@ -1559,9 +1563,45 @@ function render() {
             let targetOffsetY = isZooming ? (conf.zoomOffsetY !== undefined ? conf.zoomOffsetY : conf.offsetY - 0.1) : conf.offsetY;
             let targetOffsetZ = isZooming ? (conf.zoomOffsetZ !== undefined ? conf.zoomOffsetZ : conf.offsetZ + 0.05) : conf.offsetZ;
             
-            let ox = targetOffsetX + bobX;
+            // Track player look changes for weight/sway lag
+            if (lastPlayerAngle === undefined) lastPlayerAngle = player.angle;
+            if (lastPlayerPitch === undefined) lastPlayerPitch = player.pitch;
+            
+            let deltaAngle = player.angle - lastPlayerAngle;
+            let deltaPitch = player.pitch - lastPlayerPitch;
+            
+            // Normalize radian wrapping for angle
+            while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
+            while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+            
+            lastPlayerAngle = player.angle;
+            lastPlayerPitch = player.pitch;
+            
+            // Base look sway targets
+            let targetSwayX = -deltaAngle * 0.4;
+            let targetSwayY = deltaPitch * 0.0003;
+            
+            // Clamp look sway to keep weapon within viewport bounds
+            const maxSway = 0.06;
+            targetSwayX = Math.max(-maxSway, Math.min(maxSway, targetSwayX));
+            targetSwayY = Math.max(-maxSway, Math.min(maxSway, targetSwayY));
+            
+            // Interpolate sway offsets
+            weaponSwayX += (targetSwayX - weaponSwayX) * 0.12;
+            weaponSwayY += (targetSwayY - weaponSwayY) * 0.12;
+            
+            // Figure-8 breathing idle sway
+            let idleSwayTime = performance.now() * 0.0015;
+            let idleSwayX = Math.sin(idleSwayTime) * 0.004;
+            let idleSwayY = Math.cos(idleSwayTime * 2) * 0.004;
+            
+            // Dampen sway while zoom aiming (ADS)
+            let swayMult = isZooming ? 0.25 : 1.0;
+            let idleMult = isZooming ? 0.15 : 1.0;
+            
+            let ox = targetOffsetX + bobX + (weaponSwayX * swayMult) + (idleSwayX * idleMult);
             let oy = targetOffsetY - recoilOffset;
-            let oz = targetOffsetZ - bobY + (recoilOffset * 0.2);
+            let oz = targetOffsetZ - bobY + (recoilOffset * 0.2) - (weaponSwayY * swayMult) + (idleSwayY * idleMult);
             
             if (activeItem.id === 'pistol' && player.pistolReloadTimer > 0) {
                 let t = player.pistolReloadTimer;
@@ -1575,11 +1615,30 @@ function render() {
             }
             
             heldWeaponGroup.position.set(ox, oz, -oy);
+            
+            // Apply rotational tilt sway (Roll, Pitch, Yaw)
+            let targetRotZ = weaponSwayX * 0.4 * swayMult; // Roll
+            let targetRotX = -weaponSwayY * 1.2 * swayMult; // Pitch
+            let targetRotY = weaponSwayX * 0.3 * swayMult; // Yaw
+            
+            heldWeaponGroup.rotation.x += (targetRotX - heldWeaponGroup.rotation.x) * 0.1;
+            heldWeaponGroup.rotation.y += (targetRotY - heldWeaponGroup.rotation.y) * 0.1;
+            heldWeaponGroup.rotation.z += (targetRotZ - heldWeaponGroup.rotation.z) * 0.1;
         } else {
             heldWeaponGroup.visible = false;
+            heldWeaponGroup.rotation.set(0, 0, 0);
+            weaponSwayX = 0;
+            weaponSwayY = 0;
+            lastPlayerAngle = undefined;
+            lastPlayerPitch = undefined;
         }
     } else {
         heldWeaponGroup.visible = false;
+        heldWeaponGroup.rotation.set(0, 0, 0);
+        weaponSwayX = 0;
+        weaponSwayY = 0;
+        lastPlayerAngle = undefined;
+        lastPlayerPitch = undefined;
     }
     
     // Clean up dynamic sprites that were not rendered
