@@ -216,7 +216,7 @@ function add3DZombieFaces(e, ambient) {
             let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
             let rx = dx * cosA + dy * sinA;
             let rz = dz;
-            let fov = canvas.width * currentZoom;
+            let fov = canvas.width * baseZoom;
             let pitchAngle = Math.atan2(currentCamPitch, fov);
             let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
             let cz_depth = rz * sinP + rx * cosP;
@@ -348,7 +348,7 @@ function add3DLimbFaces(b, ambient) {
         let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
         let rx = dx * cosA + dy * sinA;
         let rz = dz;
-        let fov = canvas.width * currentZoom;
+        let fov = canvas.width * baseZoom;
         let pitchAngle = Math.atan2(currentCamPitch, fov);
         let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
         let cz_depth = rz * sinP + rx * cosP;
@@ -399,7 +399,7 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
     let headPitch = 0;
     let headYaw = 0;
 
-    const fov = canvas.width * currentZoom;
+    const fov = canvas.width * baseZoom;
     const pitchAngle = Math.atan2(player.pitch, fov);
 
     let isSitting = (player.inVehicle !== null);

@@ -461,7 +461,7 @@ function spawnDroppedItemAt(itemData, x, y, z) {
 }
 
 function getPlacementTarget() {
-    const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+    const pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
     const waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
     const camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
     let hitX = player.x + Math.cos(player.angle) * 4.0;

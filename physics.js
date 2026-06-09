@@ -531,7 +531,7 @@ function update() {
             curSpeed *= 3.0;
         }
         
-        let pitchAngle = Math.atan2(freecamPitch, canvas.width * currentZoom);
+        let pitchAngle = Math.atan2(freecamPitch, canvas.width * baseZoom);
         let fwdX = Math.cos(freecamAngle) * Math.cos(pitchAngle);
         let fwdY = Math.sin(freecamAngle) * Math.cos(pitchAngle);
         let fwdZ = Math.sin(pitchAngle);
@@ -1283,7 +1283,7 @@ function update() {
         let w = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
 
         if (w) {
-            const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+            const pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
             if (w.isMelee) {
                 let hitTarget = null;
                 if (gameState === 'overworld') {
@@ -1293,7 +1293,7 @@ function update() {
                     let hitAnimalIndex = -1;
 
                     // Set up melee segment from player eye height in player look direction
-                    let pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+                    let pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
                     let waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
                     let startX = player.x;
                     let startY = player.y;

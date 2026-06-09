@@ -771,7 +771,7 @@ function getMuzzleWorldPos() {
         let cosH = Math.cos(rotAngle);
         let sinH = Math.sin(rotAngle);
         
-        let pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+        let pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
         let rArmPitch = 1.57 - pitchAngle;
         let rElbowBend = 0.1;
         
@@ -904,7 +904,7 @@ function render() {
     camera.position.set(camX, camZ, camY);
     camera.rotation.set(0, 0, 0, 'YXZ');
     camera.rotation.y = -renderAngle - Math.PI / 2;
-    camera.rotation.x = Math.atan2(renderPitch, canvas.width * currentZoom);
+    camera.rotation.x = Math.atan2(renderPitch, canvas.width * baseZoom);
     
     // Smooth camera FOV zooming updates
     let fovDegrees = parseInt(document.getElementById('dbg-fov').value || 80);

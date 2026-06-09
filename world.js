@@ -529,7 +529,7 @@ function modifyTerrainJS(cx, cy, cz, radius, amount) {
 }
 
 function getAimVoxel(range) {
-    const pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+    const pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
     const waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
     const camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
     let step = 0.2;
