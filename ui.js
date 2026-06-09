@@ -422,6 +422,13 @@ function ensurePistolAmmo(item) {
     }
 }
 
+function getItemModelName(item) {
+    if (!item || !item.id) return null;
+    if (item.id === '.45acp') return '45shell1';
+    if (item.id === 'pistol' || item.id === 'smg' || item.id === 'shotgun') return item.id;
+    return null;
+}
+
 function updateBulletCounterUI() {
     let counterEl = document.getElementById('bullet-counter');
     if (!counterEl) return;
@@ -449,15 +456,16 @@ function updateInventories() {
         let item = inventory[i];
         if (item) ensurePistolAmmo(item);
         if (pSlots[i]) {
-            if (item && item.id === '.45acp') {
+            let modelName = getItemModelName(item);
+            if (modelName) {
                 pSlots[i].innerHTML = `<canvas width="40" height="40" style="display:block; margin-left:auto; margin-right:auto;"></canvas>${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}`;
                 let canvas = pSlots[i].querySelector('canvas');
-                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
-                    renderModelToCanvas('45shell1', canvas);
+                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName]) {
+                    renderModelToCanvas(modelName, canvas);
                 } else {
                     setTimeout(() => {
-                        if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1'] && canvas.parentNode) {
-                            renderModelToCanvas('45shell1', canvas);
+                        if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName] && canvas.parentNode) {
+                            renderModelToCanvas(modelName, canvas);
                         }
                     }, 100);
                 }
@@ -473,15 +481,16 @@ function updateInventories() {
             let item = activeContainer.items[i];
             if (item) ensurePistolAmmo(item);
             if (cSlots[i]) {
-                if (item && item.id === '.45acp') {
+                let modelName = getItemModelName(item);
+                if (modelName) {
                     cSlots[i].innerHTML = `<canvas width="40" height="40" style="display:block; margin-left:auto; margin-right:auto;"></canvas>${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}`;
                     let canvas = cSlots[i].querySelector('canvas');
-                    if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
-                        renderModelToCanvas('45shell1', canvas);
+                    if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName]) {
+                        renderModelToCanvas(modelName, canvas);
                     } else {
                         setTimeout(() => {
-                            if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1'] && canvas.parentNode) {
-                                renderModelToCanvas('45shell1', canvas);
+                            if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName] && canvas.parentNode) {
+                                renderModelToCanvas(modelName, canvas);
                             }
                         }, 100);
                     }
@@ -499,15 +508,16 @@ function updateInventories() {
         let slot = document.getElementById('hotbar-slot-' + i);
         if (slot) {
             let numLabel = `<span style="position:absolute; top:2px; left:4px; color: rgba(255,255,255,0.5); font-size: 10px; font-weight: bold;">${i+1}</span>`;
-            if (item && item.id === '.45acp') {
+            let modelName = getItemModelName(item);
+            if (modelName) {
                 slot.innerHTML = `<canvas width="35" height="35" style="display:block; margin-top:5px; margin-left:auto; margin-right:auto;"></canvas>${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}${numLabel}`;
                 let canvas = slot.querySelector('canvas');
-                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
-                    renderModelToCanvas('45shell1', canvas);
+                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName]) {
+                    renderModelToCanvas(modelName, canvas);
                 } else {
                     setTimeout(() => {
-                        if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1'] && canvas.parentNode) {
-                            renderModelToCanvas('45shell1', canvas);
+                        if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName] && canvas.parentNode) {
+                            renderModelToCanvas(modelName, canvas);
                         }
                     }, 100);
                 }
@@ -737,11 +747,12 @@ invScreen.addEventListener('mousedown', (e) => {
 
             dragEl = document.createElement('div');
             dragEl.className = 'drag-item';
-            if (item.id === '.45acp') {
+            let modelName = getItemModelName(item);
+            if (modelName) {
                 dragEl.innerHTML = `<canvas width="45" height="45" style="display:block;"></canvas>${item.count > 1 ? '<span class="drag-count">'+item.count+'</span>' : ''}`;
                 let canvas = dragEl.querySelector('canvas');
-                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS['45shell1']) {
-                    renderModelToCanvas('45shell1', canvas);
+                if (typeof WEAPON_MODELS !== 'undefined' && WEAPON_MODELS[modelName]) {
+                    renderModelToCanvas(modelName, canvas);
                 }
             } else {
                 dragEl.innerHTML = `${item.emoji}${item.count > 1 ? '<span class="drag-count">'+item.count+'</span>' : ''}`;

@@ -1213,12 +1213,13 @@ function render() {
         let dist = Math.hypot(e.x - player.x, e.y - player.y);
         if (gameState === 'interior' || dist < VIEW_DIST) {
             let itemId = e.item.id;
-            let model = itemId ? WEAPON_MODELS[itemId] : null;
+            let modelName = getItemModelName(e.item);
+            let model = modelName ? WEAPON_MODELS[modelName] : null;
             let bobZ = Math.sin(e.hoverTime * 0.08) * 0.12 + 0.08;
             let itemZ = e.z + bobZ;
             
             if (model) {
-                let conf = WEAPON_MODEL_CONFIG[itemId] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
+                let conf = WEAPON_MODEL_CONFIG[modelName] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
                 let scale = conf.scale * 1.5;
                 let spinAngle = e.hoverTime * 0.012;
                 let ryaw = conf.rotZ + spinAngle;
