@@ -2,7 +2,7 @@
 
 let threeInitialized = false;
 let scene, camera, renderer;
-let ambientLight, sunLight, flashlight;
+let ambientLight, sunLight, flashlight, muzzleFlashLight, muzzleFlashSprite;
 let threeChunks = new Map();
 let threeDynamicSprites = new Map();
 let threePointLights = new Map();
@@ -75,6 +75,68 @@ const GlowTextureCache = {
                     let steps = Math.ceil(intensity * 4) / 4;
                     let alpha = steps * 0.45;
                     cx.fillStyle = `rgba(255, 140, 40, ${alpha})`;
+                    cx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+        this.texture = new THREE.CanvasTexture(c);
+        this.texture.minFilter = THREE.NearestFilter;
+        this.texture.magFilter = THREE.NearestFilter;
+        return this.texture;
+    }
+};
+
+// Cache starburst-like pixelated textures for muzzle flashes
+const MuzzleFlashTextureCache = {
+    texture: null,
+    get() {
+        if (this.texture) return this.texture;
+        const c = document.createElement('canvas');
+        c.width = 16; c.height = 16;
+        const cx = c.getContext('2d');
+        for (let x = 0; x < 16; x++) {
+            for (let y = 0; y < 16; y++) {
+                let dx = Math.abs(x - 7.5);
+                let dy = Math.abs(y - 7.5);
+                // Center core: bright yellow/white
+                if (dx <= 1.5 && dy <= 1.5) {
+                    cx.fillStyle = 'rgba(255, 255, 200, 0.9)';
+                    cx.fillRect(x, y, 1, 1);
+                }
+                // Spikes / cross shape: orange fade out
+                else if ((dx <= 0.5 && dy <= 6.5) || (dy <= 0.5 && dx <= 6.5) || (dx <= 3.5 && dy <= 3.5)) {
+                    let maxD = Math.max(dx, dy);
+                    let alpha = 0.9 - (maxD / 8);
+                    cx.fillStyle = `rgba(255, 170, 0, ${alpha})`;
+                    cx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+        this.texture = new THREE.CanvasTexture(c);
+        this.texture.minFilter = THREE.NearestFilter;
+        this.texture.magFilter = THREE.NearestFilter;
+        return this.texture;
+    }
+};
+
+// Cache radial gradient grey textures for smoke puffs
+const SmokeTextureCache = {
+    texture: null,
+    get() {
+        if (this.texture) return this.texture;
+        const c = document.createElement('canvas');
+        c.width = 16; c.height = 16;
+        const cx = c.getContext('2d');
+        for (let x = 0; x < 16; x++) {
+            for (let y = 0; y < 16; y++) {
+                let dx = x - 7.5;
+                let dy = y - 7.5;
+                let dist = Math.hypot(dx, dy) / 8.0;
+                if (dist < 1.0) {
+                    let intensity = 1.0 - dist;
+                    let steps = Math.ceil(intensity * 4) / 4;
+                    let alpha = steps * 0.45;
+                    cx.fillStyle = `rgba(220, 220, 220, ${alpha})`;
                     cx.fillRect(x, y, 1, 1);
                 }
             }
@@ -217,6 +279,22 @@ function initThree() {
     // Group for rendering first-person held weapons
     heldWeaponGroup = new THREE.Group();
     camera.add(heldWeaponGroup);
+    
+    // Muzzle flash point light (added directly to scene so it's not hidden with heldWeaponGroup)
+    muzzleFlashLight = new THREE.PointLight(0xffdd66, 0.0, 6, 1.5);
+    scene.add(muzzleFlashLight);
+    
+    // Muzzle flash visual sprite for first person (attached to weapon group)
+    muzzleFlashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: MuzzleFlashTextureCache.get(),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    }));
+    muzzleFlashSprite.position.set(0, 0.1245, -0.32);
+    muzzleFlashSprite.scale.set(0.18, 0.18, 1.0);
+    muzzleFlashSprite.visible = false;
+    heldWeaponGroup.add(muzzleFlashSprite);
     
     // Dynamic Solid Color mesh for weapons, vehicles, limbs
     const solidGeo = new THREE.BufferGeometry();
@@ -662,6 +740,84 @@ function updateHeldWeapon(wData) {
     
     const mesh = new THREE.Mesh(geom, mat);
     heldWeaponGroup.add(mesh);
+}
+
+function getMuzzleWorldPos() {
+    let activeItem = inventory[hotbarSelection];
+    let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
+    if (!curW || activeItem.id !== 'pistol') return null;
+    
+    // Explicitly update camera and child matrices so local matrix changes are immediately baked into world matrices
+    camera.updateMatrixWorld(true);
+    
+    let isFirstPerson = (player.inVehicle ? player.vehicleView === '1st' : player.view === '1st');
+    if (isFirstPerson && !freecam) {
+        let muzzleLocal = new THREE.Vector3(0.0, 0.1245, -0.32);
+        let camMuzzle = new THREE.Vector3(
+            heldWeaponGroup.position.x + muzzleLocal.x,
+            heldWeaponGroup.position.y + muzzleLocal.y,
+            heldWeaponGroup.position.z + muzzleLocal.z
+        );
+        camMuzzle.applyMatrix4(camera.matrixWorld);
+        return {
+            x: camMuzzle.x,
+            y: camMuzzle.z,
+            z: camMuzzle.y
+        };
+    } else {
+        // Third person
+        let scale = player.baseHeight / 32.0;
+        let rotAngle = player.angle - Math.PI / 2;
+        let cosH = Math.cos(rotAngle);
+        let sinH = Math.sin(rotAngle);
+        
+        let pitchAngle = Math.atan2(player.pitch, canvas.width * currentZoom);
+        let rArmPitch = 1.57 - pitchAngle;
+        let rElbowBend = 0.1;
+        
+        let localHandPt = { x: -6, y: 0.5, z: 12.0 };
+        let handPt1 = rotateAroundPivot(localHandPt.x, localHandPt.y, localHandPt.z, -6, 0, 18, rElbowBend, 0, 0);
+        let handPt2 = rotateAroundPivot(handPt1.x, handPt1.y, handPt1.z, -6, 0, 24, rArmPitch, 0, 0);
+        
+        let hx = handPt2.x * scale;
+        let hy = handPt2.y * scale;
+        let hz = handPt2.z * scale;
+        
+        let wxHand = hx * cosH - hy * sinH;
+        let wyHand = hx * sinH + hy * cosH;
+        let wzHand = hz;
+        
+        let realX = player.x;
+        let realY = player.y;
+        let realZ = player.z;
+        
+        let worldHandPt = {
+            x: realX + wxHand,
+            y: realY + wyHand,
+            z: realZ + wzHand
+        };
+        
+        let conf = WEAPON_MODEL_CONFIG['pistol'] || { scale: 0.2 };
+        let weaponScale = conf.scale * 1.3;
+        
+        let p1 = {
+            x: 0.0041 * 1.3,
+            y: 0.1245 * 1.3,
+            z: -0.32 * 1.3
+        };
+        
+        let p2 = rotate3D(p1.x, p1.y, p1.z, rArmPitch - 1.57, 0, 0);
+        
+        let wxW = p2.x * cosH - p2.y * sinH;
+        let wyW = p2.x * sinH + p2.y * cosH;
+        let wzW = p2.z;
+        
+        return {
+            x: worldHandPt.x + wxW,
+            y: worldHandPt.y + wyW,
+            z: worldHandPt.z + wzW
+        };
+    }
 }
 
 // MAIN RENDER LOOP ROUTINE
@@ -1128,6 +1284,22 @@ function render() {
     for (let b of bloodParticles) {
         if (b.isLimb && b.is3D) {
             add3DLimbFaces(b, ambientVal);
+        } else if (b.isSmoke) {
+            // Render camera-facing billboard sprite for smoke
+            activeSpritesThisFrame.add(b);
+            let sprite = threeDynamicSprites.get(b);
+            if (!sprite) {
+                let mat = new THREE.SpriteMaterial({
+                    map: SmokeTextureCache.get(),
+                    transparent: true,
+                    depthWrite: false
+                });
+                sprite = new THREE.Sprite(mat);
+                scene.add(sprite);
+                threeDynamicSprites.set(b, sprite);
+            }
+            sprite.position.set(b.x, b.z, b.y);
+            sprite.scale.set(b.size * 25, b.size * 25, 1.0);
         } else {
             let size = b.size;
             let pts = [
@@ -1395,6 +1567,61 @@ function render() {
         mixedG * emissiveIntensity,
         mixedB * emissiveIntensity
     );
+
+    // Update muzzle flashPointLight and visual sprite, and spawn smoke particles
+    if (player.muzzleFlashTick > 0 && curW && activeItem.id === 'pistol') {
+        let isFirstPerson = (player.inVehicle ? player.vehicleView === '1st' : player.view === '1st');
+        if (isFirstPerson && !freecam) {
+            // Attach light to camera in first person so it is centered and directly in front of the player at all times
+            if (muzzleFlashLight.parent !== camera) {
+                if (muzzleFlashLight.parent) muzzleFlashLight.parent.remove(muzzleFlashLight);
+                camera.add(muzzleFlashLight);
+            }
+            muzzleFlashLight.position.set(0.0, 0.0, -1.2); // centered, 1.2 units forward
+            muzzleFlashLight.intensity = 3.0;
+        } else {
+            // Attach light to scene in third person/freecam
+            if (muzzleFlashLight.parent !== scene) {
+                if (muzzleFlashLight.parent) muzzleFlashLight.parent.remove(muzzleFlashLight);
+                scene.add(muzzleFlashLight);
+            }
+            let muzzlePos = getMuzzleWorldPos();
+            if (muzzlePos) {
+                muzzleFlashLight.position.set(muzzlePos.x, muzzlePos.z, muzzlePos.y);
+                muzzleFlashLight.intensity = 3.0;
+            }
+        }
+        muzzleFlashSprite.visible = isFirstPerson && !freecam;
+        muzzleFlashSprite.material.rotation = Math.random() * Math.PI * 2;
+    } else {
+        muzzleFlashLight.intensity = 0.0;
+        muzzleFlashSprite.visible = false;
+    }
+    
+    // Spawn smoke particles if barrel is hot
+    if (curW && activeItem.id === 'pistol' && player.pistolSmokeTimer > 0) {
+        if (Math.random() < 0.4) {
+            let muzzlePos = getMuzzleWorldPos();
+            if (muzzlePos) {
+                let angle = player.angle + (Math.random() - 0.5) * 0.4;
+                let speed = 0.001 + Math.random() * 0.002; // slower horizontal expansion
+                bloodParticles.push({
+                    x: muzzlePos.x,
+                    y: muzzlePos.y,
+                    z: muzzlePos.z,
+                    vx: Math.cos(angle) * speed + (Math.random() - 0.5) * 0.001,
+                    vy: Math.sin(angle) * speed + (Math.random() - 0.5) * 0.001,
+                    vz: 0.005 + Math.random() * 0.005, // faster rising speed
+                    color: { r: 220, g: 220, b: 220 },
+                    life: 40 + Math.floor(Math.random() * 20),
+                    maxLife: 60,
+                    startSize: 0.004, // 50% smaller starting size
+                    size: 0.004,
+                    isSmoke: true
+                });
+            }
+        }
+    }
 
     for (let mesh of activeBillboardMeshes) {
         mesh.quaternion.copy(camera.quaternion);

@@ -821,9 +821,20 @@ function update() {
     if (Math.abs(player.zOffset) < 0.01) player.zOffset = 0;
 
     for(let i = damageTexts.length - 1; i >= 0; i--) { damageTexts[i].z += 0.02; damageTexts[i].life--; if(damageTexts[i].life <= 0) damageTexts.splice(i, 1); }
+    if (player.muzzleFlashTick > 0) player.muzzleFlashTick--;
+    if (player.pistolSmokeTimer > 0) player.pistolSmokeTimer--;
     for(let i = bloodParticles.length - 1; i >= 0; i--) { 
         let b = bloodParticles[i];
-        if (!b.onGround) {
+        if (b.isSmoke) {
+            b.x += b.vx; b.y += b.vy; b.z += b.vz;
+            b.vx *= 0.90; b.vy *= 0.90; b.vz *= 0.94;
+            b.vz += 0.0012; 
+            let lifeRatio = b.life / b.maxLife;
+            b.size = b.startSize * lifeRatio;
+            if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) {
+                b.life = 0;
+            }
+        } else if (!b.onGround) {
             b.x += b.vx; b.y += b.vy; b.z += b.vz; b.vz -= 0.02; 
             if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) { 
                 b.z = Math.floor(b.z) + 1.02; 
@@ -1451,6 +1462,18 @@ function update() {
                 // Gunshot sound trigger
                 if (activeItem.id === 'pistol') {
                     playPistolShot();
+                    player.muzzleFlashTick = 4;
+                    if (!player.pistolLastShotTimer) player.pistolLastShotTimer = 0;
+                    if (!player.pistolConsecutiveShots) player.pistolConsecutiveShots = 0;
+                    if (tickCounter - player.pistolLastShotTimer < 45) {
+                        player.pistolConsecutiveShots++;
+                    } else {
+                        player.pistolConsecutiveShots = 1;
+                    }
+                    player.pistolLastShotTimer = tickCounter;
+                    if (player.pistolConsecutiveShots >= 5) {
+                        player.pistolSmokeTimer = 120;
+                    }
                 }
                 
                 fireCooldown = w.fireRate;
