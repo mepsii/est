@@ -1563,6 +1563,17 @@ function render() {
             let oy = targetOffsetY - recoilOffset;
             let oz = targetOffsetZ - bobY + (recoilOffset * 0.2);
             
+            if (activeItem.id === 'pistol' && player.pistolReloadTimer > 0) {
+                let t = player.pistolReloadTimer;
+                let dy = 1.0;
+                if (t > 50) {
+                    dy = (60 - t) / 10;
+                } else if (t < 10) {
+                    dy = t / 10;
+                }
+                oz -= dy * 0.8;
+            }
+            
             heldWeaponGroup.position.set(ox, oz, -oy);
         } else {
             heldWeaponGroup.visible = false;

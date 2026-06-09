@@ -51,6 +51,7 @@ function spawnDirt(x, y, z, vx, vy, isHeavy) {
 
 function selectHotbar(index) {
     hotbarSelection = index;
+    player.pistolReloadTimer = 0;
     let item = inventory[index];
     if (item && item.id && ITEMS[item.id]) {
         weaponEl.innerText = ITEMS[item.id].name;
@@ -61,6 +62,7 @@ function selectHotbar(index) {
     }
     fireCooldown = 5;
     if (typeof updateHotbarUI === 'function') updateHotbarUI();
+    if (typeof updateBulletCounterUI === 'function') updateBulletCounterUI();
 }
 
 function takeDamage(amt) { if (godMode) return; player.hp -= amt; hpEl.innerText = player.hp; damageFlash.style.opacity = '0.5'; setTimeout(() => damageFlash.style.opacity = '0', 100); if (player.hp <= 0) location.reload(); }

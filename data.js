@@ -175,7 +175,7 @@ let placementItem = null, placementIndex = -1;
 
 let inventory = new Array(24).fill(null); 
 // Assign initial starting gear to Hotbar slots
-inventory[0] = { id: 'pistol', type: 'weapon', emoji: '🔫', count: 1 };
+inventory[0] = { id: 'pistol', type: 'weapon', emoji: '🔫', count: 1, bullets: 10, reserve: 100 };
 inventory[1] = { id: 'smg', type: 'weapon', emoji: '📠', count: 1 };
 inventory[2] = { id: 'shotgun', type: 'weapon', emoji: '🪈', count: 1 };
 inventory[3] = { id: 'axe', type: 'tool', emoji: '🪓', count: 1 };
@@ -205,7 +205,7 @@ const destroyedEntities = new Set();
 const damageTexts = [];
 const bloodParticles =[];
 const projectiles = [], enemies = [], containers = [], animals = [], buildings = [], vehicles = [], droppedItems = [];
-const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100, oxygen: 100, inVehicle: null, vehicleView: '3rd_back', view: '1st' };
+const player = { x: 0, y: 0, z: 20, vz: 0, angle: 0, pitch: 0, speed: 0.12, baseHeight: 1.4, hp: 100, food: 100, stamina: 100, oxygen: 100, inVehicle: null, vehicleView: '3rd_back', view: '1st', pistolReloadTimer: 0 };
 
 let triggerCoordPick = false;
 let lastPickedCoord = null;

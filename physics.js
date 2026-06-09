@@ -94,14 +94,22 @@ function playPistolShot() {
     try {
         const sound = pistolShotPool[nextPistolShotIdx];
         sound.currentTime = 0;
-        sound.volume = 0.4;
-        sound.play().catch(e => {
-            // Silence console warning if played before user gesture
-        });
+        sound.play();
         nextPistolShotIdx = (nextPistolShotIdx + 1) % pistolShotPool.length;
-    } catch (e) {
+    } catch(e) {
         console.error("Error playing pistol shot sound:", e);
     }
+}
+
+function startPistolReload() {
+    let activeItem = inventory[hotbarSelection];
+    if (!activeItem || activeItem.id !== 'pistol') return;
+    if (typeof ensurePistolAmmo === 'function') ensurePistolAmmo(activeItem);
+    if (activeItem.bullets >= 10 || activeItem.reserve <= 0) return;
+    if (player.pistolReloadTimer > 0) return;
+    
+    player.pistolReloadTimer = 60;
+    if (typeof updateBulletCounterUI === 'function') updateBulletCounterUI();
 }
 
 // --- Ambient Sound Effects System ---
@@ -453,6 +461,21 @@ function get3DZombieLimbBoxes(e) {
 // --- Update Physics & Logic ---
 function update() {
     if (isPaused || isLoading) return;
+
+    if (player.pistolReloadTimer > 0) {
+        player.pistolReloadTimer--;
+        if (player.pistolReloadTimer === 0) {
+            let activeItem = inventory[hotbarSelection];
+            if (activeItem && activeItem.id === 'pistol') {
+                if (typeof ensurePistolAmmo === 'function') ensurePistolAmmo(activeItem);
+                let needed = 10 - activeItem.bullets;
+                let toAdd = Math.min(needed, activeItem.reserve);
+                activeItem.bullets += toAdd;
+                activeItem.reserve -= toAdd;
+            }
+        }
+        if (typeof updateBulletCounterUI === 'function') updateBulletCounterUI();
+    }
 
     gameTime += (24 / 54000) * timeSpeed; if (gameTime >= 24) gameTime %= 24; 
     if (isDebugOpen && tickCounter % 10 === 0) { dbgTimeEl.value = gameTime; dbgTimeValEl.innerText = gameTime.toFixed(1); }
@@ -1477,6 +1500,17 @@ function update() {
                 }
                 fireCooldown = w.fireRate;
             } else {
+                if (activeItem.id === 'pistol') {
+                    if (typeof ensurePistolAmmo === 'function') ensurePistolAmmo(activeItem);
+                    if (player.pistolReloadTimer > 0) return;
+                    if (activeItem.bullets <= 0) {
+                        startPistolReload();
+                        return;
+                    }
+                    activeItem.bullets--;
+                    if (typeof updateBulletCounterUI === 'function') updateBulletCounterUI();
+                }
+
                 let waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
                 let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
                 for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: camZ, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });

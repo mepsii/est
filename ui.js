@@ -292,11 +292,38 @@ function updateHotbarUI() {
     }
 }
 
+function ensurePistolAmmo(item) {
+    if (item && item.id === 'pistol') {
+        if (item.bullets === undefined) item.bullets = 10;
+        if (item.reserve === undefined) item.reserve = 100;
+    }
+}
+
+function updateBulletCounterUI() {
+    let counterEl = document.getElementById('bullet-counter');
+    if (!counterEl) return;
+    
+    let activeItem = inventory[hotbarSelection];
+    if (activeItem && activeItem.id === 'pistol') {
+        counterEl.classList.add('visible');
+        ensurePistolAmmo(activeItem);
+        
+        if (player.pistolReloadTimer > 0) {
+            counterEl.innerHTML = `🔫 RELOADING...`;
+        } else {
+            counterEl.innerHTML = `🔫 ${activeItem.bullets} / ${activeItem.reserve}`;
+        }
+    } else {
+        counterEl.classList.remove('visible');
+    }
+}
+
 function updateInventories() {
     hideTooltip();
     const pSlots = playerInvGrid.children;
     for(let i = 0; i < 24; i++) { 
         let item = inventory[i];
+        if (item) ensurePistolAmmo(item);
         if (pSlots[i]) {
             pSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
         }
@@ -306,6 +333,7 @@ function updateInventories() {
         const cSlots = containerInvGrid.children; 
         for(let i = 0; i < 10; i++) { 
             let item = activeContainer.items[i];
+            if (item) ensurePistolAmmo(item);
             if (cSlots[i]) {
                 cSlots[i].innerHTML = item ? `${item.emoji}${item.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:14px;color:#fff;text-shadow:1px 1px 2px #000;">'+item.count+'</span>' : ''}` : ''; 
             }
@@ -315,6 +343,7 @@ function updateInventories() {
     // Reflect inventory 0-7 directly onto Hotbar
     for(let i = 0; i < 8; i++) {
         let item = inventory[i];
+        if (item) ensurePistolAmmo(item);
         let slot = document.getElementById('hotbar-slot-' + i);
         if (slot) {
             let numLabel = `<span style="position:absolute; top:2px; left:4px; color: rgba(255,255,255,0.5); font-size: 10px; font-weight: bold;">${i+1}</span>`;
@@ -331,6 +360,7 @@ function updateInventories() {
     } else {
         weaponEl.innerText = "Empty Hands";
     }
+    updateBulletCounterUI();
 }
 
 function updateCraftingUI() {
@@ -773,6 +803,12 @@ window.addEventListener('keydown', e => {
             if (typeof copyCoordsToClipboardDirectly === 'function') {
                 copyCoordsToClipboardDirectly();
             }
+        }
+    }
+
+    if (e.key.toLowerCase() === 'r') {
+        if (typeof startPistolReload === 'function') {
+            startPistolReload();
         }
     }
 
