@@ -1421,7 +1421,29 @@ function update() {
                     } else if (hitTarget.type === 'static') {
                         let sObj = hitTarget.obj, isTree = TREE_EMOJIS.has(sObj.emoji), isRock = sObj.emoji === '🪨', validHit = false;
                         if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
-                        if (validHit) { sObj.hp -= w.dmg; addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg); if (sObj.hp <= 0) { destroyedEntities.add(sObj.entKey); hitTarget.chunkArray.splice(hitTarget.index, 1); } }
+                        if (validHit) {
+                            sObj.hp -= w.dmg;
+                            addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg);
+                            if (sObj.hp <= 0) {
+                                destroyedEntities.add(sObj.entKey);
+                                hitTarget.chunkArray.splice(hitTarget.index, 1);
+                                
+                                // Clean up cached Three.js chunk to force static billboard entity rebuild
+                                let [ex, ey] = sObj.entKey.split(',').map(Number);
+                                let ecx = Math.floor(ex / CHUNK_SIZE);
+                                let ecy = Math.floor(ey / CHUNK_SIZE);
+                                let chunkKey = `${ecx},${ecy}`;
+                                if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
+                                    let cached = threeChunks.get(chunkKey);
+                                    if (cached.entities) {
+                                        for (let sprite of cached.entities) {
+                                            scene.remove(sprite);
+                                        }
+                                    }
+                                    threeChunks.delete(chunkKey);
+                                }
+                            }
+                        }
                     }
                 } else if ((w.toolType === 'shovel' || w.type === 'block' || w.toolType === 'pickaxe') && gameState === 'overworld') {
                     let aim = getAimVoxel(w.range);
