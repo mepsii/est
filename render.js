@@ -1258,24 +1258,70 @@ function render() {
     for (let p of projectiles) {
         let dist = Math.hypot(p.x - player.x, p.y - player.y);
         if (dist < VIEW_DIST) {
-            let size = 0.05;
-            let pts = [
-                { x: p.x - size, y: p.y - size, z: p.z - size },
-                { x: p.x + size, y: p.y - size, z: p.z - size },
-                { x: p.x + size, y: p.y + size, z: p.z - size },
-                { x: p.x - size, y: p.y + size, z: p.z - size },
-                { x: p.x - size, y: p.y - size, z: p.z + size },
-                { x: p.x + size, y: p.y - size, z: p.z + size },
-                { x: p.x + size, y: p.y + size, z: p.z + size },
-                { x: p.x - size, y: p.y + size, z: p.z + size }
+            // Normalize velocity vector
+            let lenV = Math.hypot(p.vx, p.vy, p.vz);
+            let dx = lenV > 0 ? p.vx / lenV : 0;
+            let dy = lenV > 0 ? p.vy / lenV : 1;
+            let dz = lenV > 0 ? p.vz / lenV : 0;
+            
+            // Find perpendicular vectors
+            let tx = Math.abs(dx) < 0.9 ? 1 : 0;
+            let ty = Math.abs(dx) < 0.9 ? 0 : 1;
+            let tz = 0;
+            
+            // Cross product: Right = F x T
+            let rx = dy * tz - dz * ty;
+            let ry = dz * tx - dx * tz;
+            let rz = dx * ty - dy * tx;
+            let lenR = Math.hypot(rx, ry, rz);
+            if (lenR > 0) { rx /= lenR; ry /= lenR; rz /= lenR; }
+            
+            // Cross product: Up = F x Right
+            let ux = dy * rz - dz * ry;
+            let uy = dz * rx - dx * rz;
+            let uz = dx * ry - dy * rx;
+            
+            // Bullet dimensions (pointed and elongated)
+            let L = 0.12; // Length
+            let W = 0.02; // Radius/width
+            
+            // Define 6 vertices
+            let vNose = { x: p.x + dx * L * 0.5, y: p.y + dy * L * 0.5, z: p.z + dz * L * 0.5 };
+            let vTail = { x: p.x - dx * L * 0.5, y: p.y - dy * L * 0.5, z: p.z - dz * L * 0.5 };
+            let vRight = { x: p.x + rx * W, y: p.y + ry * W, z: p.z + rz * W };
+            let vLeft = { x: p.x - rx * W, y: p.y - ry * W, z: p.z - rz * W };
+            let vUp = { x: p.x + ux * W, y: p.y + uy * W, z: p.z + uz * W };
+            let vDown = { x: p.x - ux * W, y: p.y - uy * W, z: p.z - uz * W };
+            
+            // Define 8 triangular faces (pointed at nose and tail)
+            const FACES = [
+                [vNose, vRight, vUp],
+                [vNose, vUp, vLeft],
+                [vNose, vLeft, vDown],
+                [vNose, vDown, vRight],
+                [vTail, vUp, vRight],
+                [vTail, vLeft, vUp],
+                [vTail, vDown, vLeft],
+                [vTail, vRight, vDown]
             ];
-            const BOX_FACES = [
-                [2, 3, 7, 6], [0, 1, 5, 4], [3, 0, 4, 7], [1, 2, 6, 5], [4, 5, 6, 7], [3, 2, 1, 0]
-            ];
-            let color = p.owner === 'player' ? { r: 255, g: 255, b: 0 } : { r: 255, g: 50, b: 50 };
-            for (let fIdx of BOX_FACES) {
-                let ptsArray = [ pts[fIdx[0]], pts[fIdx[1]], pts[fIdx[2]], pts[fIdx[3]] ];
-                addFaceToDynamicBuffer('solid', ptsArray, color, { x: 0, y: 0, z: 1 });
+            
+            let color = p.owner === 'player' ? { r: 150, g: 150, b: 150 } : { r: 255, g: 50, b: 50 };
+            
+            for (let facePts of FACES) {
+                let ux_v = facePts[1].x - facePts[0].x;
+                let uy_v = facePts[1].y - facePts[0].y;
+                let uz_v = facePts[1].z - facePts[0].z;
+                let wx_v = facePts[2].x - facePts[0].x;
+                let wy_v = facePts[2].y - facePts[0].y;
+                let wz_v = facePts[2].z - facePts[0].z;
+                
+                let nx = uy_v * wz_v - uz_v * wy_v;
+                let ny = uz_v * wx_v - ux_v * wz_v;
+                let nz = ux_v * wy_v - uy_v * wx_v;
+                let lenN = Math.hypot(nx, ny, nz);
+                let norm = lenN > 0 ? { x: nx / lenN, y: ny / lenN, z: nz / lenN } : { x: 0, y: 0, z: 1 };
+                
+                addFaceToDynamicBuffer('solid', facePts, color, norm);
             }
         }
     }
