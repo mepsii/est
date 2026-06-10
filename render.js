@@ -26,6 +26,11 @@ let billboardGeo;
 let activeBillboardMeshes = new Set();
 let waterMaterial = null;
 
+// Persistent vectors to avoid allocation in render loop
+const particleCamRight = new THREE.Vector3();
+const particleCamUp = new THREE.Vector3();
+const particleCamBack = new THREE.Vector3();
+
 // Helper to convert hex colors to rgb
 function hexToRgb(hex) {
     let cleanHex = hex.replace('#', '');
@@ -1339,6 +1344,11 @@ function render() {
         }
     }
     
+    // Update camera basis vectors for particle billboards
+    particleCamRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    particleCamUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    particleCamBack.set(0, 0, 1).applyQuaternion(camera.quaternion);
+
     // Draw dynamic particles (blood, dirt)
     for (let b of bloodParticles) {
         if (b.isLimb && b.is3D) {
@@ -1361,13 +1371,42 @@ function render() {
             sprite.scale.set(b.size * 25, b.size * 25, 1.0);
         } else {
             let size = b.size;
-            let pts = [
-                { x: b.x - size, y: b.y - size, z: b.z },
-                { x: b.x + size, y: b.y - size, z: b.z },
-                { x: b.x + size, y: b.y + size, z: b.z },
-                { x: b.x - size, y: b.y + size, z: b.z }
-            ];
-            addFaceToDynamicBuffer('solid', pts, b.color, { x: 0, y: 0, z: 1 });
+            let pts;
+            let norm;
+            if (b.onGround) {
+                pts = [
+                    { x: b.x - size, y: b.y - size, z: b.z },
+                    { x: b.x + size, y: b.y - size, z: b.z },
+                    { x: b.x + size, y: b.y + size, z: b.z },
+                    { x: b.x - size, y: b.y + size, z: b.z }
+                ];
+                norm = { x: 0, y: 0, z: 1 };
+            } else {
+                pts = [
+                    {
+                        x: b.x - particleCamRight.x * size - particleCamUp.x * size,
+                        y: b.y - particleCamRight.z * size - particleCamUp.z * size,
+                        z: b.z - particleCamRight.y * size - particleCamUp.y * size
+                    },
+                    {
+                        x: b.x + particleCamRight.x * size - particleCamUp.x * size,
+                        y: b.y + particleCamRight.z * size - particleCamUp.z * size,
+                        z: b.z + particleCamRight.y * size - particleCamUp.y * size
+                    },
+                    {
+                        x: b.x + particleCamRight.x * size + particleCamUp.x * size,
+                        y: b.y + particleCamRight.z * size + particleCamUp.z * size,
+                        z: b.z + particleCamRight.y * size + particleCamUp.y * size
+                    },
+                    {
+                        x: b.x - particleCamRight.x * size + particleCamUp.x * size,
+                        y: b.y - particleCamRight.z * size + particleCamUp.z * size,
+                        z: b.z - particleCamRight.y * size + particleCamUp.y * size
+                    }
+                ];
+                norm = { x: particleCamBack.x, y: particleCamBack.z, z: particleCamBack.y };
+            }
+            addFaceToDynamicBuffer('solid', pts, b.color, norm);
         }
     }
     
