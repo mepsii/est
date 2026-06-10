@@ -1522,6 +1522,8 @@ function update() {
                         if (validHit) {
                             sObj.hp -= w.dmg;
                             addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg);
+                            let pCol = isTree ? { r: 120, g: 80, b: 40 } : { r: 140, g: 140, b: 140 };
+                            spawnBlockParticles(sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5, pCol, 8);
                             if (sObj.hp <= 0) {
                                 destroyedEntities.add(sObj.entKey);
                                 hitTarget.chunkArray.splice(hitTarget.index, 1);
@@ -1588,7 +1590,7 @@ function update() {
 
                 let waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
                 let camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
-                for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: camZ, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg });
+                for(let i=0; i<w.count; i++) projectiles.push({ owner: 'player', x: player.x, y: player.y, z: camZ, vx: Math.cos(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vy: Math.sin(player.angle + (Math.random()-0.5)*w.spread) * Math.cos(pitchAngle) * w.speed, vz: Math.sin(pitchAngle) * w.speed, life: 100, dmg: w.dmg, weaponId: activeItem ? activeItem.id : null });
                 
                 // Gunshot sound trigger
                 if (activeItem.id === 'pistol') {
@@ -1616,6 +1618,13 @@ function update() {
         let p = projectiles[i], prevX = p.x, prevY = p.y, prevZ = p.z;
         p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--; 
         let hit = gameState === 'overworld' ? getSolid(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) : false;
+        if (hit) {
+            let vCurr = getVoxel(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
+            if (vCurr !== 2) {
+                let col = getVoxelColor(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
+                spawnBlockParticles(p.x, p.y, p.z, col, 8);
+            }
+        }
         
         // Water impact check
         if (gameState === 'overworld' && !hit) {
@@ -1644,6 +1653,43 @@ function update() {
             let hitLimb = null;
             let hitEnemyIndex = -1;
             let hitAnimalIndex = -1;
+            let hitStaticObj = null;
+            let hitStaticIndex = -1;
+            let hitStaticChunk = null;
+
+            let pCx = Math.floor(p.x / CHUNK_SIZE), pCy = Math.floor(p.y / CHUNK_SIZE);
+            for(let cx = pCx - 1; cx <= pCx + 1; cx++) {
+                for(let cy = pCy - 1; cy <= pCy + 1; cy++) {
+                    let chunk = getMapChunk(cx, cy);
+                    for(let i=0; i<chunk.length; i++) {
+                        let cObj = chunk[i];
+                        if (cObj.hp !== undefined) {
+                            let isTree = TREE_EMOJIS.has(cObj.emoji);
+                            let isRock = cObj.emoji === '🪨';
+                            let isCactus = cObj.emoji === '🌵';
+                            if (isTree || isRock || isCactus) {
+                                let rad = isTree ? cObj.size * 0.25 : (isRock ? cObj.size * 0.45 : cObj.size * 0.3);
+                                let hitZ = checkSegCyl(prevX, prevY, prevZ, p.x, p.y, p.z, cObj.wx, cObj.wy, cObj.h, cObj.size, rad);
+                                if (hitZ !== false) {
+                                    let t = 0.5;
+                                    if (p.z !== prevZ) {
+                                        t = (hitZ - prevZ) / (p.z - prevZ);
+                                    }
+                                    if (t < minT) {
+                                        minT = t;
+                                        hitLimb = null;
+                                        hitEnemyIndex = -1;
+                                        hitAnimalIndex = -1;
+                                        hitStaticObj = cObj;
+                                        hitStaticIndex = i;
+                                        hitStaticChunk = chunk;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             for (let ei = enemies.length - 1; ei >= 0; ei--) {
                 let e = enemies[ei];
@@ -1747,6 +1793,38 @@ function update() {
                         a.items = new Array(10).fill(null);
                         for(let k=0; k<Math.floor(Math.random()*3)+1; k++) {
                             a.items[k] = { ...a.drop };
+                        }
+                    }
+                } else if (hitStaticObj) {
+                    let sObj = hitStaticObj;
+                    let isTree = TREE_EMOJIS.has(sObj.emoji);
+                    let isRock = sObj.emoji === '🪨';
+                    let isCactus = sObj.emoji === '🌵';
+                    let pCol = isTree ? { r: 120, g: 80, b: 40 } : (isRock ? { r: 140, g: 140, b: 140 } : { r: 50, g: 130, b: 50 });
+                    spawnBlockParticles(hitX, hitY, hitZ, pCol, 8);
+                    
+                    let canDamage = (isRock && sObj.size < 0.5) || (isCactus && p.weaponId === 'shotgun');
+                    if (canDamage) {
+                        sObj.hp -= p.dmg;
+                        addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, p.dmg);
+                        
+                        if (sObj.hp <= 0) {
+                            destroyedEntities.add(sObj.entKey);
+                            hitStaticChunk.splice(hitStaticIndex, 1);
+                            
+                            let [ex, ey] = sObj.entKey.split(',').map(Number);
+                            let ecx = Math.floor(ex / CHUNK_SIZE);
+                            let ecy = Math.floor(ey / CHUNK_SIZE);
+                            let chunkKey = `${ecx},${ecy}`;
+                            if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
+                                let cached = threeChunks.get(chunkKey);
+                                if (cached.entities) {
+                                    for (let sprite of cached.entities) {
+                                        scene.remove(sprite);
+                                    }
+                                }
+                                threeChunks.delete(chunkKey);
+                            }
                         }
                     }
                 }

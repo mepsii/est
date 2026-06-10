@@ -113,6 +113,29 @@ function spawnWaterDrip(x, y, z, count = 2) {
     }
 }
 
+function spawnBlockParticles(x, y, z, colorObj, count) {
+    for (let i = 0; i < count; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let speed = Math.random() * 0.05 + 0.02;
+        let vz = Math.random() * 0.10 + 0.04;
+        let c = {
+            r: Math.max(0, Math.min(255, colorObj.r + Math.floor((Math.random() - 0.5) * 20))),
+            g: Math.max(0, Math.min(255, colorObj.g + Math.floor((Math.random() - 0.5) * 20))),
+            b: Math.max(0, Math.min(255, colorObj.b + Math.floor((Math.random() - 0.5) * 20))),
+            a: 1.0
+        };
+        bloodParticles.push({
+            x: x, y: y, z: z,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            vz: vz,
+            color: c,
+            life: 15 + Math.random() * 10,
+            size: (Math.random() * 0.06 + 0.03) * 0.25
+        });
+    }
+}
+
 function spawnDirt(x, y, z, vx, vy, isHeavy) {
     let count = isHeavy ? 5 : 1;
     for(let i=0; i<count; i++) {

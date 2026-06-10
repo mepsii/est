@@ -70,6 +70,20 @@ body { margin: 0; overflow: hidden; background-color: #000; }
     pointer-events: none; 
 }
 
+.prototype-build {
+    animation: rainbow-strobe 8s linear infinite;
+    margin-top: 3px;
+}
+@keyframes rainbow-strobe {
+    0% { color: hsla(0, 100%, 70%, 0.4); }
+    17% { color: hsla(60, 100%, 70%, 0.4); }
+    33% { color: hsla(120, 100%, 70%, 0.4); }
+    50% { color: hsla(180, 100%, 70%, 0.4); }
+    67% { color: hsla(240, 100%, 70%, 0.4); }
+    83% { color: hsla(300, 100%, 70%, 0.4); }
+    100% { color: hsla(360, 100%, 70%, 0.4); }
+}
+
 #damage-flash, #heal-flash {
     position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
     pointer-events: none; z-index: 15; transition: opacity 0.1s; opacity: 0;
