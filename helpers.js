@@ -37,6 +37,82 @@ function spawnBlood(x, y, z, colorObj, count) {
     }
 }
 
+function spawnWaterSplash(x, y, z, count, isBullet = false) {
+    let finalCount = Math.round(count * (isBullet ? 6.0 : 2.5));
+    for (let i = 0; i < finalCount; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let speed, vz, life, size;
+        
+        if (isBullet) {
+            if (i % 2 === 0) {
+                // Tall, sharp, vertical population
+                speed = Math.random() * 0.015 + 0.005;
+                vz = Math.random() * 0.12 + 0.08;
+                life = 6 + Math.random() * 5;
+                size = (Math.random() * 0.07 + 0.04) * 0.25;
+            } else {
+                // Wide, far, low population
+                speed = Math.random() * 0.10 + 0.05;
+                vz = Math.random() * 0.04 + 0.02;
+                life = 8 + Math.random() * 6;
+                size = (Math.random() * 0.09 + 0.05) * 0.25;
+            }
+        } else {
+            // Player / Mob splash
+            speed = Math.random() * 0.08 + 0.02;
+            vz = Math.random() * 0.08 + 0.03;
+            life = 12 + Math.random() * 8;
+            size = (Math.random() * 0.12 + 0.06) * 0.25;
+        }
+
+        let colorNoise = Math.random() * 20;
+        let c = {
+            r: Math.floor(40 + colorNoise),
+            g: Math.floor(130 + colorNoise),
+            b: Math.floor(230 + colorNoise * 1.5),
+            a: 0.62
+        };
+        bloodParticles.push({
+            x: x, y: y, z: z,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            vz: vz,
+            color: c,
+            life: life,
+            size: size,
+            isWater: true
+        });
+    }
+}
+
+function spawnWaterDrip(x, y, z, count = 2) {
+    for (let i = 0; i < count; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let speed = Math.random() * 0.02;
+        let colorNoise = Math.random() * 20;
+        let c = {
+            r: Math.floor(40 + colorNoise),
+            g: Math.floor(130 + colorNoise),
+            b: Math.floor(230 + colorNoise * 1.5),
+            a: 0.35
+        };
+        bloodParticles.push({
+            x: x + (Math.random() - 0.5) * 0.3,
+            y: y + (Math.random() - 0.5) * 0.3,
+            z: z,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            vz: 0,
+            color: c,
+            life: 20 + Math.random() * 15,
+            size: (Math.random() * 0.03 + 0.015) * 0.25,
+            onGround: true, // Lay flat on the ground immediately!
+            isPooling: true,
+            targetPoolSize: (Math.random() * 0.03 + 0.015) * 0.25 * 1.5
+        });
+    }
+}
+
 function spawnDirt(x, y, z, vx, vy, isHeavy) {
     let count = isHeavy ? 5 : 1;
     for(let i=0; i<count; i++) {

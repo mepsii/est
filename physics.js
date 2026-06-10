@@ -505,7 +505,20 @@ function update() {
         c.flicker = 0.85 + wave1 + wave2 + wave3 + (Math.random() > 0.95 ? (Math.random() * 0.08) : 0);
     }
 
-    player.inWater = gameState === 'overworld' && (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z)) === 2);
+    if (player.inWater === undefined) {
+        player.inWater = gameState === 'overworld' && (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z)) === 2);
+    } else {
+        let currInWater = gameState === 'overworld' && (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z)) === 2);
+        if (currInWater !== player.inWater) {
+            if (player.inWater && !currInWater) {
+                player.wetTimer = 60; // 1 second of wet trail
+            }
+            player.inWater = currInWater;
+            let t = getTerrainFast(player.x, player.y);
+            let waterSurfaceZ = t.isLake ? t.lakeSurface : t.oceanSurface;
+            spawnWaterSplash(player.x, player.y, waterSurfaceZ + 0.55, 15);
+        }
+    }
     player.isSubmerged = gameState === 'overworld' && (getVoxel(Math.floor(player.x), Math.floor(player.y), Math.floor(player.z + player.baseHeight)) === 2);
 
     if (player.isSubmerged) {
@@ -517,6 +530,12 @@ function update() {
     oxygenEl.innerText = Math.floor(player.oxygen);
 
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+    if (player.wetTimer > 0) {
+        player.wetTimer--;
+        if (tickCounter % 3 === 0 && isMoving && !player.inVehicle) {
+            spawnWaterDrip(player.x, player.y, player.z, 1);
+        }
+    }
     let isSprinting = isMoving && (keys['ShiftLeft'] || keys['ShiftRight']) && !flightMode && player.stamina > 0;
     
     if (isSprinting && !player.inVehicle) { 
@@ -865,6 +884,13 @@ function update() {
             }
         } else if (!b.onGround) {
             b.x += b.vx; b.y += b.vy; b.z += b.vz; b.vz -= 0.02; 
+            if (b.isWater) {
+                let t = getTerrainFast(b.x, b.y);
+                let waterSurfaceZ = (t.isLake || t.baseH <= t.oceanSurface) ? (t.isLake ? t.lakeSurface : t.oceanSurface) : 0;
+                if (waterSurfaceZ > 0 && b.z <= waterSurfaceZ + 0.45) {
+                    b.life = 0; // Dissipate immediately on touching water surface
+                }
+            }
             if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) { 
                 b.z = Math.floor(b.z) + 1.02; 
                 b.vx = 0; b.vy = 0; b.vz = 0; 
@@ -986,6 +1012,25 @@ function update() {
         for (let ei = enemies.length - 1; ei >= 0; ei--) {
             let e = enemies[ei], d = Math.hypot(player.x-e.x, player.y-e.y); 
             if (e.flash && e.flash > 0) e.flash--; if (d > VIEW_DIST * 1.5) { enemies.splice(ei, 1); continue; }
+
+            // Water splash transition check
+            if (e.wetTimer > 0) {
+                e.wetTimer--;
+            }
+            if (e.inWater === undefined) {
+                e.inWater = (getVoxel(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z)) === 2);
+            } else {
+                let currInWater = (getVoxel(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z)) === 2);
+                if (currInWater !== e.inWater) {
+                    if (e.inWater && !currInWater) {
+                        e.wetTimer = 60;
+                    }
+                    e.inWater = currInWater;
+                    let t = getTerrainFast(e.x, e.y);
+                    let waterSurfaceZ = t.isLake ? t.lakeSurface : t.oceanSurface;
+                    spawnWaterSplash(e.x, e.y, waterSurfaceZ + 0.55, 12);
+                }
+            }
 
             // Initialize zombie limbs dynamically if undefined
             if ((e.type === 'zombie' || e.type === 'zombie3d') && e.hasHead === undefined) {
@@ -1207,6 +1252,9 @@ function update() {
                     // Trigger footsteps for all moving enemies
                     let actualDist = Math.hypot(e.x - prevX, e.y - prevY);
                     if (actualDist > 0.001) {
+                        if (e.wetTimer > 0 && tickCounter % 4 === 0) {
+                            spawnWaterDrip(e.x, e.y, e.z, 1);
+                        }
                         let stepSpeed = moveSpeed * 8.0;
                         e.animTime = (e.animTime || 0) + stepSpeed;
                         
@@ -1241,6 +1289,24 @@ function update() {
         for (let i = animals.length - 1; i >= 0; i--) {
             let a = animals[i]; if (Math.hypot(player.x - a.x, player.y - a.y) > VIEW_DIST * 2.0) { animals.splice(i, 1); continue; }
             if (!a.dead) { 
+                // Water splash transition check
+                if (a.wetTimer > 0) {
+                    a.wetTimer--;
+                }
+                if (a.inWater === undefined) {
+                    a.inWater = (getVoxel(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z)) === 2);
+                } else {
+                    let currInWater = (getVoxel(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z)) === 2);
+                    if (currInWater !== a.inWater) {
+                        if (a.inWater && !currInWater) {
+                            a.wetTimer = 60;
+                        }
+                        a.inWater = currInWater;
+                        let t = getTerrainFast(a.x, a.y);
+                        let waterSurfaceZ = t.isLake ? t.lakeSurface : t.oceanSurface;
+                        spawnWaterSplash(a.x, a.y, waterSurfaceZ + 0.55, 12);
+                    }
+                }
                 a.moveTimer--; if (a.moveTimer <= 0) { a.moveAngle = Math.random() * Math.PI * 2; a.moveTimer = 50 + Math.random() * 100; } 
                 let anx = a.x + Math.cos(a.moveAngle) * a.speed, any = a.y + Math.sin(a.moveAngle) * a.speed; 
 
@@ -1257,6 +1323,9 @@ function update() {
                 // Animal footsteps sound trigger
                 let actualDist = Math.hypot(a.x - prevX, a.y - prevY);
                 if (actualDist > 0.001) {
+                    if (a.wetTimer > 0 && tickCounter % 5 === 0) {
+                        spawnWaterDrip(a.x, a.y, a.z, 1);
+                    }
                     let stepSpeed = a.speed * 8.0;
                     a.animTime = (a.animTime || 0) + stepSpeed;
                     
@@ -1545,7 +1614,31 @@ function update() {
 
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i], prevX = p.x, prevY = p.y, prevZ = p.z;
-        p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--; let hit = gameState === 'overworld' ? getSolid(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) : false;
+        p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life--; 
+        let hit = gameState === 'overworld' ? getSolid(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) : false;
+        
+        // Water impact check
+        if (gameState === 'overworld' && !hit) {
+            let vPrev = getVoxel(Math.floor(prevX), Math.floor(prevY), Math.floor(prevZ));
+            let vCurr = getVoxel(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
+            if (vPrev !== 2 && vCurr === 2) {
+                let t = getTerrainFast(p.x, p.y);
+                let waterSurfaceZ = t.isLake ? t.lakeSurface : t.oceanSurface;
+                let visualWaterZ = waterSurfaceZ + 0.45;
+                
+                // Precise intersection point interpolation
+                let dz = p.z - prevZ;
+                let lerpRatio = 0.5;
+                if (Math.abs(dz) > 0.0001) {
+                    lerpRatio = Math.max(0, Math.min(1, (visualWaterZ - prevZ) / dz));
+                }
+                let hitX = prevX + (p.x - prevX) * lerpRatio;
+                let hitY = prevY + (p.y - prevY) * lerpRatio;
+                
+                spawnWaterSplash(hitX, hitY, visualWaterZ + 0.10, 8, true);
+                hit = true;
+            }
+        }
         if (p.owner === 'player' && gameState === 'overworld') {
             let minT = Infinity;
             let hitLimb = null;
