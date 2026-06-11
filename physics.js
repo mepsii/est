@@ -463,9 +463,376 @@ function get3DZombieLimbBoxes(e) {
     return limbBoxes;
 }
 
+// --- Cannon.js Physics Integration ---
+const cannonWorld = new CANNON.World();
+cannonWorld.gravity.set(0, 0, -28); // Stays heavy
+cannonWorld.broadphase = new CANNON.SAPBroadphase(cannonWorld); // SAP Broadphase for high numeric stability
+cannonWorld.solver.iterations = 35; // Increased iterations to prevent tunneling
+cannonWorld.defaultContactMaterial.friction = 0.8;
+cannonWorld.defaultContactMaterial.restitution = 0.02; // Minimal bounce for realistic landings
+cannonWorld.defaultContactMaterial.contactEquationStiffness = 5e6; // Reduced stiffness for stable voxel contact without explosions
+cannonWorld.defaultContactMaterial.contactEquationRelaxation = 4; // Extra relaxation to absorb high impacts smoothly
+
+// Dynamic Voxel Terrain Colliders Cache
+const activeVoxelBodies = new Map(); // Key: "x,y,z" -> CANNON.Body
+
+function syncVoxelCollidersAroundVehicles() {
+    const neededVoxels = new Set();
+    const radiusX = 11; // Expanded further to prevent fast-moving vehicles from escaping the active colliders region
+    const radiusY = 11; // Expanded from 9 to 11
+    const radiusZ = 6;  // Expanded from 5 to 6
+
+    for (let v of vehicles) {
+        const cx = Math.floor(v.x);
+        const cy = Math.floor(v.y);
+        const cz = Math.floor(v.z);
+
+        for (let x = cx - radiusX; x <= cx + radiusX; x++) {
+            for (let y = cy - radiusY; y <= cy + radiusY; y++) {
+                for (let z = cz - radiusZ; z <= cz + radiusZ; z++) {
+                    if (z >= 0 && z < 96) { // 96 is MAX_Z
+                        if (getSolid(x, y, z)) {
+                            neededVoxels.add(`${x},${y},${z}`);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 1. Add newly needed voxels to the Cannon world
+    const halfExtents = new CANNON.Vec3(0.5, 0.5, 0.5);
+    const voxelShape = new CANNON.Box(halfExtents);
+    
+    for (let key of neededVoxels) {
+        if (!activeVoxelBodies.has(key)) {
+            const [x, y, z] = key.split(',').map(Number);
+            const voxelBody = new CANNON.Body({
+                mass: 0, // static body
+                shape: voxelShape,
+                position: new CANNON.Vec3(x + 0.5, y + 0.5, z + 0.5)
+            });
+            cannonWorld.addBody(voxelBody);
+            activeVoxelBodies.set(key, voxelBody);
+        }
+    }
+
+    // 2. Remove voxels that are no longer needed
+    for (let [key, body] of activeVoxelBodies.entries()) {
+        if (!neededVoxels.has(key)) {
+            cannonWorld.removeBody(body);
+            activeVoxelBodies.delete(key);
+        }
+    }
+}
+
+function initCannonVehicle(v) {
+    if (v.chassisBody) return; // Already initialized
+
+    // Chassis Box shape (X=length/forward, Y=width/lateral, Z=height/vertical)
+    // Shrunk length half-extent to 1.2 and offset to -0.2 to let wheels protrude significantly in front,
+    // allowing them to climb 1-unit voxel blocks before the bumper can collide.
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.18));
+    const chassisBody = new CANNON.Body({
+        mass: 1600, // Increased weight (1600 kg) to make the truck feel heavy and prevent floatiness/bouncing
+        linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
+        angularDamping: 0.70 // High damping to instantly stabilize flips and prevent endless rolling
+    });
+    
+    // Add shape offset backward (-0.2 along X) relative to the body's origin.
+    // This shifts the center of mass (origin) forward, creating a front-heavy weight distribution
+    // so the truck pitches nose-down in the air realistically and lands on its wheels.
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.0));
+    
+    // Position slightly above ground to align with vehicle center
+    chassisBody.position.set(v.x, v.y, v.z);
+    chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), v.angle);
+    cannonWorld.addBody(chassisBody);
+
+    const vehicle = new CANNON.RaycastVehicle({
+        chassisBody: chassisBody,
+        indexUpAxis: 2, // Z is up
+        indexRightAxis: 1, // Y is right (lateral)
+        indexForwardAxis: 0 // X is forward (longitudinal)
+    });
+
+    const wheelOptions = {
+        radius: 0.5,
+        directionLocal: new CANNON.Vec3(0, 0, -1), // points down
+        suspensionStiffness: 55, // Spring stiffness scaled internally by mass
+        suspensionRestLength: 0.55, // Stable rest length (0.87m clearance)
+        maxSuspensionForce: 100000,
+        maxSuspensionTravel: 0.35, // Clear vertical travel
+        dampingRelaxation: 2.8, // Balanced damping ratio (~0.33)
+        dampingCompression: 2.0,
+        frictionSlip: 1.6, // Allows slip under high torque
+        rollInfluence: 0.1,
+        axleLocal: new CANNON.Vec3(0, 1, 0)
+    };
+
+    // Add 4 wheels at connection points at Z = 0.0 (chassis center)
+    // Symmetrical wheel configuration with high ground clearance (chassis bottom never touches ground)
+    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.3, 0.85, 0.0) }); // Front Left
+    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.3, -0.85, 0.0) });  // Front Right
+    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.85, 0.0) }); // Rear Left
+    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.85, 0.0) });  // Rear Right
+
+    // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
+    // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
+    // on vertical voxel step colliders while keeping natural normals for friction/grip calculations.
+    vehicle.updateVehicle = function(timeStep) {
+        var wheelInfos = this.wheelInfos;
+        var numWheels = wheelInfos.length;
+        var chassisBody = this.chassisBody;
+
+        for (var i = 0; i < numWheels; i++) {
+            this.updateWheelTransform(i);
+        }
+
+        this.currentVehicleSpeedKmHour = 3.6 * chassisBody.velocity.norm();
+
+        var forwardWorld = new CANNON.Vec3();
+        this.getVehicleAxisWorld(this.indexForwardAxis, forwardWorld);
+
+        if (forwardWorld.dot(chassisBody.velocity) < 0){
+            this.currentVehicleSpeedKmHour *= -1;
+        }
+
+        // simulate suspension
+        for (var i = 0; i < numWheels; i++) {
+            this.castRay(wheelInfos[i]);
+        }
+
+        this.updateSuspension(timeStep);
+
+        var impulse = new CANNON.Vec3();
+        var relpos = new CANNON.Vec3();
+        for (var i = 0; i < numWheels; i++) {
+            var wheel = wheelInfos[i];
+            var suspensionForce = wheel.suspensionForce;
+            if (suspensionForce > wheel.maxSuspensionForce) {
+                suspensionForce = wheel.maxSuspensionForce;
+            }
+            // Apply suspension force along suspension axis (-directionWorld) to avoid lateral glitches
+            var suspensionDirection = new CANNON.Vec3();
+            wheel.directionWorld.scale(-1, suspensionDirection);
+            suspensionDirection.scale(suspensionForce * timeStep, impulse);
+
+            // Apply the suspension impulse at the wheel's chassis connection point in world space.
+            // This prevents sudden, massive lateral torque/spin impulses when the wheel raycast
+            // hits voxel corners or vertical step faces (which shifts the hitPointWorld sideways).
+            wheel.chassisConnectionPointWorld.vsub(chassisBody.position, relpos);
+            chassisBody.applyImpulse(impulse, relpos);
+        }
+
+        this.updateFriction(timeStep);
+
+        var hitNormalWorldScaledWithProj = new CANNON.Vec3();
+        var fwd = new CANNON.Vec3();
+        var vel = new CANNON.Vec3();
+        for (var i = 0; i < numWheels; i++) {
+            var wheel = wheelInfos[i];
+            chassisBody.getVelocityAtWorldPoint(wheel.chassisConnectionPointWorld, vel);
+
+            var m = 1;
+            switch(this.indexUpAxis){
+            case 1:
+                m = -1;
+                break;
+            }
+
+            if (wheel.isInContact) {
+                this.getVehicleAxisWorld(this.indexForwardAxis, fwd);
+                var proj = fwd.dot(wheel.raycastResult.hitNormalWorld);
+                wheel.raycastResult.hitNormalWorld.scale(proj, hitNormalWorldScaledWithProj);
+
+                fwd.vsub(hitNormalWorldScaledWithProj, fwd);
+
+                var proj2 = fwd.dot(vel);
+                wheel.deltaRotation = m * proj2 * timeStep / wheel.radius;
+            }
+
+            if((wheel.sliding || !wheel.isInContact) && wheel.engineForce !== 0 && wheel.useCustomSlidingRotationalSpeed){
+                wheel.deltaRotation = (wheel.engineForce > 0 ? 1 : -1) * wheel.customSlidingRotationalSpeed * timeStep;
+            }
+
+            if(Math.abs(wheel.brake) > Math.abs(wheel.engineForce)){
+                wheel.deltaRotation = 0;
+            }
+
+            wheel.rotation += wheel.deltaRotation;
+            wheel.deltaRotation *= 0.99;
+        }
+    };
+
+    vehicle.addToWorld(cannonWorld);
+
+    // Save references on the vehicle object
+    v.chassisBody = chassisBody;
+    v.raycastVehicle = vehicle;
+}
+
+// Dismemberment physics hooks for future implementation:
+// When a zombie limb is cut, you can call this to spawn a physical rigid body in the world:
+/*
+function spawnPhysicalLimb(x, y, z, vx, vy, vz, size) {
+    const limbShape = new CANNON.Box(new CANNON.Vec3(size.x, size.y, size.z));
+    const limbBody = new CANNON.Body({
+        mass: 5,
+        shape: limbShape,
+        position: new CANNON.Vec3(x, y, z),
+        velocity: new CANNON.Vec3(vx, vy, vz)
+    });
+    cannonWorld.addBody(limbBody);
+    return limbBody;
+}
+*/
+
 // --- Update Physics & Logic ---
 function update() {
     if (isPaused || isLoading) return;
+
+    // --- Cannon.js Physics Step ---
+    for (let v of vehicles) {
+        if (!v.chassisBody) {
+            initCannonVehicle(v);
+        }
+    }
+    syncVoxelCollidersAroundVehicles();
+
+    // Cache starting angle for camera yaw alignment
+    for (let v of vehicles) {
+        v.lastAngle = v.angle;
+    }
+
+    // Apply vehicle inputs for player-driven vehicle
+    if (player.inVehicle) {
+        const v = player.inVehicle;
+        if (v.raycastVehicle) {
+            // Swapped sign: gas = -1 when W is pressed (forward), gas = 1 when S is pressed (reverse)
+            const gas = keys['KeyW'] ? -1 : (keys['KeyS'] ? 1 : 0);
+            const steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
+            
+            const maxSteer = 0.5;
+            const maxForce = 7500; // Torque applied to wheels for acceleration and block climbing
+            const maxBrake = 3000; // Stronger brakes for high weight
+            
+            // Front-wheel steering (steer wheels 0 and 1)
+            v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
+            v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
+            
+            // 4-Wheel Drive (4WD) - apply force to all four wheels so front wheels can drag the vehicle up voxel blocks
+            v.raycastVehicle.applyEngineForce(gas * maxForce, 0);
+            v.raycastVehicle.applyEngineForce(gas * maxForce, 1);
+            v.raycastVehicle.applyEngineForce(gas * maxForce, 2);
+            v.raycastVehicle.applyEngineForce(gas * maxForce, 3);
+            
+            // Braking / engine drag
+            const brakeForce = keys['Space'] ? maxBrake : (gas === 0 ? 150 : 0);
+            v.raycastVehicle.setBrake(brakeForce, 0);
+            v.raycastVehicle.setBrake(brakeForce, 1);
+            v.raycastVehicle.setBrake(brakeForce, 2);
+            v.raycastVehicle.setBrake(brakeForce, 3);
+        }
+    }
+
+    // Set control and braking baseline for non-driven vehicles so they stay parked
+    for (let v of vehicles) {
+        if (v !== player.inVehicle && v.raycastVehicle) {
+            v.raycastVehicle.setSteeringValue(0, 0);
+            v.raycastVehicle.setSteeringValue(0, 1);
+            v.raycastVehicle.applyEngineForce(0, 0);
+            v.raycastVehicle.applyEngineForce(0, 1);
+            v.raycastVehicle.applyEngineForce(0, 2);
+            v.raycastVehicle.applyEngineForce(0, 3);
+            v.raycastVehicle.setBrake(3000, 0); // strong parking brake
+            v.raycastVehicle.setBrake(3000, 1);
+            v.raycastVehicle.setBrake(3000, 2);
+            v.raycastVehicle.setBrake(3000, 3);
+        }
+    }
+
+    cannonWorld.step(1 / 60);
+
+    // Sync Cannon chassis states back to vehicle objects
+    for (let v of vehicles) {
+        if (v.chassisBody) {
+            const body = v.chassisBody;
+            v.x = body.position.x;
+            v.y = body.position.y;
+            v.z = body.position.z;
+            
+            const q = body.quaternion;
+            v.qx = q.x;
+            v.qy = q.y;
+            v.qz = q.z;
+            v.qw = q.w;
+
+            const threeQuat = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+            const euler = new THREE.Euler().setFromQuaternion(threeQuat, 'ZXY');
+            v.angle = euler.z; // Yaw
+            v.roll = euler.x;  // Roll
+            v.pitch = euler.y; // Pitch
+            v.speed = body.velocity.norm(); // Norm calculates length in Cannon.js (Vec3.length doesn't exist)
+
+            // Sync individual wheel positions and rotations for rendering
+            if (v.raycastVehicle) {
+                v.wheels = [];
+                for (let i = 0; i < v.raycastVehicle.wheelInfos.length; i++) {
+                    const wInfo = v.raycastVehicle.wheelInfos[i];
+                    const wPos = wInfo.worldTransform.position;
+                    const wQuat = wInfo.worldTransform.quaternion;
+                    
+                    v.wheels.push({
+                        x: wPos.x,
+                        y: wPos.y,
+                        z: wPos.z,
+                        qx: wQuat.x,
+                        qy: wQuat.y,
+                        qz: wQuat.z,
+                        qw: wQuat.w
+                    });
+                }
+            }
+
+            // Rotate camera (player.angle) with the vehicle's yaw rotation
+            if (player.inVehicle === v) {
+                let deltaYaw = v.angle - v.lastAngle;
+                while (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
+                while (deltaYaw < -Math.PI) deltaYaw += Math.PI * 2;
+                player.angle += deltaYaw;
+            }
+
+            let isGrounded = false;
+            let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
+            
+            if (v.raycastVehicle) {
+                for (let i = 0; i < v.raycastVehicle.wheelInfos.length; i++) {
+                    const wheel = v.raycastVehicle.wheelInfos[i];
+                    if (wheel.raycastResult.hasHit) {
+                        isGrounded = true;
+                        const pos = wheel.worldTransform.position;
+                        
+                        // Heavy wheelspin mud spray requires active engine power input from the driver and traction loss.
+                        const isDriving = (v === player.inVehicle && (keys['KeyW'] || keys['KeyS']));
+                        const isSlipping = wheel.skidInfo < 0.85;
+                        if (isSlipping && isDriving) {
+                            // Heavy mud/dirt spray kicked up under wheelspin, shooting backward relative to wheel rotation
+                            if (tickCounter % 2 === 0) {
+                                let scatterX = (Math.random() - 0.5) * 0.06;
+                                let scatterY = (Math.random() - 0.5) * 0.06;
+                                spawnDirt(pos.x, pos.y, pos.z - 0.4, -cx * 0.2 + scatterX, -sx * 0.2 + scatterY, true);
+                            }
+                        } else if (v.speed > 2.0 && tickCounter % 4 === 0) {
+                            // Passive, light dirt spray when moving quickly (driven or rolling fast)
+                            spawnDirt(pos.x, pos.y, pos.z - 0.4, -cx * 0.1, -sx * 0.1, false);
+                        }
+                    }
+                }
+            }
+            v.isGrounded = isGrounded;
+        }
+    }
 
     if (player.pistolReloadTimer > 0) {
         player.pistolReloadTimer--;
@@ -616,96 +983,7 @@ function update() {
     } else {
     if (player.inVehicle) {
         let v = player.inVehicle;
-        v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
         v.camX = v.camX || v.x; v.camY = v.camY || v.y; v.camZ = v.camZ || v.z;
-
-        let gas = keys['KeyW'] ? 1 : (keys['KeyS'] ? -1 : 0);
-        let steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
-        let power = 0.010; 
-        
-        let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
-        let wL = 2.2, wW = 1.0; 
-        let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
-        let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 4);
-        let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
-        let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
-
-        let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6;
-        v.isGrounded = (v.z <= targetZ + 0.6); 
-        
-        let slipping = false;
-        
-        if (v.isGrounded) {
-            let slopeForce = Math.sin(v.pitch) * 0.008; 
-
-            if (gas > 0 && v.pitch > 0.25 && v.speed < 0.2) {
-                slipping = true;
-                power *= 0.3; 
-            }
-
-            if (!getSolid(Math.floor(v.x + Math.cos(v.angle)*3), Math.floor(v.y + Math.sin(v.angle)*3), Math.floor(v.z + 1))) {
-                v.speed += gas * power;
-            }
-            
-            v.speed -= slopeForce; 
-            v.speed *= 0.985; 
-            
-            if (gas === 0) {
-                v.speed *= 0.985; 
-                if (Math.abs(v.speed) < 0.01 && Math.abs(slopeForce) < 0.015) v.speed = 0; 
-            }
-            
-            let turnRate = steerInput * Math.max(0.005, Math.min(Math.abs(v.speed)*0.25, 0.04)); 
-            let actualTurn = (v.speed >= 0 ? turnRate : -turnRate);
-            v.angle += actualTurn;
-            v.speed *= (1.0 - Math.abs(actualTurn) * 0.5);
-            
-            player.angle += actualTurn; 
-            
-            let compression = targetZ - v.z;
-            v.vz += compression * 0.15; 
-            v.vz *= 0.80; 
-            
-            let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
-            let targetRoll = Math.atan2((zFL+zBL)/2 - (zFR+zBR)/2, wW * 2); 
-            
-            v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; 
-            v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; 
-        } else {
-            v.speed *= 0.99; 
-            let actualTurn = (v.speed >= 0 ? steerInput * 0.005 : -steerInput * 0.005);
-            v.angle += actualTurn;
-            player.angle += actualTurn;
-            
-            v.vz -= 0.02; 
-            v.vz *= 0.98; 
-            
-            v.vPitch -= v.pitch * 0.01; v.vPitch *= 0.95; 
-            v.vRoll -= v.roll * 0.05; v.vRoll *= 0.95; 
-        }
-        
-        v.z += v.vz;
-        v.pitch += v.vPitch;
-        v.roll += v.vRoll;
-
-        let nx = v.x + Math.cos(v.angle) * v.speed;
-        let ny = v.y + Math.sin(v.angle) * v.speed;
-        if (getSolid(Math.floor(nx + Math.cos(v.angle)*2.5), Math.floor(ny + Math.sin(v.angle)*2.5), Math.floor(v.z + 1.5))) {
-            v.speed *= -0.4; 
-        } else {
-            v.x = nx;
-            v.y = ny;
-        }
-        
-        if (v.isGrounded) {
-            if (slipping && tickCounter % 2 === 0) {
-                spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * 0.1, -sx * 0.1, true);
-                spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * 0.1, -sx * 0.1, true);
-            } else if (Math.abs(v.speed) > 0.05 && tickCounter % 3 === 0) {
-                spawnDirt(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, zBL, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
-                spawnDirt(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, zBR, -cx * v.speed * 0.5, -sx * v.speed * 0.5, false);
-            }
-        }
 
         v.camX += (v.x - v.camX) * 0.15; 
         v.camY += (v.y - v.camY) * 0.15;
@@ -822,48 +1100,7 @@ function update() {
     }
     }
 
-    for (let v of vehicles) {
-        if (v !== player.inVehicle) {
-            v.vz = v.vz || 0; v.vPitch = v.vPitch || 0; v.vRoll = v.vRoll || 0;
-            
-            let cx = Math.cos(v.angle), sx = Math.sin(v.angle);
-            let wL = 2.2, wW = 1.0; 
-            let zFL = getSafeFloorZ(v.x + cx*wL - sx*wW, v.y + sx*wL + cx*wW, v.z + 4);
-            let zFR = getSafeFloorZ(v.x + cx*wL + sx*wW, v.y + sx*wL - cx*wW, v.z + 4);
-            let zBL = getSafeFloorZ(v.x - cx*wL - sx*wW, v.y - sx*wL + cx*wW, v.z + 4);
-            let zBR = getSafeFloorZ(v.x - cx*wL + sx*wW, v.y - sx*wL - cx*wW, v.z + 4);
-            
-            let targetZ = ((zFL+zFR+zBL+zBR)/4) + 0.6;
-            
-            if (v.z <= targetZ + 0.6) {
-                let slopeForce = Math.sin(v.pitch) * 0.008;
-                v.speed -= slopeForce;
-                v.speed *= 0.985;
-                if (Math.abs(v.speed) < 0.02 && Math.abs(slopeForce) < 0.015) v.speed = 0; 
-                
-                v.x += Math.cos(v.angle) * v.speed;
-                v.y += Math.sin(v.angle) * v.speed;
-                
-                v.vz += (targetZ - v.z) * 0.15; v.vz *= 0.80; 
-                
-                let targetPitch = Math.atan2((zFL+zFR)/2 - (zBL+zBR)/2, wL * 2);
-                let targetRoll = Math.atan2((zFL+zBL)/2 - (zFR+zBR)/2, wW * 2);
-                
-                v.vPitch += (targetPitch - v.pitch) * 0.15; v.vPitch *= 0.82; 
-                v.vRoll += (targetRoll - v.roll) * 0.15; v.vRoll *= 0.82; 
-            } else {
-                v.x += Math.cos(v.angle) * v.speed;
-                v.y += Math.sin(v.angle) * v.speed;
-                v.vz -= 0.02; v.vz *= 0.98;
-                v.vPitch -= v.pitch * 0.01; v.vPitch *= 0.95; 
-                v.vRoll -= v.roll * 0.05; v.vRoll *= 0.95; 
-            }
-            
-            v.z += v.vz;
-            v.pitch += v.vPitch;
-            v.roll += v.vRoll;
-        }
-    }
+
 
     player.zOffset *= 0.7;
     if (Math.abs(player.zOffset) < 0.01) player.zOffset = 0;
@@ -892,13 +1129,16 @@ function update() {
                 }
             }
             if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) { 
-                b.z = Math.floor(b.z) + 1.02; 
-                b.vx = 0; b.vy = 0; b.vz = 0; 
-                b.onGround = true;
-                if (!b.isLimb) {
+                if (b.isBlood) {
+                    b.z = Math.floor(b.z) + 1.02; 
+                    b.vx = 0; b.vy = 0; b.vz = 0; 
+                    b.onGround = true;
                     b.isPooling = true;
                     b.targetPoolSize = b.size * (3.0 + Math.random() * 2.0);
                     b.life = Math.max(b.life, 300 + Math.floor(Math.random() * 150));
+                } else {
+                    // Non-blood particles (dirt, block debris, etc.) dissipate instantly on hitting the solid ground
+                    b.life = 0;
                 }
             } 
         }
@@ -925,7 +1165,8 @@ function update() {
                             vz: vz,
                             color: zBlood,
                             life: 50 + Math.random() * 25,
-                            size: (Math.random() * 0.07 + 0.04) * 0.25
+                            size: (Math.random() * 0.07 + 0.04) * 0.25,
+                            isBlood: true
                         });
                     }
                 }
@@ -938,6 +1179,11 @@ function update() {
         }
         
         b.life--; if (b.life <= 0) bloodParticles.splice(i, 1); 
+    }
+
+    // Safety cap: limit maximum number of active particles to prevent memory leaks and lag
+    while (bloodParticles.length > 800) {
+        bloodParticles.shift();
     }
 
     // Update Dropped Items physics

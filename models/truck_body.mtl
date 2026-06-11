@@ -1,0 +1,5 @@
+newmtl chassis
+Kd 0.2 0.2 0.2
+
+newmtl paint
+Kd 0.1 0.45 0.85

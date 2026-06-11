@@ -1108,8 +1108,25 @@ window.spawnDebug = (em) => {
 };
 window.spawnVehicle = (type) => { 
     let cx = player.x + Math.cos(player.angle) * 5, cy = player.y + Math.sin(player.angle) * 5;
-    let z = getSafeFloorZ(cx, cy, player.z + 5); 
-    vehicles.push({ type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 }); 
+    // Scan a 3x3 footprint around the target coordinate to find the highest voxel elevation.
+    // This ensures that neither the chassis nor the wheels overlap uneven voxel blocks on spawn, preventing physics explosions.
+    let maxGroundZ = -1;
+    for (let dx = -1.5; dx <= 1.5; dx += 1.0) {
+        for (let dy = -1.5; dy <= 1.5; dy += 1.0) {
+            let gz = getSafeFloorZ(cx + dx, cy + dy, player.z + 5);
+            if (gz > maxGroundZ) {
+                maxGroundZ = gz;
+            }
+        }
+    }
+    // Spawn chassis center at maxGroundZ + 1.1.
+    // With suspension rest length 0.55m + wheel radius 0.5m, wheels sit exactly on the ground with zero drop/impact force.
+    let z = maxGroundZ + 1.1; 
+    let v = { type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 };
+    if (typeof initCannonVehicle === 'function') {
+        initCannonVehicle(v);
+    }
+    vehicles.push(v); 
 };
 
 // --- SPLASH TEXT LOADER ---

@@ -1458,45 +1458,107 @@ function render() {
     
     // Draw vehicles
     for (let v of vehicles) {
-        let model = WEAPON_MODELS[v.type];
-        if (model) {
-            let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
-            let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
-            
-            for (let f of model.faces) {
-                let wPts = [];
-                for (let pt of f.pts) {
-                    let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
-                    p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+        if (v.type === 'truck') {
+            // Draw truck chassis body
+            let bodyModel = WEAPON_MODELS['truck_body'];
+            if (bodyModel && typeof v.qx !== 'undefined') {
+                let conf = VEHICLE_MODEL_CONFIG['truck_body'] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                let bodyQuat = new THREE.Quaternion(v.qx, v.qy, v.qz, v.qw);
+
+                for (let f of bodyModel.faces) {
+                    let wPts = [];
+                    for (let pt of f.pts) {
+                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
+                        p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+                        
+                        let vec = new THREE.Vector3(p1.x, p1.y, p1.z).applyQuaternion(bodyQuat);
+                        
+                        wPts.push({ x: v.x + vec.x, y: v.y + vec.y, z: v.z + vec.z + (conf.offsetZ || 0) });
+                    }
                     
-                    let cp = Math.cos(v.pitch), sp = Math.sin(v.pitch);
-                    let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
+                    let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
+                    let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
+                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                    let len = Math.hypot(nx, ny, nz);
+                    let norm = { x: nx/len, y: ny/len, z: nz/len };
                     
-                    let p2x = p1.x * cp - p1.z * sp;
-                    let p2y = p1.y;
-                    let p2z = p1.x * sp + p1.z * cp;
-                    
-                    let p3x = p2x;
-                    let p3y = p2y * cr - p2z * sr;
-                    let p3z = p2y * sr + p2z * cr;
-                    
-                    let wx = p3x * vcx - p3y * vsx;
-                    let wy = p3x * vsx + p3y * vcx;
-                    
-                    wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z + (conf.offsetZ || 0) });
+                    let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
+                    addFaceToDynamicBuffer('solid', wPts, color, norm);
                 }
-                
-                let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
-                let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
-                let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-                let len = Math.hypot(nx, ny, nz);
-                let norm = { x: nx/len, y: ny/len, z: nz/len };
-                
-                let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
-                addFaceToDynamicBuffer('solid', wPts, color, norm);
+            }
+
+            // Draw separate wheels at their actual physical transforms
+            if (v.wheels) {
+                let wheelModel = WEAPON_MODELS['truck_wheel'];
+                if (wheelModel) {
+                    let conf = VEHICLE_MODEL_CONFIG['truck_wheel'] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                    for (let w of v.wheels) {
+                        let wheelQuat = new THREE.Quaternion(w.qx, w.qy, w.qz, w.qw);
+
+                        for (let f of wheelModel.faces) {
+                            let wPts = [];
+                            for (let pt of f.pts) {
+                                let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
+                                p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+                                
+                                let vec = new THREE.Vector3(p1.x, p1.y, p1.z).applyQuaternion(wheelQuat);
+                                
+                                wPts.push({ x: w.x + vec.x, y: w.y + vec.y, z: w.z + vec.z + (conf.offsetZ || 0) });
+                            }
+                            
+                            let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
+                            let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
+                            let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                            let len = Math.hypot(nx, ny, nz);
+                            let norm = { x: nx/len, y: ny/len, z: nz/len };
+                            
+                            let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
+                            addFaceToDynamicBuffer('solid', wPts, color, norm);
+                        }
+                    }
+                }
             }
         } else {
-            drawBillboardEmoji(v, '🚚', 4.0, v.x, v.y, v.z, v === interactTarget);
+            let model = WEAPON_MODELS[v.type];
+            if (model) {
+                let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
+                
+                for (let f of model.faces) {
+                    let wPts = [];
+                    for (let pt of f.pts) {
+                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
+                        p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+                        
+                        let cp = Math.cos(v.pitch), sp = Math.sin(v.pitch);
+                        let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
+                        
+                        let p2x = p1.x * cp - p1.z * sp;
+                        let p2y = p1.y;
+                        let p2z = p1.x * sp + p1.z * cp;
+                        
+                        let p3x = p2x;
+                        let p3y = p2y * cr - p2z * sr;
+                        let p3z = p2y * sr + p2z * cr;
+                        
+                        let wx = p3x * vcx - p3y * vsx;
+                        let wy = p3x * vsx + p3y * vcx;
+                        
+                        wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z + (conf.offsetZ || 0) });
+                    }
+                    
+                    let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
+                    let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
+                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                    let len = Math.hypot(nx, ny, nz);
+                    let norm = { x: nx/len, y: ny/len, z: nz/len };
+                    
+                    let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
+                    addFaceToDynamicBuffer('solid', wPts, color, norm);
+                }
+            } else {
+                drawBillboardEmoji(v, '🚚', 4.0, v.x, v.y, v.z, v === interactTarget);
+            }
         }
     }
     
