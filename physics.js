@@ -1034,9 +1034,10 @@ function update() {
                     brakeForce = maxBrake;
                 } else if (isBrakingWithThrottle) {
                     brakeForce = maxBrake * 0.85; // Strong braking when using throttle to slow down
-                } else if (gas === 0) {
-                    brakeForce = 150; // Engine drag brake
                 } else {
+                    // No automatic braking when letting off the gas; let chassis linearDamping (0.35) 
+                    // and rolling resistance create a slow, gradual deceleration naturally.
+                    brakeForce = 0;
                     appliedEngineForce = gas * engineForce;
                 }
                 
