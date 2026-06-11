@@ -608,7 +608,7 @@ function initCannonVehicle(v) {
     const chassisShape = new CANNON.Box(new CANNON.Vec3(1.0, 0.85, 0.18));
     const chassisBody = new CANNON.Body({
         mass: 2800, // Balanced weight (2800 kg) to make the truck feel like a heavy offroad pickup but responsive
-        linearDamping: 0.35, // Increased air drag to add a heavy, progressive drag feel when accelerating and stabilize top speeds
+        linearDamping: 0.24, // Tuned air drag to increase coasting distance by a third while maintaining speed stability
         angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
         allowSleep: true, // Enable sleeping for performance when parked/resting
         material: chassisMaterial // Assign low-friction material to slide smoothly off voxel obstacles
@@ -1039,7 +1039,7 @@ function update() {
                     // Scales with speed, and adjusts based on vertical velocity and gear:
                     // - Low Gear (L): holds back strongly downhill to prevent runaways, rolls freely uphill.
                     // - Drive Gear (D): decelerates really hard uphill, but coasts/rolls very freely downhill under gravity.
-                    let baseEngineBrake = speedKmH * 8.0; 
+                    let baseEngineBrake = speedKmH * 5.3; // Reduced by a third to allow the vehicle to coast further
                     let zVel = v.chassisBody.velocity.z;
                     let slopeScale = 1.0;
                     
