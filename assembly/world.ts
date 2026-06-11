@@ -165,12 +165,12 @@ export function getTerrainElevation(x: i32, y: i32): f64 { return getTerrainFast
 
 @inline
 function isVoxelSolid(v: i32): bool {
-  return v == 1 || v >= 3;
+  return v == 1 || v == 6 || v >= 3;
 }
 
 @inline
 function isVoxelCube(v: i32): bool {
-  return v >= 3;
+  return v >= 3 && v != 6;
 }
 
 // --- Voxel Storage ---
@@ -204,7 +204,8 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
     }
   }
 
-  if (density > 0.0) return 1;
+  if (density > 0.5) return 1;
+  if (density > 0.0) return 6;
   if (z <= (t.oceanSurface as i32)) return 2;
   if (t.isLake && z <= (t.lakeSurface as i32)) return 2;
 
@@ -380,6 +381,10 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
   let count: f32 = 0;
   let touchesCube = false;
 
+  let hasHalfBelow = false;
+  let hasFullBelow = false;
+  let hasSolidAbove = false;
+
   for (let dx = -1; dx <= 0; dx++) {
     for (let dy = -1; dy <= 0; dy++) {
       for (let dz = -1; dz <= 0; dz++) {
@@ -388,8 +393,22 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
         if (isVoxelSolid(v)) {
           sumX += ((gx + (dx as f32)) as f32) + 0.5;
           sumY += ((gy + (dy as f32)) as f32) + 0.5;
-          sumZ += ((gz + (dz as f32)) as f32) + 0.5;
+          if (v == 6) {
+            sumZ += ((gz + (dz as f32)) as f32) + 0.25;
+          } else {
+            sumZ += ((gz + (dz as f32)) as f32) + 0.5;
+          }
           count += 1.0;
+
+          if (dz == -1) {
+            if (v == 6) {
+              hasHalfBelow = true;
+            } else {
+              hasFullBelow = true;
+            }
+          } else if (dz == 0) {
+            hasSolidAbove = true;
+          }
         }
       }
     }
@@ -401,10 +420,12 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
     return res;
   }
 
+  let targetZ: f32 = (hasHalfBelow && !hasFullBelow && !hasSolidAbove) ? (gz - (0.5 as f32)) : gz;
+
   let w: f32 = 0.5;
   res.x = gx + (sumX / count - gx) * w;
   res.y = gy + (sumY / count - gy) * w;
-  res.z = gz + (sumZ / count - gz) * w;
+  res.z = targetZ + (sumZ / count - targetZ) * w;
   return res;
 }
 

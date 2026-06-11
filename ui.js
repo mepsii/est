@@ -685,7 +685,8 @@ function getPlacementTarget() {
             hitX = rx; hitY = ry; 
             for(let z = Math.floor(rz); z >= 0; z--) {
                 if (getSolid(Math.floor(rx), Math.floor(ry), z)) {
-                    hitZ = z + 1.0; 
+                    let topV = getVoxel(Math.floor(rx), Math.floor(ry), z);
+                    hitZ = z + ((topV === 6) ? 0.5 : 1.0); 
                     foundSolid = true; break;
                 }
             }
@@ -695,7 +696,11 @@ function getPlacementTarget() {
     
     if (!foundSolid) {
         for(let z = Math.floor(player.z + player.baseHeight + 2); z >= 0; z--) {
-            if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) { hitZ = z + 1.0; break; }
+            if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) {
+                let topV = getVoxel(Math.floor(hitX), Math.floor(hitY), z);
+                hitZ = z + ((topV === 6) ? 0.5 : 1.0);
+                break;
+            }
         }
     }
     return { x: hitX, y: hitY, z: hitZ };
@@ -1100,7 +1105,10 @@ document.getElementById('btn-stair-cancel').onclick = closeStairMenu;
 
 function getSafeFloorZ(x, y, startZ) {
     for(let z = Math.floor(startZ + 2); z >= 0; z--) {
-        if (getSolid(Math.floor(x), Math.floor(y), z)) return z + 1.0;
+        if (getSolid(Math.floor(x), Math.floor(y), z)) {
+            let topV = getVoxel(Math.floor(x), Math.floor(y), z);
+            return z + ((topV === 6) ? 0.5 : 1.0);
+        }
     }
     return startZ;
 }
@@ -1113,7 +1121,7 @@ window.spawnBuilding = () => {
 };
 window.spawnEnemy = (type) => {
     let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5, ez = getSafeFloorZ(ex, ey, player.z);
-    if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez))) {
+    if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez + 0.5))) {
         if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
         else if (type === 'zombie') enemies.push({ type: 'zombie', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
         else if (type === 'zombie3d') enemies.push({ type: 'zombie3d', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.8, flash: 0 });

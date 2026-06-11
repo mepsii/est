@@ -558,13 +558,29 @@ function syncVoxelCollidersAroundVehicles() {
     const halfExtents = new CANNON.Vec3(0.5, 0.5, 0.5);
     const voxelShape = new CANNON.Box(halfExtents);
     
+    const halfHeightExtents = new CANNON.Vec3(0.5, 0.5, 0.25);
+    const halfHeightShape = new CANNON.Box(halfHeightExtents);
+    
     for (let key of neededVoxels) {
+        const [x, y, z] = key.split(',').map(Number);
+        const vType = getVoxel(x, y, z);
+        const isHalf = (vType === 6);
+
+        // If body exists, check if it has correct shape type
+        if (activeVoxelBodies.has(key)) {
+            const body = activeVoxelBodies.get(key);
+            const isBodyHalf = body.shapes[0].halfExtents.z === 0.25;
+            if (isBodyHalf !== isHalf) {
+                cannonWorld.removeBody(body);
+                activeVoxelBodies.delete(key);
+            }
+        }
+
         if (!activeVoxelBodies.has(key)) {
-            const [x, y, z] = key.split(',').map(Number);
             const voxelBody = new CANNON.Body({
                 mass: 0, // static body
-                shape: voxelShape,
-                position: new CANNON.Vec3(x + 0.5, y + 0.5, z + 0.5)
+                shape: isHalf ? halfHeightShape : voxelShape,
+                position: new CANNON.Vec3(x + 0.5, y + 0.5, isHalf ? z + 0.25 : z + 0.5)
             });
             cannonWorld.addBody(voxelBody);
             activeVoxelBodies.set(key, voxelBody);
@@ -1347,7 +1363,25 @@ function update() {
                     if (!checkCollision(player.x, player.y, player.z - 0.05)) {
                         player.vz -= 0.015; 
                     } else {
-                        if (player.vz < 0) { player.vz = 0; player.z = Math.ceil(player.z - 0.05) + 0.01; } 
+                        if (player.vz < 0) {
+                            player.vz = 0;
+                            let px = player.x, py = player.y, pz = player.z - 0.05;
+                            let r = 0.25;
+                            let maxSurfaceZ = -1;
+                            for (let x = Math.floor(px - r); x <= Math.floor(px + r); x++) {
+                                for (let y = Math.floor(py - r); y <= Math.floor(py + r); y++) {
+                                    let z = Math.floor(pz);
+                                    let v = getVoxel(x, y, z);
+                                    if (isVoxelSolid(v)) {
+                                        let top = z + ((v === 6) ? 0.5 : 1.0);
+                                        if (top > maxSurfaceZ) {
+                                            maxSurfaceZ = top;
+                                        }
+                                    }
+                                }
+                            }
+                            player.z = (maxSurfaceZ !== -1) ? (maxSurfaceZ + 0.01) : (Math.ceil(pz) + 0.01);
+                        }
                         if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
                     }
                     player.z += player.vz;
