@@ -644,7 +644,7 @@ function initCannonVehicle(v) {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
         suspensionStiffness: 38, // Stiffer springs to support heavy weight and downforce
-        suspensionRestLength: 0.76, // Taller clearance to support downforce without bottoming out
+        suspensionRestLength: 0.68, // Lowered from 0.76 to reduce body/wheel gap while maintaining clearance
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.55, // Extra travel to handle compression without bottoming out
         dampingRelaxation: 5.5, // High relaxation damping to completely eliminate rebound bounce
@@ -670,8 +670,9 @@ function initCannonVehicle(v) {
     // Add 4 wheels at connection points in local coordinates.
     // Connect them significantly lower (Z = -0.55 for front, -0.45 for rear) to lift the chassis
     // high off the ground, clearing tire space and leveling the front end weight distribution.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, 0.95, -0.55) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, -0.95, -0.55) });  // Front Right
+    // Brought front wheels back from X = 1.45 to 1.15 so they don't stick out in front of the bumper.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.15, 0.95, -0.55) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.15, -0.95, -0.55) });  // Front Right
     vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.95, -0.45) }); // Rear Left
     vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.95, -0.45) });  // Rear Right
 
@@ -697,7 +698,7 @@ function initCannonVehicle(v) {
         }
 
         var targetStiffness = v.gear === 'L' ? 28 : 38;
-        var targetRestLength = v.gear === 'L' ? 0.88 : 0.76;
+        var targetRestLength = v.gear === 'L' ? 0.80 : 0.68; // Lowered by 0.08 to match the initial config change without gear shift sag
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
             wheelInfos[i].suspensionRestLength = targetRestLength;
@@ -745,9 +746,12 @@ function initCannonVehicle(v) {
         }
 
         // Apply ground magnetism (downforce) to stabilize climbing on steep voxel terrain
+        var avgNormal = new CANNON.Vec3(0, 0, 0);
         var contacts = 0;
         for (var i = 0; i < numWheels; i++) {
-            if (wheelInfos[i].isInContact) {
+            var w = wheelInfos[i];
+            if (w.isInContact && w.raycastResult && w.raycastResult.hitNormalWorld) {
+                avgNormal.vadd(w.raycastResult.hitNormalWorld, avgNormal);
                 contacts++;
             }
         }
@@ -760,6 +764,20 @@ function initCannonVehicle(v) {
         this.smoothContactRatio += (targetContact - this.smoothContactRatio) * 0.35;
 
         if (this.smoothContactRatio > 0.01) {
+            // Calculate slope sideways direction
+            var slopeSideways = new CANNON.Vec3();
+            var hasSideways = false;
+            if (contacts > 0) {
+                avgNormal.normalize();
+                var gravityDir = new CANNON.Vec3(0, 0, -1);
+                avgNormal.cross(gravityDir, slopeSideways);
+                var sidewaysLen = slopeSideways.norm();
+                if (sidewaysLen > 0.001) {
+                    slopeSideways.scale(1.0 / sidewaysLen, slopeSideways);
+                    hasSideways = true;
+                }
+            }
+
             // Get local vehicle down axis in world coordinates
             var localDown = new CANNON.Vec3(0, 0, -1);
             var worldDown = new CANNON.Vec3();
@@ -802,14 +820,21 @@ function initCannonVehicle(v) {
             var worldForceAmount = magnetForceAmount * 0.40;
             
             // Apply local downforce at center of mass (perpendicular to chassis)
-            // Subtract lateral (right-axis) components to eliminate side-hill sliding drift
+            // Project worldDown onto the contact normal avgNormal to ensure the force is strictly
+            // perpendicular to the slope, completely eliminating any horizontal tangent components
+            // that cause lateral acceleration glitches and side-sliding on diagonal inclines.
             var localForce = new CANNON.Vec3();
-            worldDown.scale(localForceAmount, localForce);
-            
-            var lateralProj = localForce.dot(rgtAxis);
-            var lateralForce = new CANNON.Vec3();
-            rgtAxis.scale(lateralProj, lateralForce);
-            localForce.vsub(lateralForce, localForce);
+            if (contacts > 0) {
+                var dot = worldDown.dot(avgNormal);
+                // Only project if worldDown points towards the ground (dot < 0)
+                if (dot < 0) {
+                    avgNormal.scale(dot * localForceAmount, localForce);
+                } else {
+                    worldDown.scale(localForceAmount, localForce);
+                }
+            } else {
+                worldDown.scale(localForceAmount, localForce);
+            }
             
             chassisBody.applyForce(localForce, chassisBody.position);
             
@@ -950,9 +975,9 @@ function update() {
                 // Real-time speed calculations (using absolute speed in km/h)
                 const speedKmH = Math.abs(v.currentVehicleSpeedKmHour || 0);
                 
-                // Speed-sensitive steering: scale steering response down at higher speeds
+                // Speed-sensitive steering: scale steering response down at higher speeds (capped at 20% reduction for better steering at speed)
                 // Also scale down steering when reversing, as reverse steering is naturally twitchy
-                let steerScale = 1.0 - Math.min(0.75, speedKmH / 55);
+                let steerScale = 1.0 - Math.min(0.20, speedKmH / 85);
                 if (v.currentVehicleSpeedKmHour < 0) {
                     steerScale *= 0.45; // significantly lower steering angle in reverse to prevent spinouts
                 }

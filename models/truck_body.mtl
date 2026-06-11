@@ -1,5 +1,12 @@
-newmtl chassis
-Kd 0.2 0.2 0.2
+# Blender 5.1.2 MTL File: 'modifiedtruck2wheelless.blend'
+# www.blender.org
 
-newmtl paint
-Kd 0.1 0.45 0.85
+newmtl colormap
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 1
+map_Kd /Users/mepsii/Documents/projects/github/est/models/Textures/colormap.png
