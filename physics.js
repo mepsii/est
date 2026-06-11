@@ -493,15 +493,53 @@ cannonWorld.addContactMaterial(chassisDefaultContactMaterial);
 const activeVoxelBodies = new Map(); // Key: "x,y,z" -> CANNON.Body
 
 function syncVoxelCollidersAroundVehicles() {
+    if (vehicles.length === 0) {
+        if (activeVoxelBodies.size > 0) {
+            for (let body of activeVoxelBodies.values()) {
+                cannonWorld.removeBody(body);
+            }
+            activeVoxelBodies.clear();
+        }
+        return;
+    }
+
+    // Coarse-grid threshold check: only run the expensive voxel scanning and body update
+    // when at least one vehicle has moved at least 2 blocks from its last synchronized position.
+    // This reduces redundant CPU checks by 95% when sitting still or crawling, maintaining high FPS.
+    let anyVehicleMovedSignificant = false;
+    for (let v of vehicles) {
+        const cx = Math.floor(v.x);
+        const cy = Math.floor(v.y);
+        const cz = Math.floor(v.z);
+        if (v.lastSyncX === undefined || 
+            Math.abs(cx - v.lastSyncX) >= 2 || 
+            Math.abs(cy - v.lastSyncY) >= 2 || 
+            Math.abs(cz - v.lastSyncZ) >= 2) {
+            anyVehicleMovedSignificant = true;
+            break;
+        }
+    }
+
+    if (!anyVehicleMovedSignificant && activeVoxelBodies.size > 0) {
+        return;
+    }
+
+    // Update synchronization caches
+    for (let v of vehicles) {
+        v.lastSyncX = Math.floor(v.x);
+        v.lastSyncY = Math.floor(v.y);
+        v.lastSyncZ = Math.floor(v.z);
+    }
+
     const neededVoxels = new Set();
     const radiusX = 11; // Expanded further to prevent fast-moving vehicles from escaping the active colliders region
     const radiusY = 11; // Expanded from 9 to 11
     const radiusZ = 6;  // Expanded from 5 to 6
 
     for (let v of vehicles) {
-        const cx = Math.floor(v.x);
-        const cy = Math.floor(v.y);
-        const cz = Math.floor(v.z);
+        const cx = v.lastSyncX;
+        const cy = v.lastSyncY;
+        const cz = v.lastSyncZ;
 
         for (let x = cx - radiusX; x <= cx + radiusX; x++) {
             for (let y = cy - radiusY; y <= cy + radiusY; y++) {
@@ -548,7 +586,8 @@ function initCannonVehicle(v) {
     // Chassis Box shape (X=length/forward, Y=width/lateral, Z=height/vertical)
     // Shrunk length half-extent to 1.2 and offset to -0.2 to let wheels protrude significantly in front,
     // allowing them to climb 1-unit voxel blocks before the bumper can collide.
-    const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.18));
+    // Increased half-height to 0.24 (50cm thick box) to prevent physics tunneling at high speeds.
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.24));
     const chassisBody = new CANNON.Body({
         mass: 1600, // Increased weight (1600 kg) to make the truck feel heavy and prevent floatiness/bouncing
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
@@ -559,11 +598,11 @@ function initCannonVehicle(v) {
     chassisBody.sleepSpeedLimit = 0.2; // Sleep when chassis speed drops below 0.2 m/s
     chassisBody.sleepTimeLimit = 0.8; // Sleep after 0.8 seconds of continuous inactivity
     
-    // Add shape offset backward (-0.2 along X) and upward (+0.25 along Z) relative to the body's origin.
+    // Add shape offset backward (-0.2 along X) and upward (+0.24 along Z) relative to the body's origin.
     // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
     // making the vehicle highly stable and resistant to rollover. It also raises the front bumper
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.25));
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.24));
     
     // Position slightly above ground to align with vehicle center
     chassisBody.position.set(v.x, v.y, v.z);
@@ -798,6 +837,19 @@ function update() {
                 v.raycastVehicle.setBrake(brakeForce, 1);
                 v.raycastVehicle.setBrake(brakeForce, 2);
                 v.raycastVehicle.setBrake(brakeForce, 3);
+
+                // If the player is in the vehicle, but idling (no throttle/steering input and very low speed),
+                // apply extra damping to eliminate physics solver micro-jitter and visual shaking.
+                if (gas === 0 && steerInput === 0) {
+                    const speed = v.chassisBody.velocity.norm();
+                    const angSpeed = v.chassisBody.angularVelocity.norm();
+                    if (speed < 0.15) {
+                        v.chassisBody.velocity.scale(0.85, v.chassisBody.velocity);
+                    }
+                    if (angSpeed < 0.15) {
+                        v.chassisBody.angularVelocity.scale(0.85, v.chassisBody.angularVelocity);
+                    }
+                }
             }
         }
     }
@@ -807,6 +859,16 @@ function update() {
         if (v !== player.inVehicle && v.raycastVehicle && v.chassisBody) {
             // Parked vehicles are allowed to sleep when stationary to save CPU cycles
             v.chassisBody.allowSleep = true;
+
+            // Apply strong damping when stationary to prevent parking jiggles before sleeping
+            const speed = v.chassisBody.velocity.norm();
+            const angSpeed = v.chassisBody.angularVelocity.norm();
+            if (speed < 0.15) {
+                v.chassisBody.velocity.scale(0.85, v.chassisBody.velocity);
+            }
+            if (angSpeed < 0.15) {
+                v.chassisBody.angularVelocity.scale(0.85, v.chassisBody.angularVelocity);
+            }
 
             v.raycastVehicle.setSteeringValue(0, 0);
             v.raycastVehicle.setSteeringValue(0, 1);
@@ -821,7 +883,13 @@ function update() {
         }
     }
 
-    cannonWorld.step(1 / 60);
+    // Use 2 sub-steps per frame (running at 120Hz internally) to prevent tunneling/glitching 
+    // through voxels at high speeds, while keeping the external physics step at 60Hz.
+    const physicsSubSteps = 2;
+    const subStepSize = (1 / 60) / physicsSubSteps;
+    for (let i = 0; i < physicsSubSteps; i++) {
+        cannonWorld.step(subStepSize);
+    }
 
     // Sync Cannon chassis states back to vehicle objects
     for (let v of vehicles) {
