@@ -608,7 +608,7 @@ function initCannonVehicle(v) {
     const chassisShape = new CANNON.Box(new CANNON.Vec3(1.0, 0.85, 0.18));
     const chassisBody = new CANNON.Body({
         mass: 2800, // Balanced weight (2800 kg) to make the truck feel like a heavy offroad pickup but responsive
-        linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
+        linearDamping: 0.35, // Increased air drag to add a heavy, progressive drag feel when accelerating and stabilize top speeds
         angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
         allowSleep: true, // Enable sleeping for performance when parked/resting
         material: chassisMaterial // Assign low-friction material to slide smoothly off voxel obstacles
@@ -645,7 +645,7 @@ function initCannonVehicle(v) {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
         suspensionStiffness: 55, // Middle-ground spring stiffness for balanced, realistic weight
-        suspensionRestLength: 0.70, // Compensates for static compression, keeping visual body ride height low
+        suspensionRestLength: 0.65, // Level default rest length to compensate for static compression
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.90, // Large suspension travel limit allowing tires to clip up into body under compression
         dampingRelaxation: 4.8, // Controlled relaxation damping to prevent bounce/stoppies
@@ -669,13 +669,12 @@ function initCannonVehicle(v) {
     };
 
     // Add 4 wheels at connection points in local coordinates.
-    // Connected higher (Z = -0.35 for front, -0.25 for rear) to lower the visual body ride height
-    // relative to the wheels while keeping full active suspension travel.
-    // Brought front wheels back to 0.65 (brought in more) and rear wheels forward to -1.50 to center them in the fender wells.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, 0.95, -0.35) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, -0.95, -0.35) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.25) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.25) });  // Rear Right
+    // Level connection height (Z = -0.30 for all wheels) to keep visual body ride height level.
+    // Brought front wheels back to 0.65 and rear wheels forward to -1.50 to center them in the fender wells.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, 0.95, -0.30) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, -0.95, -0.30) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.30) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.30) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
@@ -699,10 +698,10 @@ function initCannonVehicle(v) {
         }
 
         var targetStiffness = v.gear === 'L' ? 45 : 55; // Middle ground stiffness: 55 in D, 45 in L for off-road crawls
-        // Compensates for front/rear weight distribution: front wheels carry ~2.14x more weight than rear wheels.
+        // Compensates for front/rear weight distribution: front wheels carry ~2.3x more weight than rear wheels.
         // Also compensates for the weight/downforce difference between gears to keep both D and L at the exact same visual ride height.
-        var frontRestLength = v.gear === 'L' ? 0.95 : 0.70;
-        var rearRestLength = v.gear === 'L' ? 0.58 : 0.45;
+        var frontRestLength = v.gear === 'L' ? 0.85 : 0.65;
+        var rearRestLength = v.gear === 'L' ? 0.70 : 0.55;
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
             wheelInfos[i].suspensionRestLength = (i < 2) ? frontRestLength : rearRestLength;
@@ -990,10 +989,20 @@ function update() {
                  // Default to Drive ('D') gear if undefined
                  v.gear = v.gear || 'D';
                  
+                 // Determine if the player is trying to brake using opposite throttle inputs
+                 let isBrakingWithThrottle = false;
+                 if (v.currentVehicleSpeedKmHour > 2.0 && gas > 0) {
+                     isBrakingWithThrottle = true;
+                 } else if (v.currentVehicleSpeedKmHour < -2.0 && gas < 0) {
+                     isBrakingWithThrottle = true;
+                 }
+
+                 const maxBrake = 1600; // Reduced brake force to prevent stoppies
+                 
                  // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
                   let engineForce = 16000; // Middle-ground drive engine torque (increased from 9500) to maintain momentum at speed without being too fast
                   if (gas > 0) {
-                      engineForce = 8000; // soft reverse torque
+                      engineForce = 5000; // Softer reverse torque to prevent harsh acceleration/stoppies when reversing
                   } else if (gas < 0) {
                       if (v.gear === 'L') {
                           engineForce = 20000; // Beefy crawling torque (increased from 12000) to crawl over vertical voxel block faces and corners
@@ -1010,18 +1019,31 @@ function update() {
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
                 
-                // 4-Wheel Drive (4WD) - apply force to all four wheels so front wheels can drag the vehicle up voxel blocks
-                v.raycastVehicle.applyEngineForce(gas * engineForce, 0);
-                v.raycastVehicle.applyEngineForce(gas * engineForce, 1);
-                v.raycastVehicle.applyEngineForce(gas * engineForce, 2);
-                v.raycastVehicle.applyEngineForce(gas * engineForce, 3);
+                // Apply engine force or braking
+                let appliedEngineForce = 0;
+                let brakeForce = 0;
                 
-                // Braking / engine drag
-                const brakeForce = keys['Space'] ? maxBrake : (gas === 0 ? 150 : 0);
-                v.raycastVehicle.setBrake(brakeForce, 0);
-                v.raycastVehicle.setBrake(brakeForce, 1);
-                v.raycastVehicle.setBrake(brakeForce, 2);
-                v.raycastVehicle.setBrake(brakeForce, 3);
+                if (keys['Space']) {
+                    brakeForce = maxBrake;
+                } else if (isBrakingWithThrottle) {
+                    brakeForce = maxBrake * 0.85; // Strong braking when using throttle to slow down
+                } else if (gas === 0) {
+                    brakeForce = 150; // Engine drag brake
+                } else {
+                    appliedEngineForce = gas * engineForce;
+                }
+                
+                // 4-Wheel Drive (4WD)
+                v.raycastVehicle.applyEngineForce(appliedEngineForce, 0);
+                v.raycastVehicle.applyEngineForce(appliedEngineForce, 1);
+                v.raycastVehicle.applyEngineForce(appliedEngineForce, 2);
+                v.raycastVehicle.applyEngineForce(appliedEngineForce, 3);
+                
+                // Rear-biased braking to completely prevent nose-dives / stoppies
+                v.raycastVehicle.setBrake(brakeForce * 0.6, 0); // Front Left
+                v.raycastVehicle.setBrake(brakeForce * 0.6, 1); // Front Right
+                v.raycastVehicle.setBrake(brakeForce, 2);       // Rear Left
+                v.raycastVehicle.setBrake(brakeForce, 3);       // Rear Right
 
                 // If the player is in the vehicle, but idling (no throttle/steering input and very low speed),
                 // apply extra damping to eliminate physics solver micro-jitter and visual shaking.
