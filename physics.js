@@ -626,12 +626,12 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 26, // Fine-tuned spring stiffness for realistic off-road suspension flex
-        suspensionRestLength: 0.70, // Tall rest length (clearance)
+        suspensionStiffness: 22, // Soft spring stiffness for realistic off-road suspension flex
+        suspensionRestLength: 0.75, // Tall rest length (clearance)
         maxSuspensionForce: 100000,
-        maxSuspensionTravel: 0.45, // Massive vertical travel to clear voxel steps
-        dampingRelaxation: 4.0, // High relaxation damping to completely control rebound bouncing
-        dampingCompression: 3.0, // High compression damping to absorb voxel edge impacts smoothly
+        maxSuspensionTravel: 0.50, // Massive vertical travel to clear voxel steps
+        dampingRelaxation: 4.8, // High relaxation damping to completely control rebound bouncing
+        dampingCompression: 3.5, // High compression damping to absorb voxel edge impacts smoothly
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
