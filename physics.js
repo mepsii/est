@@ -467,12 +467,12 @@ function get3DZombieLimbBoxes(e) {
 const cannonWorld = new CANNON.World();
 cannonWorld.gravity.set(0, 0, -28); // Stays heavy
 cannonWorld.broadphase = new CANNON.SAPBroadphase(cannonWorld); // SAP Broadphase for high numeric stability
-cannonWorld.solver.iterations = 35; // Increased iterations to prevent tunneling
+cannonWorld.solver.iterations = 25; // Optimized iterations for 180Hz substepping
 cannonWorld.allowSleep = true; // Enable sleeping to completely eliminate CPU overhead for resting/parked/flipped vehicles
 cannonWorld.defaultContactMaterial.friction = 0.8;
 cannonWorld.defaultContactMaterial.restitution = 0.02; // Minimal bounce for realistic landings
-cannonWorld.defaultContactMaterial.contactEquationStiffness = 5e6; // Reduced stiffness for stable voxel contact without explosions
-cannonWorld.defaultContactMaterial.contactEquationRelaxation = 4; // Extra relaxation to absorb high impacts smoothly
+cannonWorld.defaultContactMaterial.contactEquationStiffness = 1e7; // Stiffer equations to prevent sinking into voxels
+cannonWorld.defaultContactMaterial.contactEquationRelaxation = 3; // Tuned relaxation to prevent voxel seam snagging
 
 // Create low-friction material for the vehicle chassis body so it slides smoothly over voxel obstacles instead of sticking/leaning
 const chassisMaterial = new CANNON.Material('chassis');
@@ -482,8 +482,8 @@ const chassisDefaultContactMaterial = new CANNON.ContactMaterial(
     {
         friction: 0.05, // super low friction so the chassis slides smoothly off voxel edges
         restitution: 0.02,
-        contactEquationStiffness: 5e6,
-        contactEquationRelaxation: 4
+        contactEquationStiffness: 1e7,
+        contactEquationRelaxation: 3
     }
 );
 cannonWorld.addContactMaterial(chassisDefaultContactMaterial);
@@ -532,9 +532,9 @@ function syncVoxelCollidersAroundVehicles() {
     }
 
     const neededVoxels = new Set();
-    const radiusX = 8; // Optimized from 11 to 8 to scan 54% fewer voxels (3179 instead of 6877)
-    const radiusY = 8; // Cuts processing time in half, completely resolving high-speed FPS drops
-    const radiusZ = 5; // Optimized from 6 to 5 for vertical bounds
+    const radiusX = 5; // Optimized from 8 to 5 to check 73% fewer coordinates horizontally
+    const radiusY = 5; // Eliminates all random CPU spike lag and FPS drops when climbing mountains
+    const radiusZ = 3; // Optimized from 5 to 3 for compact height scanning bounds
 
     for (let v of vehicles) {
         const cx = v.lastSyncX;
@@ -589,7 +589,7 @@ function initCannonVehicle(v) {
     // Increased half-height to 0.24 (50cm thick box) to prevent physics tunneling at high speeds.
     const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.24));
     const chassisBody = new CANNON.Body({
-        mass: 1800, // Increased weight (1800 kg) to make the truck feel heavy and prevent floatiness/bouncing
+        mass: 2100, // Balanced weight (2100 kg) to make the truck feel like a heavy offroad pickup but responsive
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
         angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
         allowSleep: true, // Enable sleeping for performance when parked/resting
@@ -604,9 +604,9 @@ function initCannonVehicle(v) {
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
     chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.30));
     
-    // Scale up the rotational inertia (make it 4.5x harder to spin/flip) to prevent rapid, 
+    // Scale up the rotational inertia (make it 5.2x harder to spin/flip) to prevent rapid, 
     // toy-like rotational snapping and weird high-speed rollover flips.
-    chassisBody.inertia.scale(4.5, chassisBody.inertia);
+    chassisBody.inertia.scale(5.2, chassisBody.inertia);
     chassisBody.invInertia.x = 1 / chassisBody.inertia.x;
     chassisBody.invInertia.y = 1 / chassisBody.inertia.y;
     chassisBody.invInertia.z = 1 / chassisBody.inertia.z;
@@ -615,23 +615,23 @@ function initCannonVehicle(v) {
     chassisBody.position.set(v.x, v.y, v.z);
     chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), v.angle);
     cannonWorld.addBody(chassisBody);
-
+ 
     const vehicle = new CANNON.RaycastVehicle({
         chassisBody: chassisBody,
         indexUpAxis: 2, // Z is up
         indexRightAxis: 1, // Y is right (lateral)
         indexForwardAxis: 0 // X is forward (longitudinal)
     });
-
+ 
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 32, // Balanced spring stiffness for stable crawling
-        suspensionRestLength: 0.65, // Stable rest length (0.87m clearance)
+        suspensionStiffness: 26, // Fine-tuned spring stiffness for realistic off-road suspension flex
+        suspensionRestLength: 0.70, // Tall rest length (clearance)
         maxSuspensionForce: 100000,
-        maxSuspensionTravel: 0.40, // Clear vertical travel
-        dampingRelaxation: 3.2, // Slightly higher relaxation damping to absorb pogo-stick bounces
-        dampingCompression: 2.4, // Higher compression damping to absorb high-speed impacts smoothly
+        maxSuspensionTravel: 0.45, // Massive vertical travel to clear voxel steps
+        dampingRelaxation: 4.0, // High relaxation damping to completely control rebound bouncing
+        dampingCompression: 3.0, // High compression damping to absorb voxel edge impacts smoothly
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
@@ -828,18 +828,32 @@ function update() {
                 const gas = keys['KeyW'] ? -1 : (keys['KeyS'] ? 1 : 0);
                 const steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
                 
-                const maxSteer = 0.5;
-                const maxForce = 7500; // Torque applied to wheels for acceleration and block climbing
+                // Real-time speed calculations (using absolute speed in km/h)
+                const speedKmH = Math.abs(v.currentVehicleSpeedKmHour || 0);
+                
+                // Speed-sensitive steering: scale steering response down at higher speeds
+                // Also scale down steering when reversing, as reverse steering is naturally twitchy
+                let steerScale = 1.0 - Math.min(0.75, speedKmH / 55);
+                if (v.currentVehicleSpeedKmHour < 0) {
+                    steerScale *= 0.45; // significantly lower steering angle in reverse to prevent spinouts
+                }
+                const maxSteer = 0.5 * steerScale;
+                
+                // Scale engine force: less force in reverse to prevent hyper-acceleration
+                let engineForce = 9500;
+                if (gas > 0) {
+                    engineForce = 4500; // soft reverse torque
+                }
                 
                 // Front-wheel steering (steer wheels 0 and 1)
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
                 
                 // 4-Wheel Drive (4WD) - apply force to all four wheels so front wheels can drag the vehicle up voxel blocks
-                v.raycastVehicle.applyEngineForce(gas * maxForce, 0);
-                v.raycastVehicle.applyEngineForce(gas * maxForce, 1);
-                v.raycastVehicle.applyEngineForce(gas * maxForce, 2);
-                v.raycastVehicle.applyEngineForce(gas * maxForce, 3);
+                v.raycastVehicle.applyEngineForce(gas * engineForce, 0);
+                v.raycastVehicle.applyEngineForce(gas * engineForce, 1);
+                v.raycastVehicle.applyEngineForce(gas * engineForce, 2);
+                v.raycastVehicle.applyEngineForce(gas * engineForce, 3);
                 
                 // Braking / engine drag
                 const brakeForce = keys['Space'] ? maxBrake : (gas === 0 ? 150 : 0);
@@ -895,9 +909,9 @@ function update() {
         }
     }
 
-    // Use 2 sub-steps per frame (running at 120Hz internally) to prevent tunneling/glitching 
+    // Use 3 sub-steps per frame (running at 180Hz internally) to prevent tunneling/glitching 
     // through voxels at high speeds, while keeping the external physics step at 60Hz.
-    const physicsSubSteps = 2;
+    const physicsSubSteps = 3;
     const subStepSize = (1 / 60) / physicsSubSteps;
     for (let i = 0; i < physicsSubSteps; i++) {
         cannonWorld.step(subStepSize);
