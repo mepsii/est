@@ -96,6 +96,8 @@ body { margin: 0; overflow: hidden; background-color: #000; }
 #oxygen { color: #00ffff; }
 #food { color: #ffaa00; }
 #stamina { color: #33ccff; }
+#speedometer { color: #00ff66; }
+#gear-status { color: #ff33aa; font-weight: 900; }
 
 .panel {
     background: rgba(20, 20, 20, 0.95); border: 2px solid #555; 

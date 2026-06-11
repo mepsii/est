@@ -922,6 +922,16 @@ window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     if (isLoading) return;
     keys[e.code] = true;
+    
+    if (player.inVehicle) {
+        if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
+            player.inVehicle.gear = 'D';
+            e.preventDefault();
+        } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
+            player.inVehicle.gear = 'L';
+            e.preventDefault();
+        }
+    }
     if (e.key >= '1' && e.key <= '8') selectHotbar(parseInt(e.key) - 1);
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     

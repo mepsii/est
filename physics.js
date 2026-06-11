@@ -627,12 +627,12 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 25, // Soft but supportive spring stiffness for realistic offroad suspension flex
+        suspensionStiffness: 35, // Stiffer springs to support heavy weight and downforce
         suspensionRestLength: 0.80, // Taller clearance to support downforce without bottoming out
         maxSuspensionForce: 100000,
-        maxSuspensionTravel: 0.50, // Massive vertical travel to clear voxel steps
-        dampingRelaxation: 3.8, // Controlled rebound damping to feel bouncy/fun but stable
-        dampingCompression: 2.8, // Absorbs voxel edge impacts smoothly with a premium truck float
+        maxSuspensionTravel: 0.55, // Extra travel to handle compression without bottoming out
+        dampingRelaxation: 5.5, // High relaxation damping to completely eliminate rebound bounce
+        dampingCompression: 4.0, // High compression damping to absorb voxel edge impacts smoothly
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
@@ -716,11 +716,12 @@ function initCannonVehicle(v) {
             }
         }
         
-        // Smooth the contact ratio to prevent sudden physics popping/slamming on bumps
+        // Fast contact ratio check: target is 1.0 if any wheel touches, 0.0 otherwise
+        var targetContact = contacts > 0 ? 1.0 : 0.0;
         if (this.smoothContactRatio === undefined) {
-            this.smoothContactRatio = contacts / numWheels;
+            this.smoothContactRatio = targetContact;
         }
-        this.smoothContactRatio += ((contacts / numWheels) - this.smoothContactRatio) * 0.12;
+        this.smoothContactRatio += (targetContact - this.smoothContactRatio) * 0.35;
 
         if (this.smoothContactRatio > 0.01) {
             // Get local vehicle down axis in world coordinates
@@ -739,9 +740,9 @@ function initCannonVehicle(v) {
             var rollSteepness = Math.abs(rgtAxis.z);
             
             // 1. Incline (pitch) boost: increase downforce when going straight up/down steep inclines to prevent slipping
-            // Toned down (base 2500 N, up to 1500 N incline boost) to prevent compression lockout
-            var baseMagnet = 2500; 
-            var inclineBoost = Math.min(1.0, pitchSteepness / 0.5) * 1500; 
+            // Raised to restore solid grip: 4500 N base, up to 4500 N boost (max 9000 N total downforce)
+            var baseMagnet = 4500; 
+            var inclineBoost = Math.min(1.0, pitchSteepness / 0.5) * 4500; 
             var maxForce = baseMagnet + inclineBoost;
             
             // 2. Speed scaling: fade out downforce at high speed (starts at 30 mph) to allow jumping
@@ -752,8 +753,9 @@ function initCannonVehicle(v) {
                 speedScale = 1.0 - Math.min(0.85, (speedMph - 30) / 15); // fade starts at 30 mph, reaching 85% reduction at 45 mph
             }
             
-            // 3. Sideways roll scaling: reduce downforce when driving laterally on slopes to keep turning feel natural
-            var rollScale = 1.0 - Math.min(0.60, rollSteepness / 0.5);
+            // 3. Sideways roll scaling: reduce downforce slightly when side-hilling to keep steering feeling responsive
+            // Capped at 30% reduction (retaining 70% grip) to keep the truck glued sideways
+            var rollScale = 1.0 - Math.min(0.30, rollSteepness / 0.5);
             
             // Calculate final force vector along local down axis in world space using the smoothed contact ratio
             var magnetForceAmount = this.smoothContactRatio * maxForce * speedScale * rollScale;
@@ -894,11 +896,24 @@ function update() {
                 }
                 const maxSteer = 0.5 * steerScale;
                 
-                // Scale engine force: less force in reverse to prevent hyper-acceleration
-                let engineForce = 9500;
-                if (gas > 0) {
-                    engineForce = 4500; // soft reverse torque
-                }
+                 // Default to Drive ('D') gear if undefined
+                 v.gear = v.gear || 'D';
+                 
+                 // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
+                 let engineForce = 9500;
+                 if (gas > 0) {
+                     engineForce = 4500; // soft reverse torque
+                 } else if (gas < 0) {
+                     if (v.gear === 'L') {
+                         engineForce = 4800; // half power / slower acceleration in Low gear
+                         
+                         // Limit top speed in Low gear to 26 mph (approx 42 km/h)
+                         let speedMph = speedKmH * 0.621371;
+                         if (speedMph > 26) {
+                             engineForce = 0; // cut throttle above top speed
+                         }
+                     }
+                 }
                 
                 // Front-wheel steering (steer wheels 0 and 1)
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
@@ -1228,10 +1243,17 @@ function update() {
             let speedMph = Math.abs(v.currentVehicleSpeedKmHour || 0) * 0.621371;
             speedometerEl.innerText = `${Math.round(speedMph)} mph`;
         }
+        if (typeof gearItemEl !== 'undefined' && gearItemEl && gearStatusEl) {
+            gearItemEl.style.display = 'block';
+            gearStatusEl.innerText = v.gear || 'D';
+        }
 
     } else {
         if (typeof speedometerItemEl !== 'undefined' && speedometerItemEl) {
             speedometerItemEl.style.display = 'none';
+        }
+        if (typeof gearItemEl !== 'undefined' && gearItemEl) {
+            gearItemEl.style.display = 'none';
         }
         if (gameState === 'overworld') {
             let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
