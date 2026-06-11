@@ -670,11 +670,11 @@ function initCannonVehicle(v) {
     // Add 4 wheels at connection points in local coordinates.
     // Connect them significantly lower (Z = -0.55 for front, -0.45 for rear) to lift the chassis
     // high off the ground, clearing tire space and leveling the front end weight distribution.
-    // Brought front wheels back from X = 1.45 to 1.15 so they don't stick out in front of the bumper.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.15, 0.95, -0.55) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.15, -0.95, -0.55) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.95, -0.45) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.95, -0.45) });  // Rear Right
+    // Brought front wheels back to 1.05 and rear wheels forward to -1.50 so they sit perfectly inside the fender wells.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, 0.95, -0.55) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, -0.95, -0.55) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.45) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.45) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
