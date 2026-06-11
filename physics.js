@@ -582,6 +582,7 @@ function syncVoxelCollidersAroundVehicles() {
 
 function initCannonVehicle(v) {
     if (v.chassisBody) return; // Already initialized
+    v.currentVehicleSpeedKmHour = v.currentVehicleSpeedKmHour || 0;
 
     // Chassis Box shape (X=length/forward, Y=width/lateral, Z=height/vertical)
     // Shrunk length half-extent to 1.2 and offset to -0.2 to let wheels protrude significantly in front,
@@ -626,12 +627,12 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 22, // Soft spring stiffness for realistic off-road suspension flex
-        suspensionRestLength: 0.75, // Tall rest length (clearance)
+        suspensionStiffness: 25, // Soft but supportive spring stiffness for realistic offroad suspension flex
+        suspensionRestLength: 0.80, // Taller clearance to support downforce without bottoming out
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.50, // Massive vertical travel to clear voxel steps
-        dampingRelaxation: 4.8, // High relaxation damping to completely control rebound bouncing
-        dampingCompression: 3.5, // High compression damping to absorb voxel edge impacts smoothly
+        dampingRelaxation: 3.8, // Controlled rebound damping to feel bouncy/fun but stable
+        dampingCompression: 2.8, // Absorbs voxel edge impacts smoothly with a premium truck float
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
@@ -708,21 +709,56 @@ function initCannonVehicle(v) {
         }
 
         // Apply ground magnetism (downforce) to stabilize climbing on steep voxel terrain
-        var avgNormal = new CANNON.Vec3(0, 0, 0);
         var contacts = 0;
         for (var i = 0; i < numWheels; i++) {
-            var w = wheelInfos[i];
-            if (w.isInContact && w.raycastResult && w.raycastResult.hitNormalWorld) {
-                avgNormal.vadd(w.raycastResult.hitNormalWorld, avgNormal);
+            if (wheelInfos[i].isInContact) {
                 contacts++;
             }
         }
-        if (contacts > 0) {
-            avgNormal.normalize();
-            // Magnet force amount: up to 15,000 N of downforce (about 25% of gravity) when all wheels are in contact
-            var magnetForceAmount = (contacts / numWheels) * 15000;
+        
+        // Smooth the contact ratio to prevent sudden physics popping/slamming on bumps
+        if (this.smoothContactRatio === undefined) {
+            this.smoothContactRatio = contacts / numWheels;
+        }
+        this.smoothContactRatio += ((contacts / numWheels) - this.smoothContactRatio) * 0.12;
+
+        if (this.smoothContactRatio > 0.01) {
+            // Get local vehicle down axis in world coordinates
+            var localDown = new CANNON.Vec3(0, 0, -1);
+            var worldDown = new CANNON.Vec3();
+            chassisBody.vectorToWorldFrame(localDown, worldDown);
+            
+            // Get local vehicle axes in world coordinates to calculate pitch/roll
+            var fwdAxis = new CANNON.Vec3();
+            this.getVehicleAxisWorld(this.indexForwardAxis, fwdAxis);
+            var rgtAxis = new CANNON.Vec3();
+            this.getVehicleAxisWorld(this.indexRightAxis, rgtAxis);
+            
+            // Calculate incline steepness (pitch) and side-slope steepness (roll) relative to gravity (Z)
+            var pitchSteepness = Math.abs(fwdAxis.z);
+            var rollSteepness = Math.abs(rgtAxis.z);
+            
+            // 1. Incline (pitch) boost: increase downforce when going straight up/down steep inclines to prevent slipping
+            // Toned down (base 2500 N, up to 1500 N incline boost) to prevent compression lockout
+            var baseMagnet = 2500; 
+            var inclineBoost = Math.min(1.0, pitchSteepness / 0.5) * 1500; 
+            var maxForce = baseMagnet + inclineBoost;
+            
+            // 2. Speed scaling: fade out downforce at high speed (starts at 30 mph) to allow jumping
+            var speedKmH = 3.6 * chassisBody.velocity.norm();
+            var speedMph = speedKmH * 0.621371;
+            var speedScale = 1.0;
+            if (speedMph > 30) {
+                speedScale = 1.0 - Math.min(0.85, (speedMph - 30) / 15); // fade starts at 30 mph, reaching 85% reduction at 45 mph
+            }
+            
+            // 3. Sideways roll scaling: reduce downforce when driving laterally on slopes to keep turning feel natural
+            var rollScale = 1.0 - Math.min(0.60, rollSteepness / 0.5);
+            
+            // Calculate final force vector along local down axis in world space using the smoothed contact ratio
+            var magnetForceAmount = this.smoothContactRatio * maxForce * speedScale * rollScale;
             var magnetForce = new CANNON.Vec3();
-            avgNormal.scale(-magnetForceAmount, magnetForce);
+            worldDown.scale(magnetForceAmount, magnetForce);
             chassisBody.applyForce(magnetForce, chassisBody.position);
         }
 
@@ -956,6 +992,7 @@ function update() {
             v.roll = euler.x;  // Roll
             v.pitch = euler.y; // Pitch
             v.speed = body.velocity.norm(); // Norm calculates length in Cannon.js (Vec3.length doesn't exist)
+            v.currentVehicleSpeedKmHour = v.raycastVehicle ? v.raycastVehicle.currentVehicleSpeedKmHour : 0;
 
             // Sync individual wheel positions and rotations for rendering
             if (v.raycastVehicle) {
@@ -1185,8 +1222,17 @@ function update() {
             player.z = v.z + 0.45; 
         }
         player.vz = 0;
+        
+        if (typeof speedometerItemEl !== 'undefined' && speedometerItemEl && speedometerEl) {
+            speedometerItemEl.style.display = 'block';
+            let speedMph = Math.abs(v.currentVehicleSpeedKmHour || 0) * 0.621371;
+            speedometerEl.innerText = `${Math.round(speedMph)} mph`;
+        }
 
     } else {
+        if (typeof speedometerItemEl !== 'undefined' && speedometerItemEl) {
+            speedometerItemEl.style.display = 'none';
+        }
         if (gameState === 'overworld') {
             let nx = player.x + Math.cos(player.angle) * mv + Math.cos(player.angle + 1.57) * st;
             let ny = player.y + Math.sin(player.angle) * mv + Math.sin(player.angle + 1.57) * st;

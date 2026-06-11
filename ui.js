@@ -1162,7 +1162,7 @@ window.spawnVehicle = (type) => {
         iter++;
     }
 
-    let v = { type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 };
+    let v = { type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0, currentVehicleSpeedKmHour: 0 };
     if (typeof initCannonVehicle === 'function') {
         initCannonVehicle(v);
     }
