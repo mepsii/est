@@ -723,7 +723,7 @@ function initCannonVehicle(v) {
                 break;
             }
 
-            var sideMult = (i % 2 === 0) ? -1 : 1;
+            var sideMult = (i % 2 === 0) ? 1 : -1;
 
             if (wheel.isInContact) {
                 this.getVehicleAxisWorld(this.indexForwardAxis, fwd);
@@ -1147,8 +1147,8 @@ function update() {
             let pitchTarget = v.pitch * 300; 
             player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
-            player.x = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32; 
-            player.y = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
+            player.x = v.x + Math.cos(v.angle) * -0.10 + Math.sin(v.angle) * 0.32; 
+            player.y = v.y + Math.sin(v.angle) * -0.10 - Math.cos(v.angle) * 0.32;
             player.z = v.z + 0.45; 
         }
         player.vz = 0;

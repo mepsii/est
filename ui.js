@@ -1044,8 +1044,8 @@ document.getElementById('dbg-freecam').onchange = e => {
                 freecamY = v.camY + Math.sin(player.angle) * dirSign * 9.5;
                 freecamZ = v.camZ + 1.0 + player.baseHeight;
             } else {
-                freecamX = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32;
-                freecamY = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
+                freecamX = v.x + Math.cos(v.angle) * -0.10 + Math.sin(v.angle) * 0.32;
+                freecamY = v.y + Math.sin(v.angle) * -0.10 - Math.cos(v.angle) * 0.32;
                 freecamZ = v.z + 0.45 + player.baseHeight;
             }
         } else if (player.view === '3rd_back' || player.view === '3rd_front') {
