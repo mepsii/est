@@ -1034,10 +1034,25 @@ function update() {
                     brakeForce = maxBrake;
                 } else if (isBrakingWithThrottle) {
                     brakeForce = maxBrake * 0.85; // Strong braking when using throttle to slow down
+                } else if (gas === 0) {
+                    // Progressive engine brake simulating a torque converter.
+                    // Scales with speed, and adjusts based on vertical velocity and gear:
+                    // - Low Gear (L): holds back strongly downhill to prevent runaways, rolls freely uphill.
+                    // - Drive Gear (D): decelerates really hard uphill, but coasts/rolls very freely downhill under gravity.
+                    let baseEngineBrake = speedKmH * 8.0; 
+                    let zVel = v.chassisBody.velocity.z;
+                    let slopeScale = 1.0;
+                    
+                    if (v.gear === 'L') {
+                        slopeScale = 1.0 - zVel * 0.15;
+                        slopeScale = Math.max(0.1, Math.min(2.0, slopeScale));
+                    } else {
+                        slopeScale = 1.0 + zVel * 0.25;
+                        slopeScale = Math.max(0.05, Math.min(2.2, slopeScale));
+                    }
+                    
+                    brakeForce = baseEngineBrake * slopeScale;
                 } else {
-                    // No automatic braking when letting off the gas; let chassis linearDamping (0.35) 
-                    // and rolling resistance create a slow, gradual deceleration naturally.
-                    brakeForce = 0;
                     appliedEngineForce = gas * engineForce;
                 }
                 
