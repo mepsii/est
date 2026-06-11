@@ -606,7 +606,7 @@ function initCannonVehicle(v) {
     // Increased half-height to 0.24 (50cm thick box) to prevent physics tunneling at high speeds.
     const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.24));
     const chassisBody = new CANNON.Body({
-        mass: 2100, // Balanced weight (2100 kg) to make the truck feel like a heavy offroad pickup but responsive
+        mass: 2800, // Balanced weight (2800 kg) to make the truck feel like a heavy offroad pickup but responsive
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
         angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
         allowSleep: true, // Enable sleeping for performance when parked/resting
@@ -619,11 +619,11 @@ function initCannonVehicle(v) {
     // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
     // making the vehicle highly stable and resistant to rollover. It also raises the front bumper
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.30));
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.40));
     
-    // Scale up the rotational inertia (make it 5.2x harder to spin/flip) to prevent rapid, 
+    // Scale up the rotational inertia (make it 8.5x harder to spin/flip) to prevent rapid, 
     // toy-like rotational snapping and weird high-speed rollover flips.
-    chassisBody.inertia.scale(5.2, chassisBody.inertia);
+    chassisBody.inertia.scale(8.5, chassisBody.inertia);
     chassisBody.invInertia.x = 1 / chassisBody.inertia.x;
     chassisBody.invInertia.y = 1 / chassisBody.inertia.y;
     chassisBody.invInertia.z = 1 / chassisBody.inertia.z;
@@ -643,8 +643,8 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 35, // Stiffer springs to support heavy weight and downforce
-        suspensionRestLength: 0.80, // Taller clearance to support downforce without bottoming out
+        suspensionStiffness: 38, // Stiffer springs to support heavy weight and downforce
+        suspensionRestLength: 0.76, // Taller clearance to support downforce without bottoming out
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.55, // Extra travel to handle compression without bottoming out
         dampingRelaxation: 5.5, // High relaxation damping to completely eliminate rebound bounce
@@ -685,20 +685,22 @@ function initCannonVehicle(v) {
 
         // Dynamically adjust mass and suspension properties based on gear
         v.gear = v.gear || 'D';
-        var targetMass = v.gear === 'L' ? 2700 : 2100;
+        var targetMass = v.gear === 'L' ? 3500 : 2800;
         if (chassisBody.mass !== targetMass) {
             chassisBody.mass = targetMass;
             chassisBody.invMass = 1.0 / targetMass;
             chassisBody.updateMassProperties();
-            chassisBody.inertia.scale(5.2, chassisBody.inertia);
+            chassisBody.inertia.scale(8.5, chassisBody.inertia);
             chassisBody.invInertia.x = 1.0 / chassisBody.inertia.x;
             chassisBody.invInertia.y = 1.0 / chassisBody.inertia.y;
             chassisBody.invInertia.z = 1.0 / chassisBody.inertia.z;
         }
 
-        var targetStiffness = v.gear === 'L' ? 26 : 35;
+        var targetStiffness = v.gear === 'L' ? 28 : 38;
+        var targetRestLength = v.gear === 'L' ? 0.88 : 0.76;
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
+            wheelInfos[i].suspensionRestLength = targetRestLength;
         }
 
         for (var i = 0; i < numWheels; i++) {
@@ -800,13 +802,20 @@ function initCannonVehicle(v) {
             var worldForceAmount = magnetForceAmount * 0.40;
             
             // Apply local downforce at center of mass (perpendicular to chassis)
+            // Subtract lateral (right-axis) components to eliminate side-hill sliding drift
             var localForce = new CANNON.Vec3();
             worldDown.scale(localForceAmount, localForce);
+            
+            var lateralProj = localForce.dot(rgtAxis);
+            var lateralForce = new CANNON.Vec3();
+            rgtAxis.scale(lateralProj, lateralForce);
+            localForce.vsub(lateralForce, localForce);
+            
             chassisBody.applyForce(localForce, chassisBody.position);
             
             // Apply vertical downforce below the center of mass to create self-righting torque (CoG cheat)
-            // Shifted lower in Low gear (Z = -0.80) than Drive gear (Z = -0.50)
-            var cgOffsetZ = v.gear === 'L' ? -0.80 : -0.50;
+            // Shifted lower to make it roll-resistant (Z = -1.20 in Low, Z = -0.70 in Drive)
+            var cgOffsetZ = v.gear === 'L' ? -1.20 : -0.70;
             var localOffset = new CANNON.Vec3(0, 0, cgOffsetZ);
             var worldOffset = new CANNON.Vec3();
             chassisBody.vectorToWorldFrame(localOffset, worldOffset);
@@ -947,7 +956,7 @@ function update() {
                 if (v.currentVehicleSpeedKmHour < 0) {
                     steerScale *= 0.45; // significantly lower steering angle in reverse to prevent spinouts
                 }
-                const maxSteer = 0.5 * steerScale;
+                const maxSteer = 0.70 * steerScale; // Increased low-speed steering limit to 0.70 rad (approx 40 deg)
                 
                  // Default to Drive ('D') gear if undefined
                  v.gear = v.gear || 'D';
