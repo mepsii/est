@@ -667,6 +667,24 @@ function initCannonVehicle(v) {
         var numWheels = wheelInfos.length;
         var chassisBody = this.chassisBody;
 
+        // Dynamically adjust mass and suspension properties based on gear
+        v.gear = v.gear || 'D';
+        var targetMass = v.gear === 'L' ? 2700 : 2100;
+        if (chassisBody.mass !== targetMass) {
+            chassisBody.mass = targetMass;
+            chassisBody.invMass = 1.0 / targetMass;
+            chassisBody.updateMassProperties();
+            chassisBody.inertia.scale(5.2, chassisBody.inertia);
+            chassisBody.invInertia.x = 1.0 / chassisBody.inertia.x;
+            chassisBody.invInertia.y = 1.0 / chassisBody.inertia.y;
+            chassisBody.invInertia.z = 1.0 / chassisBody.inertia.z;
+        }
+
+        var targetStiffness = v.gear === 'L' ? 26 : 35;
+        for (var i = 0; i < numWheels; i++) {
+            wheelInfos[i].suspensionStiffness = targetStiffness;
+        }
+
         for (var i = 0; i < numWheels; i++) {
             this.updateWheelTransform(i);
         }
@@ -740,9 +758,10 @@ function initCannonVehicle(v) {
             var rollSteepness = Math.abs(rgtAxis.z);
             
             // 1. Incline (pitch) boost: increase downforce when going straight up/down steep inclines to prevent slipping
-            // Raised to restore solid grip: 4500 N base, up to 4500 N boost (max 9000 N total downforce)
-            var baseMagnet = 4500; 
-            var inclineBoost = Math.min(1.0, pitchSteepness / 0.5) * 4500; 
+            // Crawl gear gets 1.5x downforce boost (base 6750 N, max 13500 N total downforce)
+            var gearScale = v.gear === 'L' ? 1.5 : 1.0;
+            var baseMagnet = 4500 * gearScale; 
+            var inclineBoost = Math.min(1.0, pitchSteepness / 0.5) * 4500 * gearScale; 
             var maxForce = baseMagnet + inclineBoost;
             
             // 2. Speed scaling: fade out downforce at high speed (starts at 30 mph) to allow jumping
@@ -757,11 +776,29 @@ function initCannonVehicle(v) {
             // Capped at 30% reduction (retaining 70% grip) to keep the truck glued sideways
             var rollScale = 1.0 - Math.min(0.30, rollSteepness / 0.5);
             
-            // Calculate final force vector along local down axis in world space using the smoothed contact ratio
+            // Calculate final force vector
             var magnetForceAmount = this.smoothContactRatio * maxForce * speedScale * rollScale;
-            var magnetForce = new CANNON.Vec3();
-            worldDown.scale(magnetForceAmount, magnetForce);
-            chassisBody.applyForce(magnetForce, chassisBody.position);
+            
+            // Split into local downforce (60% for traction) and vertical downforce (40% for gravity stability)
+            var localForceAmount = magnetForceAmount * 0.60;
+            var worldForceAmount = magnetForceAmount * 0.40;
+            
+            // Apply local downforce at center of mass (perpendicular to chassis)
+            var localForce = new CANNON.Vec3();
+            worldDown.scale(localForceAmount, localForce);
+            chassisBody.applyForce(localForce, chassisBody.position);
+            
+            // Apply vertical downforce below the center of mass to create self-righting torque (CoG cheat)
+            // Shifted lower in Low gear (Z = -0.80) than Drive gear (Z = -0.50)
+            var cgOffsetZ = v.gear === 'L' ? -0.80 : -0.50;
+            var localOffset = new CANNON.Vec3(0, 0, cgOffsetZ);
+            var worldOffset = new CANNON.Vec3();
+            chassisBody.vectorToWorldFrame(localOffset, worldOffset);
+            var forcePosition = new CANNON.Vec3();
+            chassisBody.position.vadd(worldOffset, forcePosition);
+            
+            var worldForce = new CANNON.Vec3(0, 0, -worldForceAmount);
+            chassisBody.applyForce(worldForce, forcePosition);
         }
 
         this.updateFriction(timeStep);
