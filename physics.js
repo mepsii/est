@@ -601,10 +601,11 @@ function initCannonVehicle(v) {
     v.currentVehicleSpeedKmHour = v.currentVehicleSpeedKmHour || 0;
 
     // Chassis Box shape (X=length/forward, Y=width/lateral, Z=height/vertical)
-    // Shrunk length half-extent to 1.2 and offset to -0.2 to let wheels protrude significantly in front,
-    // allowing them to climb 1-unit voxel blocks before the bumper can collide.
-    // Increased half-height to 0.24 (50cm thick box) to prevent physics tunneling at high speeds.
-    const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.24));
+    // Shrunk length half-extent to 1.0 and offset to -0.4 to pull the front bumper of the physical collision box
+    // way back behind the tires, making it impossible for the chassis to clip vertical voxel faces before the tires can climb them.
+    // Shrunk half-height to 0.18 (36cm thickness) and raised the offset Z to 0.48 to increase ground
+    // clearance for the chassis belly, preventing snagging on voxel incline edges and block corners.
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(1.0, 0.85, 0.18));
     const chassisBody = new CANNON.Body({
         mass: 2800, // Balanced weight (2800 kg) to make the truck feel like a heavy offroad pickup but responsive
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
@@ -615,11 +616,11 @@ function initCannonVehicle(v) {
     chassisBody.sleepSpeedLimit = 0.2; // Sleep when chassis speed drops below 0.2 m/s
     chassisBody.sleepTimeLimit = 0.8; // Sleep after 0.8 seconds of continuous inactivity
     
-    // Add shape offset backward (-0.4 along X) and upward (+0.30 along Z) relative to the body's origin.
+    // Add shape offset backward (-0.4 along X) and upward (+0.48 along Z) relative to the body's origin.
     // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
     // making the vehicle highly stable and resistant to rollover. It also raises the front bumper
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.40));
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.48));
     
     // Scale up the rotational inertia (make it 8.5x harder to spin/flip) to prevent rapid, 
     // toy-like rotational snapping and weird high-speed rollover flips.
@@ -643,8 +644,8 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 38, // Stiffer springs to support heavy weight and downforce
-        suspensionRestLength: 0.68, // Lowered from 0.76 to reduce body/wheel gap while maintaining clearance
+        suspensionStiffness: 85, // Highly increased spring stiffness to prevent suspension bottom-out under downforce and weight
+        suspensionRestLength: 0.58, // Substantially lowered visual ride height while maintaining active travel
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.55, // Extra travel to handle compression without bottoming out
         dampingRelaxation: 5.5, // High relaxation damping to completely eliminate rebound bounce
@@ -668,13 +669,13 @@ function initCannonVehicle(v) {
     };
 
     // Add 4 wheels at connection points in local coordinates.
-    // Connect them significantly lower (Z = -0.55 for front, -0.45 for rear) to lift the chassis
-    // high off the ground, clearing tire space and leveling the front end weight distribution.
-    // Brought front wheels back to 1.05 and rear wheels forward to -1.50 so they sit perfectly inside the fender wells.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, 0.95, -0.55) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, -0.95, -0.55) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.45) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.45) });  // Rear Right
+    // Connected higher (Z = -0.35 for front, -0.25 for rear) to lower the visual body ride height
+    // relative to the wheels while keeping full active suspension travel.
+    // Brought front wheels back to 0.80 and rear wheels forward to -1.50 to center them in the fender wells.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.80, 0.95, -0.35) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.80, -0.95, -0.35) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.25) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.25) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
@@ -697,8 +698,8 @@ function initCannonVehicle(v) {
             chassisBody.invInertia.z = 1.0 / chassisBody.inertia.z;
         }
 
-        var targetStiffness = v.gear === 'L' ? 28 : 38;
-        var targetRestLength = v.gear === 'L' ? 0.80 : 0.68; // Lowered by 0.08 to match the initial config change without gear shift sag
+        var targetStiffness = v.gear === 'L' ? 70 : 85; // Soft crawling springs in L, stiff off-road springs in D to prevent bottom-out
+        var targetRestLength = v.gear === 'L' ? 0.71 : 0.58; // Compensates for the compression difference (0.13m) between D and L so they have the exact same visual ride height
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
             wheelInfos[i].suspensionRestLength = targetRestLength;
@@ -987,20 +988,20 @@ function update() {
                  v.gear = v.gear || 'D';
                  
                  // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
-                 let engineForce = 9500;
-                 if (gas > 0) {
-                     engineForce = 4500; // soft reverse torque
-                 } else if (gas < 0) {
-                     if (v.gear === 'L') {
-                         engineForce = 4800; // half power / slower acceleration in Low gear
-                         
-                         // Limit top speed in Low gear to 26 mph (approx 42 km/h)
-                         let speedMph = speedKmH * 0.621371;
-                         if (speedMph > 26) {
-                             engineForce = 0; // cut throttle above top speed
-                         }
-                     }
-                 }
+                  let engineForce = 13000; // High drive engine torque (increased from 9500) to prevent bogging down at speed on inclines
+                  if (gas > 0) {
+                      engineForce = 6500; // soft reverse torque (increased from 4500)
+                  } else if (gas < 0) {
+                      if (v.gear === 'L') {
+                          engineForce = 16000; // Massive crawling torque (increased from 12000) to easily crawl over vertical voxel block faces and corners
+                          
+                          // Limit top speed in Low gear to 26 mph (approx 42 km/h)
+                          let speedMph = speedKmH * 0.621371;
+                          if (speedMph > 26) {
+                              engineForce = 0; // cut throttle above top speed
+                          }
+                      }
+                  }
                 
                 // Front-wheel steering (steer wheels 0 and 1)
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
