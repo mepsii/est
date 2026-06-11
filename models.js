@@ -12,7 +12,7 @@ const WEAPON_MODEL_CONFIG = {
 
 const VEHICLE_MODEL_CONFIG = {
     'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetZ: -0.8 },
-    'truck_body': { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0.24 },
+    'truck_body': { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetX: -0.4, offsetY: 0, offsetZ: 0.30 },
     'truck_wheel': { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 }
 };
 

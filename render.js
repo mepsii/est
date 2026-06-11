@@ -1462,7 +1462,7 @@ function render() {
             // Draw truck chassis body
             let bodyModel = WEAPON_MODELS['truck_body'];
             if (bodyModel && typeof v.qx !== 'undefined') {
-                let conf = VEHICLE_MODEL_CONFIG['truck_body'] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                let conf = VEHICLE_MODEL_CONFIG['truck_body'] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
                 let bodyQuat = new THREE.Quaternion(v.qx, v.qy, v.qz, v.qw);
 
                 for (let f of bodyModel.faces) {
@@ -1471,9 +1471,14 @@ function render() {
                         let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
                         p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
                         
-                        let vec = new THREE.Vector3(p1.x, p1.y, p1.z).applyQuaternion(bodyQuat);
+                        let localPt = new THREE.Vector3(
+                            p1.x + (conf.offsetX || 0),
+                            p1.y + (conf.offsetY || 0),
+                            p1.z + (conf.offsetZ || 0)
+                        );
+                        let vec = localPt.applyQuaternion(bodyQuat);
                         
-                        wPts.push({ x: v.x + vec.x, y: v.y + vec.y, z: v.z + vec.z + (conf.offsetZ || 0) });
+                        wPts.push({ x: v.x + vec.x, y: v.y + vec.y, z: v.z + vec.z });
                     }
                     
                     let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;

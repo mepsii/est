@@ -589,7 +589,7 @@ function initCannonVehicle(v) {
     // Increased half-height to 0.24 (50cm thick box) to prevent physics tunneling at high speeds.
     const chassisShape = new CANNON.Box(new CANNON.Vec3(1.2, 0.85, 0.24));
     const chassisBody = new CANNON.Body({
-        mass: 1600, // Increased weight (1600 kg) to make the truck feel heavy and prevent floatiness/bouncing
+        mass: 1800, // Increased weight (1800 kg) to make the truck feel heavy and prevent floatiness/bouncing
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
         angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
         allowSleep: true, // Enable sleeping for performance when parked/resting
@@ -598,15 +598,15 @@ function initCannonVehicle(v) {
     chassisBody.sleepSpeedLimit = 0.2; // Sleep when chassis speed drops below 0.2 m/s
     chassisBody.sleepTimeLimit = 0.8; // Sleep after 0.8 seconds of continuous inactivity
     
-    // Add shape offset backward (-0.2 along X) and upward (+0.24 along Z) relative to the body's origin.
+    // Add shape offset backward (-0.4 along X) and upward (+0.30 along Z) relative to the body's origin.
     // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
     // making the vehicle highly stable and resistant to rollover. It also raises the front bumper
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.24));
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.30));
     
-    // Scale up the rotational inertia (make it 3.5x harder to spin/flip) to prevent rapid, 
+    // Scale up the rotational inertia (make it 4.5x harder to spin/flip) to prevent rapid, 
     // toy-like rotational snapping and weird high-speed rollover flips.
-    chassisBody.inertia.scale(3.5, chassisBody.inertia);
+    chassisBody.inertia.scale(4.5, chassisBody.inertia);
     chassisBody.invInertia.x = 1 / chassisBody.inertia.x;
     chassisBody.invInertia.y = 1 / chassisBody.inertia.y;
     chassisBody.invInertia.z = 1 / chassisBody.inertia.z;
@@ -626,12 +626,12 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 50, // Balanced spring stiffness for stable crawling
-        suspensionRestLength: 0.55, // Stable rest length (0.87m clearance)
+        suspensionStiffness: 32, // Balanced spring stiffness for stable crawling
+        suspensionRestLength: 0.65, // Stable rest length (0.87m clearance)
         maxSuspensionForce: 100000,
-        maxSuspensionTravel: 0.35, // Clear vertical travel
-        dampingRelaxation: 2.8, // Slightly higher relaxation damping to absorb pogo-stick bounces
-        dampingCompression: 2.2, // Higher compression damping to absorb high-speed impacts smoothly
+        maxSuspensionTravel: 0.40, // Clear vertical travel
+        dampingRelaxation: 3.2, // Slightly higher relaxation damping to absorb pogo-stick bounces
+        dampingCompression: 2.4, // Higher compression damping to absorb high-speed impacts smoothly
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
@@ -723,6 +723,8 @@ function initCannonVehicle(v) {
                 break;
             }
 
+            var sideMult = (i % 2 === 0) ? -1 : 1;
+
             if (wheel.isInContact) {
                 this.getVehicleAxisWorld(this.indexForwardAxis, fwd);
                 var proj = fwd.dot(wheel.raycastResult.hitNormalWorld);
@@ -731,13 +733,13 @@ function initCannonVehicle(v) {
                 fwd.vsub(hitNormalWorldScaledWithProj, fwd);
 
                 var proj2 = fwd.dot(vel);
-                wheel.deltaRotation = m * proj2 * timeStep / wheel.radius;
+                wheel.deltaRotation = sideMult * m * proj2 * timeStep / wheel.radius;
             }
 
             if((wheel.sliding || !wheel.isInContact) && wheel.engineForce !== 0 && wheel.useCustomSlidingRotationalSpeed){
                 // Inverted sign: since forward throttle results in negative engineForce, we map negative force 
                 // to forward (positive) rotation, and positive force to reverse (negative) rotation.
-                wheel.deltaRotation = (wheel.engineForce > 0 ? -1 : 1) * wheel.customSlidingRotationalSpeed * timeStep;
+                wheel.deltaRotation = sideMult * (wheel.engineForce > 0 ? -1 : 1) * wheel.customSlidingRotationalSpeed * timeStep;
             }
 
             if(Math.abs(wheel.brake) > Math.abs(wheel.engineForce)){
