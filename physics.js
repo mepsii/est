@@ -474,6 +474,21 @@ cannonWorld.defaultContactMaterial.restitution = 0.02; // Minimal bounce for rea
 cannonWorld.defaultContactMaterial.contactEquationStiffness = 5e6; // Reduced stiffness for stable voxel contact without explosions
 cannonWorld.defaultContactMaterial.contactEquationRelaxation = 4; // Extra relaxation to absorb high impacts smoothly
 
+// Create low-friction material for the vehicle chassis body so it slides smoothly over voxel obstacles instead of sticking/leaning
+const chassisMaterial = new CANNON.Material('chassis');
+const chassisDefaultContactMaterial = new CANNON.ContactMaterial(
+    chassisMaterial,
+    cannonWorld.defaultMaterial,
+    {
+        friction: 0.05, // super low friction so the chassis slides smoothly off voxel edges
+        restitution: 0.02,
+        contactEquationStiffness: 5e6,
+        contactEquationRelaxation: 4
+    }
+);
+cannonWorld.addContactMaterial(chassisDefaultContactMaterial);
+
+
 // Dynamic Voxel Terrain Colliders Cache
 const activeVoxelBodies = new Map(); // Key: "x,y,z" -> CANNON.Body
 
@@ -538,16 +553,17 @@ function initCannonVehicle(v) {
         mass: 1600, // Increased weight (1600 kg) to make the truck feel heavy and prevent floatiness/bouncing
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
         angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
-        allowSleep: true // Enable sleeping for performance when parked/resting
+        allowSleep: true, // Enable sleeping for performance when parked/resting
+        material: chassisMaterial // Assign low-friction material to slide smoothly off voxel obstacles
     });
     chassisBody.sleepSpeedLimit = 0.2; // Sleep when chassis speed drops below 0.2 m/s
     chassisBody.sleepTimeLimit = 0.8; // Sleep after 0.8 seconds of continuous inactivity
     
-    // Add shape offset backward (-0.2 along X) and upward (+0.15 along Z) relative to the body's origin.
+    // Add shape offset backward (-0.2 along X) and upward (+0.25 along Z) relative to the body's origin.
     // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
-    // making the vehicle highly stable and resistant to rollover. It also raises the visual front bumper
+    // making the vehicle highly stable and resistant to rollover. It also raises the front bumper
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.15));
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.25));
     
     // Position slightly above ground to align with vehicle center
     chassisBody.position.set(v.x, v.y, v.z);
@@ -564,12 +580,12 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 45, // Softened spring stiffness (was 55) for smooth crawling over voxels
+        suspensionStiffness: 50, // Balanced spring stiffness for stable crawling
         suspensionRestLength: 0.55, // Stable rest length (0.87m clearance)
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.35, // Clear vertical travel
-        dampingRelaxation: 3.2, // Increased damping (was 2.8) to settle bounces quickly
-        dampingCompression: 2.4, // Increased compression damping (was 2.0)
+        dampingRelaxation: 2.3, // Lower relaxation damping (was 3.2) to prevent leaning/stiction glitches
+        dampingCompression: 1.8, // Smooth compression damping (was 2.4)
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
@@ -588,13 +604,13 @@ function initCannonVehicle(v) {
         axleLocal: new CANNON.Vec3(0, -1, 0)
     };
 
-    // Add 4 wheels at connection points at Z = 0.0 (chassis center)
-    // Symmetrical configuration widened to Y = 0.95 (stance width) for off-road stability.
-    // Front wheels shifted forward to X = 1.45 to clear the front bumper.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, 0.95, 0.0) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, -0.95, 0.0) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.95, 0.0) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.95, 0.0) });  // Rear Right
+    // Add 4 wheels at connection points in local coordinates.
+    // Connect them significantly lower (Z = -0.55 for front, -0.45 for rear) to lift the chassis
+    // high off the ground, clearing tire space and leveling the front end weight distribution.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, 0.95, -0.55) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, -0.95, -0.55) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.95, -0.45) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.95, -0.45) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
@@ -625,7 +641,6 @@ function initCannonVehicle(v) {
         this.updateSuspension(timeStep);
 
         var impulse = new CANNON.Vec3();
-        var relpos = new CANNON.Vec3();
         for (var i = 0; i < numWheels; i++) {
             var wheel = wheelInfos[i];
             var suspensionForce = wheel.suspensionForce;
@@ -638,10 +653,11 @@ function initCannonVehicle(v) {
             suspensionDirection.scale(suspensionForce * timeStep, impulse);
 
             // Apply the suspension impulse at the wheel's chassis connection point in world space.
-            // This prevents sudden, massive lateral torque/spin impulses when the wheel raycast
-            // hits voxel corners or vertical step faces (which shifts the hitPointWorld sideways).
-            chassisBody.vectorToWorldFrame(wheel.chassisConnectionPointLocal, relpos);
-            chassisBody.applyImpulse(impulse, relpos);
+            // We MUST pass wheel.chassisConnectionPointWorld (absolute world coordinates) rather than
+            // a body-relative vector, as Cannon.js's applyImpulse expects an absolute world position 
+            // for calculating torque correctly. This fixes the catastrophic glitch where the truck 
+            // spun, spazzed out, and launched across the map when moving away from the coordinate origin.
+            chassisBody.applyImpulse(impulse, wheel.chassisConnectionPointWorld);
         }
 
         this.updateFriction(timeStep);
@@ -730,6 +746,10 @@ function update() {
     if (player.inVehicle) {
         const v = player.inVehicle;
         if (v.raycastVehicle && v.chassisBody) {
+            // Player-driven vehicle must never sleep or freeze mid-drive/mid-slide
+            v.chassisBody.allowSleep = false;
+            v.chassisBody.wakeUp();
+
             const maxBrake = 3000; // Stronger brakes for high weight
             let isFlipped = Math.abs(v.roll) > Math.PI / 3 || Math.abs(v.pitch) > Math.PI / 3;
             
@@ -784,7 +804,10 @@ function update() {
 
     // Set control and braking baseline for non-driven vehicles so they stay parked
     for (let v of vehicles) {
-        if (v !== player.inVehicle && v.raycastVehicle) {
+        if (v !== player.inVehicle && v.raycastVehicle && v.chassisBody) {
+            // Parked vehicles are allowed to sleep when stationary to save CPU cycles
+            v.chassisBody.allowSleep = true;
+
             v.raycastVehicle.setSteeringValue(0, 0);
             v.raycastVehicle.setSteeringValue(0, 1);
             v.raycastVehicle.applyEngineForce(0, 0);
