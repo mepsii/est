@@ -941,6 +941,16 @@ window.addEventListener('keydown', e => {
             player.vz = 0;
         } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) { 
             if (vehicles.includes(interactTarget)) {
+                let v = interactTarget;
+                // Auto-flip upright if flipped when entering on foot
+                let isFlipped = Math.abs(v.roll) > Math.PI / 3 || Math.abs(v.pitch) > Math.PI / 3;
+                if (isFlipped && v.chassisBody) {
+                    v.chassisBody.position.z += 1.5;
+                    v.chassisBody.velocity.set(0, 0, 0);
+                    v.chassisBody.angularVelocity.set(0, 0, 0);
+                    v.chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), v.angle);
+                    v.chassisBody.wakeUp();
+                }
                 player.inVehicle = interactTarget;
                 player.vehicleView = '3rd_back';
             } else if (droppedItems.includes(interactTarget)) {
@@ -1122,6 +1132,36 @@ window.spawnVehicle = (type) => {
     // Spawn chassis center at maxGroundZ + 1.1.
     // With suspension rest length 0.55m + wheel radius 0.5m, wheels sit exactly on the ground with zero drop/impact force.
     let z = maxGroundZ + 1.1; 
+
+    // Bounding footprint overlap validator. If any voxel in the vehicle's body/wheel space is solid
+    // (excluding the ground voxel itself), we raise the spawn height step-by-step to guarantee a clear spawn.
+    const isVehicleSpawnBlocked = (xVal, yVal, zVal) => {
+        let xStart = Math.floor(xVal - 1.6);
+        let xEnd = Math.floor(xVal + 1.6);
+        let yStart = Math.floor(yVal - 1.0);
+        let yEnd = Math.floor(yVal + 1.0);
+        let zStart = Math.floor(zVal - 0.05); // Ignores ground voxel but checks chassis and tire height space
+        let zEnd = Math.ceil(zVal + 0.45);
+
+        for (let x = xStart; x <= xEnd; x++) {
+            for (let y = yStart; y <= yEnd; y++) {
+                for (let gz = zStart; gz <= zEnd; gz++) {
+                    if (getSolid(x, y, gz)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
+    // Auto-raise height loop (max 15 iterations) if target position overlaps with solid voxels (trees, walls, ceilings)
+    let iter = 0;
+    while (isVehicleSpawnBlocked(cx, cy, z) && iter < 15) {
+        z += 1.0;
+        iter++;
+    }
+
     let v = { type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 };
     if (typeof initCannonVehicle === 'function') {
         initCannonVehicle(v);

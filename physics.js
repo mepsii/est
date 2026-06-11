@@ -468,6 +468,7 @@ const cannonWorld = new CANNON.World();
 cannonWorld.gravity.set(0, 0, -28); // Stays heavy
 cannonWorld.broadphase = new CANNON.SAPBroadphase(cannonWorld); // SAP Broadphase for high numeric stability
 cannonWorld.solver.iterations = 35; // Increased iterations to prevent tunneling
+cannonWorld.allowSleep = true; // Enable sleeping to completely eliminate CPU overhead for resting/parked/flipped vehicles
 cannonWorld.defaultContactMaterial.friction = 0.8;
 cannonWorld.defaultContactMaterial.restitution = 0.02; // Minimal bounce for realistic landings
 cannonWorld.defaultContactMaterial.contactEquationStiffness = 5e6; // Reduced stiffness for stable voxel contact without explosions
@@ -536,13 +537,17 @@ function initCannonVehicle(v) {
     const chassisBody = new CANNON.Body({
         mass: 1600, // Increased weight (1600 kg) to make the truck feel heavy and prevent floatiness/bouncing
         linearDamping: 0.18, // Added slightly more air drag to stabilize high speeds
-        angularDamping: 0.70 // High damping to instantly stabilize flips and prevent endless rolling
+        angularDamping: 0.80, // Raised angular damping to prevent flipping and stabilize rolls
+        allowSleep: true // Enable sleeping for performance when parked/resting
     });
+    chassisBody.sleepSpeedLimit = 0.2; // Sleep when chassis speed drops below 0.2 m/s
+    chassisBody.sleepTimeLimit = 0.8; // Sleep after 0.8 seconds of continuous inactivity
     
-    // Add shape offset backward (-0.2 along X) relative to the body's origin.
-    // This shifts the center of mass (origin) forward, creating a front-heavy weight distribution
-    // so the truck pitches nose-down in the air realistically and lands on its wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.0));
+    // Add shape offset backward (-0.2 along X) and upward (+0.15 along Z) relative to the body's origin.
+    // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
+    // making the vehicle highly stable and resistant to rollover. It also raises the visual front bumper
+    // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.2, 0, 0.15));
     
     // Position slightly above ground to align with vehicle center
     chassisBody.position.set(v.x, v.y, v.z);
@@ -559,23 +564,37 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 55, // Spring stiffness scaled internally by mass
+        suspensionStiffness: 45, // Softened spring stiffness (was 55) for smooth crawling over voxels
         suspensionRestLength: 0.55, // Stable rest length (0.87m clearance)
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.35, // Clear vertical travel
-        dampingRelaxation: 2.8, // Balanced damping ratio (~0.33)
-        dampingCompression: 2.0,
+        dampingRelaxation: 3.2, // Increased damping (was 2.8) to settle bounces quickly
+        dampingCompression: 2.4, // Increased compression damping (was 2.0)
         frictionSlip: 1.6, // Allows slip under high torque
-        rollInfluence: 0.1,
+        rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
+        useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
+        customSlidingRotationalSpeed: 30 // Visual spin rate (rad/sec)
+    };
+
+    // Configure distinct wheel options for left and right sides.
+    // Right side axles are inverted to (0, -1, 0) so right-side wheels visually rotate
+    // forward when the vehicle moves forward, instead of rotating backwards.
+    const leftWheelOptions = {
+        ...wheelOptions,
         axleLocal: new CANNON.Vec3(0, 1, 0)
+    };
+    const rightWheelOptions = {
+        ...wheelOptions,
+        axleLocal: new CANNON.Vec3(0, -1, 0)
     };
 
     // Add 4 wheels at connection points at Z = 0.0 (chassis center)
-    // Symmetrical wheel configuration with high ground clearance (chassis bottom never touches ground)
-    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.3, 0.85, 0.0) }); // Front Left
-    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.3, -0.85, 0.0) });  // Front Right
-    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.85, 0.0) }); // Rear Left
-    vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.85, 0.0) });  // Rear Right
+    // Symmetrical configuration widened to Y = 0.95 (stance width) for off-road stability.
+    // Front wheels shifted forward to X = 1.45 to clear the front bumper.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, 0.95, 0.0) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.45, -0.95, 0.0) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, 0.95, 0.0) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.6, -0.95, 0.0) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
@@ -621,7 +640,7 @@ function initCannonVehicle(v) {
             // Apply the suspension impulse at the wheel's chassis connection point in world space.
             // This prevents sudden, massive lateral torque/spin impulses when the wheel raycast
             // hits voxel corners or vertical step faces (which shifts the hitPointWorld sideways).
-            wheel.chassisConnectionPointWorld.vsub(chassisBody.position, relpos);
+            chassisBody.vectorToWorldFrame(wheel.chassisConnectionPointLocal, relpos);
             chassisBody.applyImpulse(impulse, relpos);
         }
 
@@ -653,7 +672,9 @@ function initCannonVehicle(v) {
             }
 
             if((wheel.sliding || !wheel.isInContact) && wheel.engineForce !== 0 && wheel.useCustomSlidingRotationalSpeed){
-                wheel.deltaRotation = (wheel.engineForce > 0 ? 1 : -1) * wheel.customSlidingRotationalSpeed * timeStep;
+                // Inverted sign: since forward throttle results in negative engineForce, we map negative force 
+                // to forward (positive) rotation, and positive force to reverse (negative) rotation.
+                wheel.deltaRotation = (wheel.engineForce > 0 ? -1 : 1) * wheel.customSlidingRotationalSpeed * timeStep;
             }
 
             if(Math.abs(wheel.brake) > Math.abs(wheel.engineForce)){
@@ -708,31 +729,56 @@ function update() {
     // Apply vehicle inputs for player-driven vehicle
     if (player.inVehicle) {
         const v = player.inVehicle;
-        if (v.raycastVehicle) {
-            // Swapped sign: gas = -1 when W is pressed (forward), gas = 1 when S is pressed (reverse)
-            const gas = keys['KeyW'] ? -1 : (keys['KeyS'] ? 1 : 0);
-            const steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
-            
-            const maxSteer = 0.5;
-            const maxForce = 7500; // Torque applied to wheels for acceleration and block climbing
+        if (v.raycastVehicle && v.chassisBody) {
             const maxBrake = 3000; // Stronger brakes for high weight
+            let isFlipped = Math.abs(v.roll) > Math.PI / 3 || Math.abs(v.pitch) > Math.PI / 3;
             
-            // Front-wheel steering (steer wheels 0 and 1)
-            v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
-            v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
-            
-            // 4-Wheel Drive (4WD) - apply force to all four wheels so front wheels can drag the vehicle up voxel blocks
-            v.raycastVehicle.applyEngineForce(gas * maxForce, 0);
-            v.raycastVehicle.applyEngineForce(gas * maxForce, 1);
-            v.raycastVehicle.applyEngineForce(gas * maxForce, 2);
-            v.raycastVehicle.applyEngineForce(gas * maxForce, 3);
-            
-            // Braking / engine drag
-            const brakeForce = keys['Space'] ? maxBrake : (gas === 0 ? 150 : 0);
-            v.raycastVehicle.setBrake(brakeForce, 0);
-            v.raycastVehicle.setBrake(brakeForce, 1);
-            v.raycastVehicle.setBrake(brakeForce, 2);
-            v.raycastVehicle.setBrake(brakeForce, 3);
+            if (isFlipped) {
+                // If flipped, pressing Space resets the vehicle orientation upright and raises it 1.5m to land cleanly
+                if (keys['Space']) {
+                    v.chassisBody.position.z += 1.5;
+                    v.chassisBody.velocity.set(0, 0, 0);
+                    v.chassisBody.angularVelocity.set(0, 0, 0);
+                    v.chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), v.angle);
+                    v.chassisBody.wakeUp();
+                }
+                
+                // Zero out engine force and steering while flipped to avoid mid-air spazzing
+                v.raycastVehicle.setSteeringValue(0, 0);
+                v.raycastVehicle.setSteeringValue(0, 1);
+                v.raycastVehicle.applyEngineForce(0, 0);
+                v.raycastVehicle.applyEngineForce(0, 1);
+                v.raycastVehicle.applyEngineForce(0, 2);
+                v.raycastVehicle.applyEngineForce(0, 3);
+                v.raycastVehicle.setBrake(maxBrake, 0);
+                v.raycastVehicle.setBrake(maxBrake, 1);
+                v.raycastVehicle.setBrake(maxBrake, 2);
+                v.raycastVehicle.setBrake(maxBrake, 3);
+            } else {
+                // Swapped sign: gas = -1 when W is pressed (forward), gas = 1 when S is pressed (reverse)
+                const gas = keys['KeyW'] ? -1 : (keys['KeyS'] ? 1 : 0);
+                const steerInput = keys['KeyA'] ? -1 : (keys['KeyD'] ? 1 : 0);
+                
+                const maxSteer = 0.5;
+                const maxForce = 7500; // Torque applied to wheels for acceleration and block climbing
+                
+                // Front-wheel steering (steer wheels 0 and 1)
+                v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
+                v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
+                
+                // 4-Wheel Drive (4WD) - apply force to all four wheels so front wheels can drag the vehicle up voxel blocks
+                v.raycastVehicle.applyEngineForce(gas * maxForce, 0);
+                v.raycastVehicle.applyEngineForce(gas * maxForce, 1);
+                v.raycastVehicle.applyEngineForce(gas * maxForce, 2);
+                v.raycastVehicle.applyEngineForce(gas * maxForce, 3);
+                
+                // Braking / engine drag
+                const brakeForce = keys['Space'] ? maxBrake : (gas === 0 ? 150 : 0);
+                v.raycastVehicle.setBrake(brakeForce, 0);
+                v.raycastVehicle.setBrake(brakeForce, 1);
+                v.raycastVehicle.setBrake(brakeForce, 2);
+                v.raycastVehicle.setBrake(brakeForce, 3);
+            }
         }
     }
 
@@ -1609,8 +1655,20 @@ function update() {
         if (item.cooldown <= 0) checkTarget(item, 3.0);
     }
 
-    if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
-        if (vehicles.includes(interactTarget)) interactTooltip.innerText = "[E] Drive Truck";
+    if (player.inVehicle) {
+        let v = player.inVehicle;
+        let isFlipped = Math.abs(v.roll) > Math.PI / 3 || Math.abs(v.pitch) > Math.PI / 3;
+        if (isFlipped) {
+            interactTooltip.innerText = "[SPACE] Flip Vehicle";
+            interactTooltip.style.display = 'block';
+        } else {
+            interactTooltip.style.display = 'none';
+        }
+    } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
+        if (vehicles.includes(interactTarget)) {
+            let isFlipped = Math.abs(interactTarget.roll) > Math.PI / 3 || Math.abs(interactTarget.pitch) > Math.PI / 3;
+            interactTooltip.innerText = isFlipped ? "[E] Flip & Drive Truck" : "[E] Drive Truck";
+        }
         else if (interactTarget.rooms) interactTooltip.innerText = "[E] Enter " + interactTarget.emoji; 
         else if (interactTarget.label) interactTooltip.innerText = "[E] " + interactTarget.label; 
         else if (droppedItems.includes(interactTarget)) {
