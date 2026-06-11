@@ -644,12 +644,12 @@ function initCannonVehicle(v) {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
-        suspensionStiffness: 85, // Highly increased spring stiffness to prevent suspension bottom-out under downforce and weight
-        suspensionRestLength: 0.58, // Substantially lowered visual ride height while maintaining active travel
+        suspensionStiffness: 55, // Middle-ground spring stiffness for balanced, realistic weight
+        suspensionRestLength: 0.70, // Compensates for static compression, keeping visual body ride height low
         maxSuspensionForce: 100000,
-        maxSuspensionTravel: 0.55, // Extra travel to handle compression without bottoming out
-        dampingRelaxation: 5.5, // High relaxation damping to completely eliminate rebound bounce
-        dampingCompression: 4.0, // High compression damping to absorb voxel edge impacts smoothly
+        maxSuspensionTravel: 0.90, // Large suspension travel limit allowing tires to clip up into body under compression
+        dampingRelaxation: 4.8, // Controlled relaxation damping to prevent bounce/stoppies
+        dampingCompression: 3.5, // Controlled compression damping to absorb voxel edge impacts smoothly
         frictionSlip: 1.6, // Allows slip under high torque
         rollInfluence: 0.01, // Greatly reduced roll influence (was 0.1) to keep the chassis flat in turns
         useCustomSlidingRotationalSpeed: true, // Let tires spin under engine power when skidding or airborne
@@ -671,9 +671,9 @@ function initCannonVehicle(v) {
     // Add 4 wheels at connection points in local coordinates.
     // Connected higher (Z = -0.35 for front, -0.25 for rear) to lower the visual body ride height
     // relative to the wheels while keeping full active suspension travel.
-    // Brought front wheels back to 0.80 and rear wheels forward to -1.50 to center them in the fender wells.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.80, 0.95, -0.35) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.80, -0.95, -0.35) });  // Front Right
+    // Brought front wheels back to 0.65 (brought in more) and rear wheels forward to -1.50 to center them in the fender wells.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, 0.95, -0.35) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, -0.95, -0.35) });  // Front Right
     vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.25) }); // Rear Left
     vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.25) });  // Rear Right
 
@@ -698,11 +698,14 @@ function initCannonVehicle(v) {
             chassisBody.invInertia.z = 1.0 / chassisBody.inertia.z;
         }
 
-        var targetStiffness = v.gear === 'L' ? 70 : 85; // Soft crawling springs in L, stiff off-road springs in D to prevent bottom-out
-        var targetRestLength = v.gear === 'L' ? 0.71 : 0.58; // Compensates for the compression difference (0.13m) between D and L so they have the exact same visual ride height
+        var targetStiffness = v.gear === 'L' ? 45 : 55; // Middle ground stiffness: 55 in D, 45 in L for off-road crawls
+        // Compensates for front/rear weight distribution: front wheels carry ~2.14x more weight than rear wheels.
+        // Also compensates for the weight/downforce difference between gears to keep both D and L at the exact same visual ride height.
+        var frontRestLength = v.gear === 'L' ? 0.95 : 0.70;
+        var rearRestLength = v.gear === 'L' ? 0.58 : 0.45;
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
-            wheelInfos[i].suspensionRestLength = targetRestLength;
+            wheelInfos[i].suspensionRestLength = (i < 2) ? frontRestLength : rearRestLength;
         }
 
         for (var i = 0; i < numWheels; i++) {
@@ -988,12 +991,12 @@ function update() {
                  v.gear = v.gear || 'D';
                  
                  // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
-                  let engineForce = 13000; // High drive engine torque (increased from 9500) to prevent bogging down at speed on inclines
+                  let engineForce = 16000; // Middle-ground drive engine torque (increased from 9500) to maintain momentum at speed without being too fast
                   if (gas > 0) {
-                      engineForce = 6500; // soft reverse torque (increased from 4500)
+                      engineForce = 8000; // soft reverse torque
                   } else if (gas < 0) {
                       if (v.gear === 'L') {
-                          engineForce = 16000; // Massive crawling torque (increased from 12000) to easily crawl over vertical voxel block faces and corners
+                          engineForce = 20000; // Beefy crawling torque (increased from 12000) to crawl over vertical voxel block faces and corners
                           
                           // Limit top speed in Low gear to 26 mph (approx 42 km/h)
                           let speedMph = speedKmH * 0.621371;
