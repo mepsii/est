@@ -707,6 +707,25 @@ function initCannonVehicle(v) {
             chassisBody.applyImpulse(impulse, wheel.chassisConnectionPointWorld);
         }
 
+        // Apply ground magnetism (downforce) to stabilize climbing on steep voxel terrain
+        var avgNormal = new CANNON.Vec3(0, 0, 0);
+        var contacts = 0;
+        for (var i = 0; i < numWheels; i++) {
+            var w = wheelInfos[i];
+            if (w.isInContact && w.raycastResult && w.raycastResult.hitNormalWorld) {
+                avgNormal.vadd(w.raycastResult.hitNormalWorld, avgNormal);
+                contacts++;
+            }
+        }
+        if (contacts > 0) {
+            avgNormal.normalize();
+            // Magnet force amount: up to 15,000 N of downforce (about 25% of gravity) when all wheels are in contact
+            var magnetForceAmount = (contacts / numWheels) * 15000;
+            var magnetForce = new CANNON.Vec3();
+            avgNormal.scale(-magnetForceAmount, magnetForce);
+            chassisBody.applyForce(magnetForce, chassisBody.position);
+        }
+
         this.updateFriction(timeStep);
 
         var hitNormalWorldScaledWithProj = new CANNON.Vec3();
