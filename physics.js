@@ -616,11 +616,11 @@ function initCannonVehicle(v) {
     chassisBody.sleepSpeedLimit = 0.2; // Sleep when chassis speed drops below 0.2 m/s
     chassisBody.sleepTimeLimit = 0.8; // Sleep after 0.8 seconds of continuous inactivity
     
-    // Add shape offset backward (-0.4 along X) and upward (+0.48 along Z) relative to the body's origin.
+    // Add shape offset centered along X (0.0) and upward (+0.48 along Z) relative to the body's origin.
     // Shifting the shape upward lowers the physical center of mass (origin) to the chassis bottom,
     // making the vehicle highly stable and resistant to rollover. It also raises the front bumper
     // relative to the wheel axles so the bumper doesn't clip/collide with the front wheels.
-    chassisBody.addShape(chassisShape, new CANNON.Vec3(-0.4, 0, 0.48));
+    chassisBody.addShape(chassisShape, new CANNON.Vec3(0, 0, 0.48));
     
     // Scale up the rotational inertia (make it 8.5x harder to spin/flip) to prevent rapid, 
     // toy-like rotational snapping and weird high-speed rollover flips.
@@ -670,11 +670,12 @@ function initCannonVehicle(v) {
 
     // Add 4 wheels at connection points in local coordinates.
     // Level connection height (Z = -0.30 for all wheels) to keep visual body ride height level.
-    // Brought front wheels back to 0.65 and rear wheels forward to -1.50 to center them in the fender wells.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, 0.95, -0.30) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(0.65, -0.95, -0.30) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, 0.95, -0.30) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.50, -0.95, -0.30) });  // Rear Right
+    // Center the wheelbase on the physical center of mass (X=0.0) to balance weight distribution (approx 50/50 front/rear).
+    // Front wheels are set to 1.05 and rear wheels to -1.10.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, 0.95, -0.30) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, -0.95, -0.30) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, 0.95, -0.30) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, -0.95, -0.30) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
@@ -698,13 +699,12 @@ function initCannonVehicle(v) {
         }
 
         var targetStiffness = v.gear === 'L' ? 45 : 55; // Middle ground stiffness: 55 in D, 45 in L for off-road crawls
-        // Compensates for front/rear weight distribution: front wheels carry ~2.3x more weight than rear wheels.
-        // Also compensates for the weight/downforce difference between gears to keep both D and L at the exact same visual ride height.
-        var frontRestLength = v.gear === 'L' ? 0.85 : 0.65;
-        var rearRestLength = v.gear === 'L' ? 0.70 : 0.55;
+        // Since the center of mass is centered between the axles, weight distribution is symmetric (approx 50/50).
+        // Front and rear rest lengths are set equal to keep the vehicle perfectly level and flush in all gears.
+        var targetRestLength = v.gear === 'L' ? 0.80 : 0.60;
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
-            wheelInfos[i].suspensionRestLength = (i < 2) ? frontRestLength : rearRestLength;
+            wheelInfos[i].suspensionRestLength = targetRestLength;
         }
 
         for (var i = 0; i < numWheels; i++) {
@@ -841,8 +841,8 @@ function initCannonVehicle(v) {
             
             chassisBody.applyForce(localForce, chassisBody.position);
             
-            // Apply vertical downforce below the center of mass to create self-righting torque (CoG cheat)
-            // Shifted lower to make it roll-resistant (Z = -1.20 in Low, Z = -0.70 in Drive)
+            // Apply self-righting downforce below the center of mass in the direction of the slope normal (CoG cheat)
+            // This aligns the chassis with the terrain slope dynamically, preventing horizontal climbing glitches.
             var cgOffsetZ = v.gear === 'L' ? -1.20 : -0.70;
             var localOffset = new CANNON.Vec3(0, 0, cgOffsetZ);
             var worldOffset = new CANNON.Vec3();
@@ -850,7 +850,14 @@ function initCannonVehicle(v) {
             var forcePosition = new CANNON.Vec3();
             chassisBody.position.vadd(worldOffset, forcePosition);
             
-            var worldForce = new CANNON.Vec3(0, 0, -worldForceAmount);
+            var selfRightingDirection = new CANNON.Vec3(0, 0, -1);
+            if (contacts > 0) {
+                // Point force perpendicular into the slope normal to align the chassis with the hill
+                avgNormal.scale(-1, selfRightingDirection);
+            }
+            
+            var worldForce = new CANNON.Vec3();
+            selfRightingDirection.scale(worldForceAmount, worldForce);
             chassisBody.applyForce(worldForce, forcePosition);
         }
 
@@ -1039,9 +1046,9 @@ function update() {
                 v.raycastVehicle.applyEngineForce(appliedEngineForce, 2);
                 v.raycastVehicle.applyEngineForce(appliedEngineForce, 3);
                 
-                // Rear-biased braking to completely prevent nose-dives / stoppies
-                v.raycastVehicle.setBrake(brakeForce * 0.6, 0); // Front Left
-                v.raycastVehicle.setBrake(brakeForce * 0.6, 1); // Front Right
+                // Rear-biased braking to completely prevent nose-dives / stoppies (braking front wheels only 30% to prevent nose-dives)
+                v.raycastVehicle.setBrake(brakeForce * 0.3, 0); // Front Left
+                v.raycastVehicle.setBrake(brakeForce * 0.3, 1); // Front Right
                 v.raycastVehicle.setBrake(brakeForce, 2);       // Rear Left
                 v.raycastVehicle.setBrake(brakeForce, 3);       // Rear Right
 
@@ -1345,8 +1352,8 @@ function update() {
             let pitchTarget = v.pitch * 300; 
             player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
-            player.x = v.x + Math.cos(v.angle) * -0.10 + Math.sin(v.angle) * 0.32; 
-            player.y = v.y + Math.sin(v.angle) * -0.10 - Math.cos(v.angle) * 0.32;
+            player.x = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32; 
+            player.y = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
             player.z = v.z + 0.45; 
         }
         player.vz = 0;
