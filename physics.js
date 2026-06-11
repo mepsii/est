@@ -860,14 +860,16 @@ function update() {
             // Parked vehicles are allowed to sleep when stationary to save CPU cycles
             v.chassisBody.allowSleep = true;
 
-            // Apply strong damping when stationary to prevent parking jiggles before sleeping
+            // Apply strong damping when stationary to prevent parking jiggles before sleeping.
+            // Using a higher threshold (1.0 m/s) and stronger scaling (0.70) for parked vehicles
+            // lets them absorb spawn drop energy and settle to a complete sleep rest instantly.
             const speed = v.chassisBody.velocity.norm();
             const angSpeed = v.chassisBody.angularVelocity.norm();
-            if (speed < 0.15) {
-                v.chassisBody.velocity.scale(0.85, v.chassisBody.velocity);
+            if (speed < 1.0) {
+                v.chassisBody.velocity.scale(0.70, v.chassisBody.velocity);
             }
-            if (angSpeed < 0.15) {
-                v.chassisBody.angularVelocity.scale(0.85, v.chassisBody.angularVelocity);
+            if (angSpeed < 1.0) {
+                v.chassisBody.angularVelocity.scale(0.70, v.chassisBody.angularVelocity);
             }
 
             v.raycastVehicle.setSteeringValue(0, 0);
