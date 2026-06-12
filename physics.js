@@ -671,12 +671,12 @@ function initCannonVehicle(v) {
     // Add 4 wheels at connection points in local coordinates.
     // Level connection height (Z = -0.20 for all wheels) to keep visual body ride height level and low.
     // Center the wheelbase on the physical center of mass (X=0.0) to balance weight distribution (approx 50/50 front/rear).
-    // Front wheels are set to 1.05 and rear wheels to -1.10.
-    // Track width narrowed to Y = +/- 0.70 to tuck the wheels even further under the body fenders.
+    // Front wheels are set to 1.05 and rear wheels are pulled forward to -0.96 to fit the body fenders.
+    // Track width is set to Y = +/- 0.70 for all wheels.
     vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, 0.70, -0.20) }); // Front Left
     vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, -0.70, -0.20) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, 0.70, -0.20) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, -0.70, -0.20) });  // Rear Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-0.96, 0.70, -0.20) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-0.96, -0.70, -0.20) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
