@@ -157,12 +157,8 @@ function getNaturalHeightWithWater(x, y) {
 
 function queryRoad(x, y) {
     const S = 256.0;
-    // Warp coordinates gently
-    let wx = x + (noise2D(x * 0.002, y * 0.002) - 0.5) * 16.0;
-    let wy = y + (noise2D(x * 0.002 + 100.0, y * 0.002 + 100.0) - 0.5) * 16.0;
-
-    let cellX = Math.floor(wx / S);
-    let cellY = Math.floor(wy / S);
+    let cellX = Math.floor(x / S);
+    let cellY = Math.floor(y / S);
 
     roadResult.minDist = 999999;
     roadResult.roadType = 0;
@@ -192,24 +188,51 @@ function queryRoad(x, y) {
                 let dy = by - ay;
                 let lenSq = dx*dx + dy*dy;
                 if (lenSq > 0) {
+                    let mx = ax + 0.5 * dx;
+                    let my = ay + 0.5 * dy;
+                    let roadTypeNoise = noise2D(mx * 0.0002, my * 0.0002);
+                    let isAsphalt = (roadTypeNoise > 0.45);
+
+                    // Warp coordinates per road type:
+                    let warpFactor = isAsphalt ? 4.0 : 36.0;
+                    let warpFreq = isAsphalt ? 0.003 : 0.02;
+                    let wx = x + (noise2D(x * warpFreq, y * warpFreq) - 0.5) * warpFactor;
+                    let wy = y + (noise2D(x * warpFreq + 100.0, y * warpFreq + 100.0) - 0.5) * warpFactor;
+
                     let hA = getNaturalHeight(ax, ay);
                     let hB = getNaturalHeight(bx, by);
                     let allowed = true;
                     let crosses = false;
+                    let bridgeThreshold = isAsphalt ? 8.0 : 16.0;
+
                     for (let step = 1; step <= 3; step++) {
                         let tVal = step * 0.25;
                         let px = ax + tVal * dx;
                         let py = ay + tVal * dy;
-                        let rH = lerp(hA, hB, tVal);
+                        let hC = lerp(hA, hB, tVal);
+                        let hN = getNaturalHeight(px, py);
+                        let blend = 0.25;
+                        if (isAsphalt) {
+                            if (hN > hC) {
+                                let allowDeepCut = (nodeHash(i, j, 8.0) < 0.15);
+                                blend = allowDeepCut ? 0.20 : 0.80;
+                            } else {
+                                blend = 0.20;
+                            }
+                        } else {
+                            blend = 0.98;
+                        }
+                        let rH = hC * (1.0 - blend) + hN * blend;
                         let aH = getNaturalHeightWithWater(px, py);
-                        if (aH <= 24.5 || (rH - aH) > 12.0) {
+                        if (aH <= 24.5 || (rH - aH) > bridgeThreshold) {
                             crosses = true;
                             break;
                         }
                     }
                     if (crosses) {
                         let segHash = nodeHash(i, j, 5.0);
-                        if (segHash > 0.10) { // 10% chance
+                        let bridgeAllowChance = isAsphalt ? 0.15 : 0.001;
+                        if (segHash > bridgeAllowChance) {
                             allowed = false;
                         }
                     }
@@ -224,16 +247,21 @@ function queryRoad(x, y) {
                             roadResult.minDist = dist;
                             roadResult.projT = t;
                             roadResult.segLength = Math.sqrt(lenSq);
-                            roadResult.roadH = lerp(hA, hB, t);
-
-                            let mx = ax + 0.5 * dx;
-                            let my = ay + 0.5 * dy;
-                            let roadTypeNoise = noise2D(mx * 0.0002, my * 0.0002);
-                            if (roadTypeNoise > 0.45) {
-                                roadResult.roadType = 8;
+                            let hC = lerp(hA, hB, t);
+                            let hN = getNaturalHeight(projx, projy);
+                            let blend = 0.25;
+                            if (isAsphalt) {
+                                if (hN > hC) {
+                                    let allowDeepCut = (nodeHash(i, j, 8.0) < 0.15);
+                                    blend = allowDeepCut ? 0.20 : 0.80;
+                                } else {
+                                    blend = 0.20;
+                                }
                             } else {
-                                roadResult.roadType = 7;
+                                blend = 0.98;
                             }
+                            roadResult.roadH = hC * (1.0 - blend) + hN * blend;
+                            roadResult.roadType = isAsphalt ? 8 : 7;
                         }
                     }
                 }
@@ -251,24 +279,51 @@ function queryRoad(x, y) {
                 let dy = by - ay;
                 let lenSq = dx*dx + dy*dy;
                 if (lenSq > 0) {
+                    let mx = ax + 0.5 * dx;
+                    let my = ay + 0.5 * dy;
+                    let roadTypeNoise = noise2D(mx * 0.0002, my * 0.0002);
+                    let isAsphalt = (roadTypeNoise > 0.45);
+
+                    // Warp coordinates per road type:
+                    let warpFactor = isAsphalt ? 4.0 : 36.0;
+                    let warpFreq = isAsphalt ? 0.003 : 0.02;
+                    let wx = x + (noise2D(x * warpFreq, y * warpFreq) - 0.5) * warpFactor;
+                    let wy = y + (noise2D(x * warpFreq + 100.0, y * warpFreq + 100.0) - 0.5) * warpFactor;
+
                     let hA = getNaturalHeight(ax, ay);
                     let hB = getNaturalHeight(bx, by);
                     let allowed = true;
                     let crosses = false;
+                    let bridgeThreshold = isAsphalt ? 8.0 : 16.0;
+
                     for (let step = 1; step <= 3; step++) {
                         let tVal = step * 0.25;
                         let px = ax + tVal * dx;
                         let py = ay + tVal * dy;
-                        let rH = lerp(hA, hB, tVal);
+                        let hC = lerp(hA, hB, tVal);
+                        let hN = getNaturalHeight(px, py);
+                        let blend = 0.25;
+                        if (isAsphalt) {
+                            if (hN > hC) {
+                                let allowDeepCut = (nodeHash(i, j, 9.0) < 0.15);
+                                blend = allowDeepCut ? 0.20 : 0.80;
+                            } else {
+                                blend = 0.20;
+                            }
+                        } else {
+                            blend = 0.98;
+                        }
+                        let rH = hC * (1.0 - blend) + hN * blend;
                         let aH = getNaturalHeightWithWater(px, py);
-                        if (aH <= 24.5 || (rH - aH) > 12.0) {
+                        if (aH <= 24.5 || (rH - aH) > bridgeThreshold) {
                             crosses = true;
                             break;
                         }
                     }
                     if (crosses) {
                         let segHash = nodeHash(i, j, 6.0);
-                        if (segHash > 0.10) { // 10% chance
+                        let bridgeAllowChance = isAsphalt ? 0.15 : 0.001;
+                        if (segHash > bridgeAllowChance) {
                             allowed = false;
                         }
                     }
@@ -283,16 +338,21 @@ function queryRoad(x, y) {
                             roadResult.minDist = dist;
                             roadResult.projT = t;
                             roadResult.segLength = Math.sqrt(lenSq);
-                            roadResult.roadH = lerp(hA, hB, t);
-
-                            let mx = ax + 0.5 * dx;
-                            let my = ay + 0.5 * dy;
-                            let roadTypeNoise = noise2D(mx * 0.0002, my * 0.0002);
-                            if (roadTypeNoise > 0.45) {
-                                roadResult.roadType = 8;
+                            let hC = lerp(hA, hB, t);
+                            let hN = getNaturalHeight(projx, projy);
+                            let blend = 0.25;
+                            if (isAsphalt) {
+                                if (hN > hC) {
+                                    let allowDeepCut = (nodeHash(i, j, 9.0) < 0.15);
+                                    blend = allowDeepCut ? 0.20 : 0.80;
+                                } else {
+                                    blend = 0.20;
+                                }
                             } else {
-                                roadResult.roadType = 7;
+                                blend = 0.98;
                             }
+                            roadResult.roadH = hC * (1.0 - blend) + hN * blend;
+                            roadResult.roadType = isAsphalt ? 8 : 7;
                         }
                     }
                 }
@@ -407,7 +467,7 @@ function getVoxelJS(x, y, z, t = null) {
                 let roadZ = Math.floor(t.roadH);
 
                 if (isBarrier) {
-                    if (z === roadZ || z === roadZ + 1) return 3;
+                    if (z === roadZ || z === roadZ + 1) return t.roadType === 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
                     if (z > roadZ + 1) return 0;
                 } else {
                     if (z === roadZ) {
@@ -419,7 +479,7 @@ function getVoxelJS(x, y, z, t = null) {
                     if (z > t.baseH) {
                         let distAlongSeg = t.roadT * t.roadSegLen;
                         let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
-                        if (isPillar) return 3;
+                        if (isPillar) return t.roadType === 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
 
                         if (z <= t.oceanSurface) return 2;
                         if (t.isLake && z <= t.lakeSurface) return 2;
