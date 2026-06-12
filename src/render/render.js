@@ -91,7 +91,8 @@ function render() {
     let targetHFov = isZooming ? fovDegrees / 2.0 : fovDegrees;
     let aspect = window.innerWidth / window.innerHeight;
     camera.fov = (2 * Math.atan(Math.tan((targetHFov * Math.PI) / 360) / aspect) * 180) / Math.PI;
-    camera.far = Math.max(1000, VIEW_DIST * 4.0 + 200);
+    let celestialDist = Math.max(2000, VIEW_DIST * 4.0 + 500);
+    camera.far = celestialDist + 500;
     camera.updateProjectionMatrix();
     
     let sky = getSkyColor(gameTime);
@@ -313,25 +314,27 @@ function render() {
     
     // Position revolving sun/moon billboards in the sky
     if (gameState === 'overworld') {
-        let sunDx = Math.cos(sunTimeAngle) * 200;
-        let sunDz = Math.sin(sunTimeAngle) * 200;
-        let sunDy = 60;
+        let sunDx = Math.cos(sunTimeAngle) * celestialDist;
+        let sunDz = Math.sin(sunTimeAngle) * celestialDist;
+        let sunDy = celestialDist * 0.3;
         
         if (!sunSprite) {
             let texture = ThreeTextureCache.get('☀️', false, false, 1.0);
             sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, fog: false }));
+            sunSprite.renderOrder = 1;
             scene.add(sunSprite);
         }
         sunSprite.position.set(camera.position.x + sunDx, camera.position.y + sunDz, camera.position.z + sunDy);
-        sunSprite.scale.set(20, 20, 1);
+        sunSprite.scale.set(celestialDist * 0.1, celestialDist * 0.1, 1);
         
         if (!moonSprite) {
             let texture = ThreeTextureCache.get('🌕', false, false, 1.0);
             moonSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, fog: false }));
+            moonSprite.renderOrder = 1;
             scene.add(moonSprite);
         }
         moonSprite.position.set(camera.position.x - sunDx, camera.position.y - sunDz, camera.position.z - sunDy);
-        moonSprite.scale.set(16, 16, 1);
+        moonSprite.scale.set(celestialDist * 0.08, celestialDist * 0.08, 1);
     } else {
         if (sunSprite) sunSprite.visible = false;
         if (moonSprite) moonSprite.visible = false;

@@ -326,6 +326,7 @@ function initThree() {
         fog: false
     });
     dynamicCloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+    dynamicCloudMesh.renderOrder = 2;
     scene.add(dynamicCloudMesh);
     
     // Dynamic Player Steve skin mesh
