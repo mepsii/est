@@ -22,8 +22,8 @@ try {
   const jsContent = `// Automatically generated from WASM. Do not edit directly.
 const WASM_BASE64 = "${wasmBase64}";
 `;
-  fs.writeFileSync('world_wasm_binary.js', jsContent);
-  console.log("Successfully generated world_wasm_binary.js!");
+  fs.writeFileSync('src/core/world_wasm_binary.js', jsContent);
+  console.log("Successfully generated src/core/world_wasm_binary.js!");
 } catch (err) {
   console.error("Encoding to Base64 failed!", err);
   process.exit(1);
