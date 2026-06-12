@@ -1,5 +1,14 @@
 //THIS IS entities.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+function isSolidAt(x, y, z_val) {
+    let sz = Math.floor(z_val);
+    let v = getVoxel(x, y, sz);
+    if (v === 6) {
+        return (z_val - sz) < 0.5;
+    }
+    return v === 1 || v >= 3;
+}
+
 function updateEntities() {
     // Update Dropped Items physics
     for (let i = droppedItems.length - 1; i >= 0; i--) {
@@ -301,11 +310,11 @@ function updateEntities() {
                         ny = e.y + (player.y-e.y)/d * moveSpeed;
                     }
                     let prevX = e.x, prevY = e.y;
-                    if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) {
+                    if (!isSolidAt(Math.floor(nx), Math.floor(e.y), e.z)) {
                         e.x = nx;
                     } else {
                         for (let s = 0.1; s <= 1.1; s += 0.1) {
-                            if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + s))) {
+                            if (!isSolidAt(Math.floor(nx), Math.floor(e.y), e.z + s)) {
                                 e.x = nx;
                                 e.z += s;
                                 break;
@@ -313,11 +322,11 @@ function updateEntities() {
                         }
                     }
 
-                    if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z))) {
+                    if (!isSolidAt(Math.floor(e.x), Math.floor(ny), e.z)) {
                         e.y = ny;
                     } else {
                         for (let s = 0.1; s <= 1.1; s += 0.1) {
-                            if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z + s))) {
+                            if (!isSolidAt(Math.floor(e.x), Math.floor(ny), e.z + s)) {
                                 e.y = ny;
                                 e.z += s;
                                 break;
@@ -351,27 +360,12 @@ function updateEntities() {
                         e.animTime = (e.animTime || 0) + 0.02;
                     }
                 }
-                let px = e.x, py = e.y, pz = e.z;
-                let r = 0.25;
-                let floorZ = 0;
-                for (let x = Math.floor(px - r); x <= Math.floor(px + r); x++) {
-                    for (let y = Math.floor(py - r); y <= Math.floor(py + r); y++) {
-                        for (let sz = Math.floor(pz + 0.5); sz >= 0; sz--) {
-                            if (getSolid(x, y, sz)) {
-                                let topV = getVoxel(x, y, sz);
-                                let topH = sz + (topV === 6 ? 0.5 : 1.0);
-                                if (topH > floorZ) {
-                                    floorZ = topH;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (e.z > floorZ) {
-                    e.z = Math.max(floorZ, e.z - 0.25);
-                } else if (e.z < floorZ) {
-                    e.z = floorZ;
+                let ex_int = Math.floor(e.x);
+                let ey_int = Math.floor(e.y);
+                if (!isSolidAt(ex_int, ey_int, e.z - 0.1)) {
+                    e.z -= 0.1;
+                } else if (isSolidAt(ex_int, ey_int, e.z)) {
+                    e.z += 0.5;
                 } 
                 
                 if (e.type === 'zombie' || e.type === 'zombie3d') {
