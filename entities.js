@@ -333,8 +333,19 @@ function updateEntities() {
                         e.animTime = (e.animTime || 0) + 0.02;
                     }
                 }
-                if (!getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z - 0.1))) e.z -= 0.1;
-                else if (getSolid(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))) e.z += 0.5; 
+                let floorZ = e.z;
+                for (let sz = Math.floor(e.z + 0.5); sz >= 0; sz--) {
+                    if (getSolid(Math.floor(e.x), Math.floor(e.y), sz)) {
+                        let topV = getVoxel(Math.floor(e.x), Math.floor(e.y), sz);
+                        floorZ = sz + (topV === 6 ? 0.5 : 1.0);
+                        break;
+                    }
+                }
+                if (e.z > floorZ) {
+                    e.z = Math.max(floorZ, e.z - 0.1);
+                } else if (e.z < floorZ) {
+                    e.z = floorZ;
+                } 
                 
                 if (e.type === 'zombie' || e.type === 'zombie3d') {
                     let attackCooldown = 60;
