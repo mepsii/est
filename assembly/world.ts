@@ -216,12 +216,12 @@ function queryRoad(x: f64, y: f64): void {
             if (isAsphalt) {
               if (hN > hC) {
                 let allowDeepCut = (nodeHash(i, j, 8.0) < 0.15);
-                blend = allowDeepCut ? 0.20 : 0.80;
+                blend = allowDeepCut ? 0.20 : 0.90;
               } else {
                 blend = 0.20;
               }
             } else {
-              blend = 0.98;
+              blend = 1.0;
             }
             let rH = hC * (1.0 - blend) + hN * blend;
             let aH = getNaturalHeightWithWater(px, py);
@@ -256,12 +256,12 @@ function queryRoad(x: f64, y: f64): void {
               if (isAsphalt) {
                 if (hN > hC) {
                   let allowDeepCut = (nodeHash(i, j, 8.0) < 0.15);
-                  blend = allowDeepCut ? 0.20 : 0.80;
+                  blend = allowDeepCut ? 0.20 : 0.90;
                 } else {
                   blend = 0.20;
                 }
               } else {
-                blend = 0.98;
+                blend = 1.0;
               }
               roadHResult = hC * (1.0 - blend) + hN * blend;
               roadTypeResult = isAsphalt ? 8 : 7;
@@ -309,12 +309,12 @@ function queryRoad(x: f64, y: f64): void {
             if (isAsphalt) {
               if (hN > hC) {
                 let allowDeepCut = (nodeHash(i, j, 9.0) < 0.15);
-                blend = allowDeepCut ? 0.20 : 0.80;
+                blend = allowDeepCut ? 0.20 : 0.90;
               } else {
                 blend = 0.20;
               }
             } else {
-              blend = 0.98;
+              blend = 1.0;
             }
             let rH = hC * (1.0 - blend) + hN * blend;
             let aH = getNaturalHeightWithWater(px, py);
@@ -349,12 +349,12 @@ function queryRoad(x: f64, y: f64): void {
               if (isAsphalt) {
                 if (hN > hC) {
                   let allowDeepCut = (nodeHash(i, j, 9.0) < 0.15);
-                  blend = allowDeepCut ? 0.20 : 0.80;
+                  blend = allowDeepCut ? 0.20 : 0.90;
                 } else {
                   blend = 0.20;
                 }
               } else {
-                blend = 0.98;
+                blend = 1.0;
               }
               roadHResult = hC * (1.0 - blend) + hN * blend;
               roadTypeResult = isAsphalt ? 8 : 7;

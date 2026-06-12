@@ -216,15 +216,16 @@ function updatePlayer() {
             let steppedZ = 0;
 
             // X movement
-            let groundH_x = getGroundHeight(nx, player.y, player.z);
             let testZ_x = player.z;
-
-            if (groundH_x !== -1) {
-                let diff = groundH_x - player.z;
-                if (diff > 0 && diff <= 0.6) {
-                    testZ_x = groundH_x;
-                } else if (diff < 0 && diff >= -0.3) {
-                    testZ_x = groundH_x;
+            if (player.vz <= 0) {
+                let groundH_x = getGroundHeight(nx, player.y, player.z);
+                if (groundH_x !== -1) {
+                    let diff = groundH_x - player.z;
+                    if (diff > 0 && diff <= 0.6) {
+                        testZ_x = groundH_x;
+                    } else if (diff < 0 && diff >= -0.3) {
+                        testZ_x = groundH_x;
+                    }
                 }
             }
 
@@ -244,15 +245,16 @@ function updatePlayer() {
             }
 
             // Y movement
-            let groundH_y = getGroundHeight(player.x, ny, player.z);
             let testZ_y = player.z;
-
-            if (groundH_y !== -1) {
-                let diff = groundH_y - player.z;
-                if (diff > 0 && diff <= 0.6) {
-                    testZ_y = groundH_y;
-                } else if (diff < 0 && diff >= -0.3) {
-                    testZ_y = groundH_y;
+            if (player.vz <= 0) {
+                let groundH_y = getGroundHeight(player.x, ny, player.z);
+                if (groundH_y !== -1) {
+                    let diff = groundH_y - player.z;
+                    if (diff > 0 && diff <= 0.6) {
+                        testZ_y = groundH_y;
+                    } else if (diff < 0 && diff >= -0.3) {
+                        testZ_y = groundH_y;
+                    }
                 }
             }
 
