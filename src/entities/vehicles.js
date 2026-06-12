@@ -89,23 +89,46 @@ function syncVoxelCollidersAroundVehicles() {
     for (let key of neededVoxels) {
         const [x, y, z] = key.split(',').map(Number);
         const vType = getVoxel(x, y, z);
+        const isRoad = (vType === 7 || vType === 8);
         const isHalf = (vType === 6);
 
         // If body exists, check if it has correct shape type
         if (activeVoxelBodies.has(key)) {
             const body = activeVoxelBodies.get(key);
-            const isBodyHalf = body.shapes[0].halfExtents.z === 0.25;
-            if (isBodyHalf !== isHalf) {
+            let matches = false;
+            if (isRoad) {
+                matches = (body.shapes[0] !== voxelShape && body.shapes[0] !== halfHeightShape);
+            } else if (isHalf) {
+                matches = (body.shapes[0] === halfHeightShape);
+            } else {
+                matches = (body.shapes[0] === voxelShape);
+            }
+
+            if (!matches) {
                 cannonWorld.removeBody(body);
                 activeVoxelBodies.delete(key);
             }
         }
 
         if (!activeVoxelBodies.has(key)) {
+            let shapeToUse = voxelShape;
+            let posZ = z + 0.5;
+
+            if (isRoad) {
+                let tTerrain = getTerrainFast(x, y);
+                let targetH = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
+                let h = Math.max(0.05, targetH - z);
+                shapeToUse = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, h / 2));
+                posZ = z + h / 2;
+            } else if (isHalf) {
+                shapeToUse = halfHeightShape;
+                posZ = z + 0.25;
+            }
+
             const voxelBody = new CANNON.Body({
                 mass: 0, // static body
-                shape: isHalf ? halfHeightShape : voxelShape,
-                position: new CANNON.Vec3(x + 0.5, y + 0.5, isHalf ? z + 0.25 : z + 0.5)
+                shape: shapeToUse,
+                position: new CANNON.Vec3(x + 0.5, y + 0.5, posZ)
             });
             cannonWorld.addBody(voxelBody);
             activeVoxelBodies.set(key, voxelBody);

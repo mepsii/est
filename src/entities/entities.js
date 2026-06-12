@@ -3,6 +3,11 @@
 function isSolidAt(x, y, z_val) {
     let sz = Math.floor(z_val);
     let v = getVoxel(x, y, sz);
+    if (v === 7 || v === 8) {
+        let tTerrain = getTerrainFast(x, y);
+        let targetH = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
+        return z_val < targetH;
+    }
     if (v === 6) {
         return (z_val - sz) < 0.5;
     }

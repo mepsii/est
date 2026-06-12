@@ -248,7 +248,13 @@ function updatePlayer() {
                                     let z = Math.floor(pz);
                                     let v = getVoxel(x, y, z);
                                     if (isVoxelSolid(v)) {
-                                        let top = z + ((v === 6) ? 0.5 : 1.0);
+                                        let top = z + 1.0;
+                                        if (v === 6) {
+                                            top = z + 0.5;
+                                        } else if (v === 7 || v === 8) {
+                                            let tTerrain = getTerrainFast(x, y);
+                                            top = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
+                                        }
                                         if (top > maxSurfaceZ) {
                                             maxSurfaceZ = top;
                                         }

@@ -193,15 +193,17 @@ function queryRoad(x: f64, y: f64): void {
         let dy = by - ay;
         let lenSq = dx * dx + dy * dy;
         if (lenSq > 0.0) {
+          let hA = getNaturalHeight(ax, ay);
+          let hB = getNaturalHeight(bx, by);
           let allowed = true;
           let crosses = false;
           for (let step = 1; step <= 3; step++) {
             let tVal = (step as f64) * 0.25;
             let px = ax + tVal * dx;
             let py = ay + tVal * dy;
-            let rH = getNaturalHeight(px, py);
+            let rH = lerp(hA, hB, tVal);
             let aH = getNaturalHeightWithWater(px, py);
-            if (aH <= 24.5 || (rH - aH) > 3.0) {
+            if (aH <= 24.5 || (rH - aH) > 12.0) {
               crosses = true;
               break;
             }
@@ -225,7 +227,7 @@ function queryRoad(x: f64, y: f64): void {
               roadMinDistResult = dist;
               roadTResult = t;
               roadSegLenResult = Math.sqrt(lenSq);
-              roadHResult = getNaturalHeight(projx, projy);
+              roadHResult = lerp(hA, hB, t);
 
               let mx = ax + 0.5 * dx;
               let my = ay + 0.5 * dy;
@@ -252,15 +254,17 @@ function queryRoad(x: f64, y: f64): void {
         let dy = by - ay;
         let lenSq = dx * dx + dy * dy;
         if (lenSq > 0.0) {
+          let hA = getNaturalHeight(ax, ay);
+          let hB = getNaturalHeight(bx, by);
           let allowed = true;
           let crosses = false;
           for (let step = 1; step <= 3; step++) {
             let tVal = (step as f64) * 0.25;
             let px = ax + tVal * dx;
             let py = ay + tVal * dy;
-            let rH = getNaturalHeight(px, py);
+            let rH = lerp(hA, hB, tVal);
             let aH = getNaturalHeightWithWater(px, py);
-            if (aH <= 24.5 || (rH - aH) > 3.0) {
+            if (aH <= 24.5 || (rH - aH) > 12.0) {
               crosses = true;
               break;
             }
@@ -284,7 +288,7 @@ function queryRoad(x: f64, y: f64): void {
               roadMinDistResult = dist;
               roadTResult = t;
               roadSegLenResult = Math.sqrt(lenSq);
-              roadHResult = getNaturalHeight(projx, projy);
+              roadHResult = lerp(hA, hB, t);
 
               let mx = ax + 0.5 * dx;
               let my = ay + 0.5 * dy;
@@ -568,7 +572,7 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
     col.r = 140; col.g = 140; col.b = 140;
     return col;
   }
-  if (v == 7) {
+  if (v == 7 || v == 17) {
     let col = new ColorData();
     let noise = hash(x as f64, y as f64, z as f64) * 12.0;
     col.r = clampColor(110.0 + noise);
@@ -576,10 +580,10 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
     col.b = clampColor(55.0 + noise);
     return col;
   }
-  if (v == 8) {
+  if (v == 8 || v == 18) {
     let col = new ColorData();
     let noise = hash(x as f64, y as f64, z as f64) * 8.0;
-    if (t.roadType == 8 && t.roadMinDist < 0.15) {
+    if ((t.roadType == 8 || t.roadType == 18) && t.roadMinDist < 0.15) {
       let distAlongSeg = t.roadT * t.roadSegLen;
       if ((Math.floor(distAlongSeg / 4.0) as i32) % 2 == 0) {
         col.r = clampColor(225.0 + noise);
@@ -758,15 +762,32 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
   let res = new Vertex();
   if (touchesCube || count == 0.0 || count == 8.0) {
     res.x = gx; res.y = gy; res.z = gz;
-    return res;
+  } else {
+    let targetZ: f32 = (hasHalfBelow && !hasFullBelow && !hasSolidAbove) ? (gz - (0.5 as f32)) : gz;
+    let w: f32 = 0.5;
+    res.x = gx + (sumX / count - gx) * w;
+    res.y = gy + (sumY / count - gy) * w;
+    res.z = targetZ + (sumZ / count - targetZ) * w;
   }
 
-  let targetZ: f32 = (hasHalfBelow && !hasFullBelow && !hasSolidAbove) ? (gz - (0.5 as f32)) : gz;
+  // Snap roadway surface vertices to the smooth grade of the road
+  let t = getTerrainFast(gx as i32, gy as i32);
+  if (t.roadType != 0 && t.roadMinDist < 6.0) {
+    let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
+    if (Math.abs((gz as f64) - targetH) < 1.2) {
+      let alpha = 0.0;
+      if (t.roadMinDist < 3.0) {
+        alpha = 1.0;
+      } else {
+        alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+      }
+      let roadZ = targetH as f32;
+      res.x = (res.x * (1.0 - alpha as f32) + gx * alpha as f32) as f32;
+      res.y = (res.y * (1.0 - alpha as f32) + gy * alpha as f32) as f32;
+      res.z = (res.z * (1.0 - alpha as f32) + roadZ * alpha as f32) as f32;
+    }
+  }
 
-  let w: f32 = 0.5;
-  res.x = gx + (sumX / count - gx) * w;
-  res.y = gy + (sumY / count - gy) * w;
-  res.z = targetZ + (sumZ / count - targetZ) * w;
   return res;
 }
 

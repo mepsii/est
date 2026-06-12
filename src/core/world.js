@@ -192,15 +192,17 @@ function queryRoad(x, y) {
                 let dy = by - ay;
                 let lenSq = dx*dx + dy*dy;
                 if (lenSq > 0) {
+                    let hA = getNaturalHeight(ax, ay);
+                    let hB = getNaturalHeight(bx, by);
                     let allowed = true;
                     let crosses = false;
                     for (let step = 1; step <= 3; step++) {
                         let tVal = step * 0.25;
                         let px = ax + tVal * dx;
                         let py = ay + tVal * dy;
-                        let rH = getNaturalHeight(px, py);
+                        let rH = lerp(hA, hB, tVal);
                         let aH = getNaturalHeightWithWater(px, py);
-                        if (aH <= 24.5 || (rH - aH) > 3.0) {
+                        if (aH <= 24.5 || (rH - aH) > 12.0) {
                             crosses = true;
                             break;
                         }
@@ -222,7 +224,7 @@ function queryRoad(x, y) {
                             roadResult.minDist = dist;
                             roadResult.projT = t;
                             roadResult.segLength = Math.sqrt(lenSq);
-                            roadResult.roadH = getNaturalHeight(projx, projy);
+                            roadResult.roadH = lerp(hA, hB, t);
 
                             let mx = ax + 0.5 * dx;
                             let my = ay + 0.5 * dy;
@@ -249,15 +251,17 @@ function queryRoad(x, y) {
                 let dy = by - ay;
                 let lenSq = dx*dx + dy*dy;
                 if (lenSq > 0) {
+                    let hA = getNaturalHeight(ax, ay);
+                    let hB = getNaturalHeight(bx, by);
                     let allowed = true;
                     let crosses = false;
                     for (let step = 1; step <= 3; step++) {
                         let tVal = step * 0.25;
                         let px = ax + tVal * dx;
                         let py = ay + tVal * dy;
-                        let rH = getNaturalHeight(px, py);
+                        let rH = lerp(hA, hB, tVal);
                         let aH = getNaturalHeightWithWater(px, py);
-                        if (aH <= 24.5 || (rH - aH) > 3.0) {
+                        if (aH <= 24.5 || (rH - aH) > 12.0) {
                             crosses = true;
                             break;
                         }
@@ -279,7 +283,7 @@ function queryRoad(x, y) {
                             roadResult.minDist = dist;
                             roadResult.projT = t;
                             roadResult.segLength = Math.sqrt(lenSq);
-                            roadResult.roadH = getNaturalHeight(projx, projy);
+                            roadResult.roadH = lerp(hA, hB, t);
 
                             let mx = ax + 0.5 * dx;
                             let my = ay + 0.5 * dy;
@@ -406,8 +410,9 @@ function getVoxelJS(x, y, z, t = null) {
                     if (z === roadZ || z === roadZ + 1) return 3;
                     if (z > roadZ + 1) return 0;
                 } else {
-                    if (z === roadZ) return t.roadType;
-                    if (z > roadZ) return 0;
+                    if (z === roadZ) {
+                        return t.roadType;
+                    }
                 }
 
                 if (z < roadZ) {
@@ -425,7 +430,9 @@ function getVoxelJS(x, y, z, t = null) {
         } else {
             if (t.roadMinDist < 3.0) {
                 let roadZ = Math.floor(t.baseH);
-                if (z === roadZ) return t.roadType;
+                if (z === roadZ) {
+                    return t.roadType;
+                }
             }
         }
     }
@@ -504,7 +511,7 @@ function getVoxelColorJS(x, y, z, vType = null) {
     if (v === 3) return { r: 150, g: 150, b: 150 };
     if (v === 4) return { r: 160, g: 110, b: 60 };
     if (v === 5) return { r: 140, g: 140, b: 140 };
-    if (v === 7) {
+    if (v === 7 || v === 17) {
         let noise = hash(x, y, z) * 12;
         return {
             r: Math.max(0, Math.min(255, 110 + noise)) | 0,
@@ -512,10 +519,10 @@ function getVoxelColorJS(x, y, z, vType = null) {
             b: Math.max(0, Math.min(255, 55 + noise)) | 0
         };
     }
-    if (v === 8) {
+    if (v === 8 || v === 18) {
         let noise = hash(x, y, z) * 8;
         let t = getTerrainFast(x, y);
-        if (t.roadType === 8 && t.roadMinDist < 0.15) {
+        if ((t.roadType === 8 || t.roadType === 18) && t.roadMinDist < 0.15) {
             let distAlongSeg = t.roadT * t.roadSegLen;
             if (Math.floor(distAlongSeg / 4.0) % 2 === 0) {
                 return {
@@ -604,18 +611,34 @@ function getSmoothVertex(cx, cy, cz) {
         }
     }
     
-    if (touchesCube) return { x: cx, y: cy, z: cz };
+    let resX = cx, resY = cy, resZ = cz;
+    if (!touchesCube && count !== 0 && count !== 8) {
+        let targetZ = (hasHalfBelow && !hasFullBelow && !hasSolidAbove) ? (cz - 0.5) : cz;
+        let w = 0.5;
+        resX = cx + (sumX / count - cx) * w;
+        resY = cy + (sumY / count - cy) * w;
+        resZ = targetZ + (sumZ / count - targetZ) * w;
+    }
 
-    if (count === 0 || count === 8) return { x: cx, y: cy, z: cz };
-    
-    let targetZ = (hasHalfBelow && !hasFullBelow && !hasSolidAbove) ? (cz - 0.5) : cz;
+    // Snap roadway surface vertices to the smooth grade of the road
+    let t = getTerrainFast(cx, cy);
+    if (t.roadType && t.roadMinDist < 6.0) {
+        let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
+        if (Math.abs(cz - targetH) < 1.2) {
+            let alpha = 0.0;
+            if (t.roadMinDist < 3.0) {
+                alpha = 1.0;
+            } else {
+                alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+            }
+            let roadZ = targetH;
+            resX = resX * (1.0 - alpha) + cx * alpha;
+            resY = resY * (1.0 - alpha) + cy * alpha;
+            resZ = resZ * (1.0 - alpha) + roadZ * alpha;
+        }
+    }
 
-    let w = 0.5;
-    return { 
-        x: cx + (sumX / count - cx) * w, 
-        y: cy + (sumY / count - cy) * w, 
-        z: targetZ + (sumZ / count - targetZ) * w 
-    };
+    return { x: resX, y: resY, z: resZ };
 }
 
 function getCubeVertex(px, py, pz) { return { x: px, y: py, z: pz }; }
@@ -1037,7 +1060,14 @@ function checkCollision(nx, ny, nz, pHeight = 1.4) {
             for (let z = Math.floor(nz); z <= Math.floor(nz + pHeight); z++) {
                 let v = getVoxel(x, y, z);
                 if (isVoxelSolid(v)) {
-                    let topHeight = (v === 6) ? 0.5 : 1.0;
+                    let topHeight = 1.0;
+                    if (v === 6) {
+                        topHeight = 0.5;
+                    } else if (v === 7 || v === 8) {
+                        let tTerrain = getTerrainFast(x, y);
+                        let targetH = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
+                        topHeight = Math.max(0.0, Math.min(1.0, targetH - z));
+                    }
                     if (nz < z + topHeight && nz + pHeight > z) {
                         return true;
                     }
