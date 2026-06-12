@@ -215,7 +215,7 @@ function queryRoad(x, y) {
                         if (isAsphalt) {
                             if (hN > hC) {
                                 let allowDeepCut = (nodeHash(i, j, 8.0) < 0.15);
-                                blend = allowDeepCut ? 0.20 : 0.90;
+                                blend = allowDeepCut ? 0.20 : 0.95;
                             } else {
                                 blend = 0.20;
                             }
@@ -253,7 +253,7 @@ function queryRoad(x, y) {
                             if (isAsphalt) {
                                 if (hN > hC) {
                                     let allowDeepCut = (nodeHash(i, j, 8.0) < 0.15);
-                                    blend = allowDeepCut ? 0.20 : 0.90;
+                                    blend = allowDeepCut ? 0.20 : 0.95;
                                 } else {
                                     blend = 0.20;
                                 }
@@ -306,7 +306,7 @@ function queryRoad(x, y) {
                         if (isAsphalt) {
                             if (hN > hC) {
                                 let allowDeepCut = (nodeHash(i, j, 9.0) < 0.15);
-                                blend = allowDeepCut ? 0.20 : 0.90;
+                                blend = allowDeepCut ? 0.20 : 0.95;
                             } else {
                                 blend = 0.20;
                             }
@@ -344,7 +344,7 @@ function queryRoad(x, y) {
                             if (isAsphalt) {
                                 if (hN > hC) {
                                     let allowDeepCut = (nodeHash(i, j, 9.0) < 0.15);
-                                    blend = allowDeepCut ? 0.20 : 0.90;
+                                    blend = allowDeepCut ? 0.20 : 0.95;
                                 } else {
                                     blend = 0.20;
                                 }

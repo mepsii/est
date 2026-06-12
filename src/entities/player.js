@@ -223,7 +223,7 @@ function updatePlayer() {
                     let diff = groundH_x - player.z;
                     if (diff > 0 && diff <= 0.6) {
                         testZ_x = groundH_x;
-                    } else if (diff < 0 && diff >= -0.3) {
+                    } else if (diff < 0 && diff >= -0.6) {
                         testZ_x = groundH_x;
                     }
                 }
@@ -234,6 +234,7 @@ function updatePlayer() {
                 if (testZ_x !== player.z) {
                     let stepped = testZ_x - player.z;
                     player.z = testZ_x;
+                    player.vz = 0;
                     if (stepped > 0) player.zOffset -= stepped;
                 }
             } else {
@@ -252,7 +253,7 @@ function updatePlayer() {
                     let diff = groundH_y - player.z;
                     if (diff > 0 && diff <= 0.6) {
                         testZ_y = groundH_y;
-                    } else if (diff < 0 && diff >= -0.3) {
+                    } else if (diff < 0 && diff >= -0.6) {
                         testZ_y = groundH_y;
                     }
                 }
@@ -263,6 +264,7 @@ function updatePlayer() {
                 if (testZ_y !== player.z) {
                     let stepped = testZ_y - player.z;
                     player.z = testZ_y;
+                    player.vz = 0;
                     if (stepped > 0) player.zOffset -= stepped;
                 }
             } else {
