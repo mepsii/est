@@ -301,11 +301,29 @@ function updateEntities() {
                         ny = e.y + (player.y-e.y)/d * moveSpeed;
                     }
                     let prevX = e.x, prevY = e.y;
-                    if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) e.x = nx;
-                    else if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + 1.1))) { e.x = nx; e.z += 1.1; }
+                    if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z))) {
+                        e.x = nx;
+                    } else {
+                        for (let s = 0.1; s <= 1.1; s += 0.1) {
+                            if (!getSolid(Math.floor(nx), Math.floor(e.y), Math.floor(e.z + s))) {
+                                e.x = nx;
+                                e.z += s;
+                                break;
+                            }
+                        }
+                    }
 
-                    if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z))) e.y = ny;
-                    else if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z + 1.1))) { e.y = ny; e.z += 1.1; }
+                    if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z))) {
+                        e.y = ny;
+                    } else {
+                        for (let s = 0.1; s <= 1.1; s += 0.1) {
+                            if (!getSolid(Math.floor(e.x), Math.floor(ny), Math.floor(e.z + s))) {
+                                e.y = ny;
+                                e.z += s;
+                                break;
+                            }
+                        }
+                    }
                     
                     if (e.bleedOutTimer === undefined && (e.type === 'zombie3d' || e.type === 'zombie')) {
                         e.angle = Math.atan2(player.y - e.y, player.x - e.x);
@@ -333,16 +351,25 @@ function updateEntities() {
                         e.animTime = (e.animTime || 0) + 0.02;
                     }
                 }
-                let floorZ = e.z;
-                for (let sz = Math.floor(e.z + 0.5); sz >= 0; sz--) {
-                    if (getSolid(Math.floor(e.x), Math.floor(e.y), sz)) {
-                        let topV = getVoxel(Math.floor(e.x), Math.floor(e.y), sz);
-                        floorZ = sz + (topV === 6 ? 0.5 : 1.0);
-                        break;
+                let px = e.x, py = e.y, pz = e.z;
+                let r = 0.25;
+                let floorZ = 0;
+                for (let x = Math.floor(px - r); x <= Math.floor(px + r); x++) {
+                    for (let y = Math.floor(py - r); y <= Math.floor(py + r); y++) {
+                        for (let sz = Math.floor(pz + 0.5); sz >= 0; sz--) {
+                            if (getSolid(x, y, sz)) {
+                                let topV = getVoxel(x, y, sz);
+                                let topH = sz + (topV === 6 ? 0.5 : 1.0);
+                                if (topH > floorZ) {
+                                    floorZ = topH;
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
                 if (e.z > floorZ) {
-                    e.z = Math.max(floorZ, e.z - 0.1);
+                    e.z = Math.max(floorZ, e.z - 0.25);
                 } else if (e.z < floorZ) {
                     e.z = floorZ;
                 } 
