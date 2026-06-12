@@ -1,5 +1,30 @@
 //THIS IS player.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+function getGroundHeight(px, py, pz) {
+    let r = 0.25;
+    let maxSurfaceZ = -1;
+    for (let x = Math.floor(px - r); x <= Math.floor(px + r); x++) {
+        for (let y = Math.floor(py - r); y <= Math.floor(py + r); y++) {
+            for (let z = Math.floor(pz - 0.5); z <= Math.floor(pz + 0.5); z++) {
+                let v = getVoxel(x, y, z);
+                if (isVoxelSolid(v)) {
+                    let top = z + 1.0;
+                    if (v === 6) {
+                        top = z + 0.5;
+                    } else if (v === 7 || v === 8) {
+                        let tTerrain = getTerrainFast(x, y);
+                        top = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
+                    }
+                    if (top > maxSurfaceZ) {
+                        maxSurfaceZ = top;
+                    }
+                }
+            }
+        }
+    }
+    return maxSurfaceZ;
+}
+
 function updatePlayer() {
     if (player.pistolReloadTimer > 0) {
         player.pistolReloadTimer--;
@@ -190,8 +215,26 @@ function updatePlayer() {
             let stepH = 1.1; 
             let steppedZ = 0;
 
-            if (!checkCollision(nx, player.y, player.z)) {
+            // X movement
+            let groundH_x = getGroundHeight(nx, player.y, player.z);
+            let testZ_x = player.z;
+
+            if (groundH_x !== -1) {
+                let diff = groundH_x - player.z;
+                if (diff > 0 && diff <= 0.6) {
+                    testZ_x = groundH_x;
+                } else if (diff < 0 && diff >= -0.3) {
+                    testZ_x = groundH_x;
+                }
+            }
+
+            if (!checkCollision(nx, player.y, testZ_x)) {
                 player.x = nx;
+                if (testZ_x !== player.z) {
+                    let stepped = testZ_x - player.z;
+                    player.z = testZ_x;
+                    if (stepped > 0) player.zOffset -= stepped;
+                }
             } else {
                 for (let s = 0.2; s <= stepH; s += 0.2) {
                     if (!checkCollision(nx, player.y, player.z + s)) {
@@ -200,8 +243,26 @@ function updatePlayer() {
                 }
             }
 
-            if (!checkCollision(player.x, ny, player.z)) {
+            // Y movement
+            let groundH_y = getGroundHeight(player.x, ny, player.z);
+            let testZ_y = player.z;
+
+            if (groundH_y !== -1) {
+                let diff = groundH_y - player.z;
+                if (diff > 0 && diff <= 0.6) {
+                    testZ_y = groundH_y;
+                } else if (diff < 0 && diff >= -0.3) {
+                    testZ_y = groundH_y;
+                }
+            }
+
+            if (!checkCollision(player.x, ny, testZ_y)) {
                 player.y = ny;
+                if (testZ_y !== player.z) {
+                    let stepped = testZ_y - player.z;
+                    player.z = testZ_y;
+                    if (stepped > 0) player.zOffset -= stepped;
+                }
             } else {
                 for (let s = 0.2; s <= stepH; s += 0.2) {
                     if (!checkCollision(player.x, ny, player.z + s)) {

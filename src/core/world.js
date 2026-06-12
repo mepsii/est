@@ -624,7 +624,7 @@ function getSmoothVertex(cx, cy, cz) {
     let t = getTerrainFast(cx, cy);
     if (t.roadType && t.roadMinDist < 6.0) {
         let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
-        if (Math.abs(cz - targetH) < 1.2) {
+        if (cz > Math.floor(targetH) + 0.5 && Math.abs(cz - targetH) < 1.2) {
             let alpha = 0.0;
             if (t.roadMinDist < 3.0) {
                 alpha = 1.0;

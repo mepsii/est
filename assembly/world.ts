@@ -774,7 +774,7 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
   let t = getTerrainFast(gx as i32, gy as i32);
   if (t.roadType != 0 && t.roadMinDist < 6.0) {
     let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
-    if (Math.abs((gz as f64) - targetH) < 1.2) {
+    if ((gz as f64) > Math.floor(targetH) + 0.5 && Math.abs((gz as f64) - targetH) < 1.2) {
       let alpha = 0.0;
       if (t.roadMinDist < 3.0) {
         alpha = 1.0;
