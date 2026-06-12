@@ -5,7 +5,7 @@ function getGroundHeight(px, py, pz) {
     let maxSurfaceZ = -1;
     for (let x = Math.floor(px - r); x <= Math.floor(px + r); x++) {
         for (let y = Math.floor(py - r); y <= Math.floor(py + r); y++) {
-            for (let z = Math.floor(pz - 0.5); z <= Math.floor(pz + 0.5); z++) {
+            for (let z = Math.floor(pz - 1.5); z <= Math.floor(pz + 1.0); z++) {
                 let v = getVoxel(x, y, z);
                 if (isVoxelSolid(v)) {
                     let top = z + 1.0;
@@ -15,7 +15,7 @@ function getGroundHeight(px, py, pz) {
                         let tTerrain = getTerrainFast(x, y);
                         top = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
                     }
-                    if (top > maxSurfaceZ) {
+                    if (top <= pz + 0.8 && top > maxSurfaceZ) {
                         maxSurfaceZ = top;
                     }
                 }
@@ -223,7 +223,7 @@ function updatePlayer() {
                     let diff = groundH_x - player.z;
                     if (diff > 0 && diff <= 0.6) {
                         testZ_x = groundH_x;
-                    } else if (diff < 0 && diff >= -0.6) {
+                    } else if (diff < 0 && diff >= -0.8) {
                         testZ_x = groundH_x;
                     }
                 }
@@ -253,7 +253,7 @@ function updatePlayer() {
                     let diff = groundH_y - player.z;
                     if (diff > 0 && diff <= 0.6) {
                         testZ_y = groundH_y;
-                    } else if (diff < 0 && diff >= -0.6) {
+                    } else if (diff < 0 && diff >= -0.8) {
                         testZ_y = groundH_y;
                     }
                 }
@@ -305,28 +305,8 @@ function updatePlayer() {
                     } else {
                         if (player.vz < 0) {
                             player.vz = 0;
-                            let px = player.x, py = player.y, pz = player.z - 0.05;
-                            let r = 0.25;
-                            let maxSurfaceZ = -1;
-                            for (let x = Math.floor(px - r); x <= Math.floor(px + r); x++) {
-                                for (let y = Math.floor(py - r); y <= Math.floor(py + r); y++) {
-                                    let z = Math.floor(pz);
-                                    let v = getVoxel(x, y, z);
-                                    if (isVoxelSolid(v)) {
-                                        let top = z + 1.0;
-                                        if (v === 6) {
-                                            top = z + 0.5;
-                                        } else if (v === 7 || v === 8) {
-                                            let tTerrain = getTerrainFast(x, y);
-                                            top = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
-                                        }
-                                        if (top > maxSurfaceZ) {
-                                            maxSurfaceZ = top;
-                                        }
-                                    }
-                                }
-                            }
-                            player.z = (maxSurfaceZ !== -1) ? (maxSurfaceZ + 0.01) : (Math.ceil(pz) + 0.01);
+                            let groundH = getGroundHeight(player.x, player.y, player.z);
+                            player.z = (groundH !== -1) ? (groundH + 0.01) : player.z;
                         }
                         if (keys['Space']) { player.vz = jumpPower; keys['Space'] = false; }
                     }
