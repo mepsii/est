@@ -223,7 +223,7 @@ function updatePlayer() {
                     let diff = groundH_x - player.z;
                     if (diff > 0 && diff <= 0.6) {
                         testZ_x = groundH_x;
-                    } else if (diff < 0 && diff >= -0.8) {
+                    } else if (diff < 0 && diff >= -0.4) {
                         testZ_x = groundH_x;
                     }
                 }
@@ -235,7 +235,9 @@ function updatePlayer() {
                     let stepped = testZ_x - player.z;
                     player.z = testZ_x;
                     player.vz = 0;
-                    if (stepped > 0) player.zOffset -= stepped;
+                    if (Math.abs(stepped) <= 0.4) {
+                        player.zOffset -= stepped;
+                    }
                 }
             } else {
                 for (let s = 0.2; s <= stepH; s += 0.2) {
@@ -253,7 +255,7 @@ function updatePlayer() {
                     let diff = groundH_y - player.z;
                     if (diff > 0 && diff <= 0.6) {
                         testZ_y = groundH_y;
-                    } else if (diff < 0 && diff >= -0.8) {
+                    } else if (diff < 0 && diff >= -0.4) {
                         testZ_y = groundH_y;
                     }
                 }
@@ -265,7 +267,9 @@ function updatePlayer() {
                     let stepped = testZ_y - player.z;
                     player.z = testZ_y;
                     player.vz = 0;
-                    if (stepped > 0) player.zOffset -= stepped;
+                    if (Math.abs(stepped) <= 0.4) {
+                        player.zOffset -= stepped;
+                    }
                 }
             } else {
                 for (let s = 0.2; s <= stepH; s += 0.2) {
@@ -275,7 +279,7 @@ function updatePlayer() {
                 }
             }
 
-            if (steppedZ > 0) player.zOffset -= steppedZ;
+            if (steppedZ > 0 && steppedZ <= 0.4) player.zOffset -= steppedZ;
 
             if (flightMode) { 
                 player.vz = 0; 
