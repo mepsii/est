@@ -15,6 +15,11 @@ class TerrainData {
   oceanSurface: f64;
   moisture: f64;
   elevation: f64;
+  roadType: i32;
+  roadH: f64;
+  roadMinDist: f64;
+  roadT: f64;
+  roadSegLen: f64;
 }
 
 const terrainCache = new Map<u64, TerrainData>();
@@ -85,6 +90,218 @@ function fbm2D(x: f64, y: f64, octaves: i32): f64 {
   return v;
 }
 
+// --- Road Query Results (Singletons to avoid GC allocation) ---
+let roadTypeResult: i32 = 0;
+let roadHResult: f64 = 0.0;
+let roadMinDistResult: f64 = 999999.0;
+let roadTResult: f64 = 0.0;
+let roadSegLenResult: f64 = 0.0;
+
+@inline
+function nodeHash(i: i32, j: i32, seedOffset: f64): f64 {
+  let h = ((i as f64) * 127.1 + (j as f64) * 311.7 + seedOffset + worldSeed) * 43758.5453123;
+  return h - Math.floor(h);
+}
+
+function getNaturalHeight(x: f64, y: f64): f64 {
+  let nx = x * 0.003;
+  let ny = y * 0.003;
+  let elevation = fbm2D(nx, ny, 4);
+  let roughness = fbm2D(nx * 3.0, ny * 3.0, 3);
+  return elevation * 60.0 + 10.0 + (roughness * 10.0 * elevation);
+}
+
+function getNaturalHeightWithWater(x: f64, y: f64): f64 {
+  let nx = x * 0.003, ny = y * 0.003;
+
+  let elevation = fbm2D(nx, ny, 4);
+  let roughness = fbm2D(nx * 3.0, ny * 3.0, 3);
+
+  let baseH = elevation * 60.0 + 10.0 + (roughness * 10.0 * elevation);
+  let oceanSurface = 24.0;
+
+  let heightDiff = Math.max(0.0, baseH - oceanSurface);
+  let dynamicValleyWidth = 0.06 + (heightDiff * 0.004);
+
+  let riverNoise = Math.abs(fbm2D(nx * 1.2 + 50.0, ny * 1.2 + 50.0, 3) - 0.5) * 2.0;
+
+  if (riverNoise < dynamicValleyWidth && baseH > oceanSurface - 5.0) {
+    let riverCenter = 0.015;
+    let carveAlpha = 0.0;
+
+    if (riverNoise < riverCenter) {
+      carveAlpha = 1.0;
+    } else {
+      let t = 1.0 - ((riverNoise - riverCenter) / (dynamicValleyWidth - riverCenter));
+      carveAlpha = t * t * (3.0 - 2.0 * t);
+    }
+
+    let riverBottom = oceanSurface - 3.0 - (roughness * 2.0);
+    baseH = lerp(baseH, riverBottom, carveAlpha);
+  }
+
+  let lakeMask = fbm2D(nx * 4.0 + 20.0, ny * 4.0 + 20.0, 2);
+  let pondMask = fbm2D(nx * 15.0, ny * 15.0, 2);
+
+  if (lakeMask > 0.65 || pondMask > 0.72) {
+    let poolLevel = Math.floor((baseH - 1.0) / 4.0) * 4.0;
+    let lakeSurface = Math.max(oceanSurface, poolLevel);
+    let maskVal = lakeMask > 0.65 ? (lakeMask - 0.65) * 3.0 : (pondMask - 0.72) * 4.0;
+    let t = Math.min(1.0, maskVal * 1.5);
+    let depthCurve = t * t * (3.0 - 2.0 * t);
+    let depth = depthCurve * 15.0;
+    baseH = Math.min(baseH, lakeSurface + 1.5 - depth);
+  }
+
+  return baseH;
+}
+
+function queryRoad(x: f64, y: f64): void {
+  let S: f64 = 256.0;
+  // Warp input coordinates using low-frequency noise for gentle curving
+  let wx = x + (noise2D(x * 0.002, y * 0.002) - 0.5) * 16.0;
+  let wy = y + (noise2D(x * 0.002 + 100.0, y * 0.002 + 100.0) - 0.5) * 16.0;
+
+  let cellX = Math.floor(wx / S) as i32;
+  let cellY = Math.floor(wy / S) as i32;
+
+  roadMinDistResult = 999999.0;
+  roadTypeResult = 0;
+  roadTResult = 0.0;
+  roadSegLenResult = 0.0;
+  roadHResult = 0.0;
+
+  for (let i = cellX - 1; i <= cellX + 1; i++) {
+    for (let j = cellY - 1; j <= cellY + 1; j++) {
+      let densityA = noise2D((i as f64) * 0.05, (j as f64) * 0.05);
+      if (densityA <= 0.05) continue;
+
+      let jxA = (nodeHash(i, j, 1.0) - 0.5) * 0.4 * S;
+      let jyA = (nodeHash(i, j, 2.0) - 0.5) * 0.4 * S;
+      let ax = (i as f64) * S + jxA;
+      let ay = (j as f64) * S + jyA;
+
+      // Connection 1: right neighbor (i+1, j)
+      let densityB1 = noise2D(((i + 1) as f64) * 0.05, (j as f64) * 0.05);
+      if (densityB1 > 0.05 && nodeHash(i, j, 3.0) > 0.10) {
+        let jxB = (nodeHash(i + 1, j, 1.0) - 0.5) * 0.4 * S;
+        let jyB = (nodeHash(i + 1, j, 2.0) - 0.5) * 0.4 * S;
+        let bx = ((i + 1) as f64) * S + jxB;
+        let by = (j as f64) * S + jyB;
+
+        let dx = bx - ax;
+        let dy = by - ay;
+        let lenSq = dx * dx + dy * dy;
+        if (lenSq > 0.0) {
+          let allowed = true;
+          let crosses = false;
+          for (let step = 1; step <= 3; step++) {
+            let tVal = (step as f64) * 0.25;
+            let px = ax + tVal * dx;
+            let py = ay + tVal * dy;
+            let rH = getNaturalHeight(px, py);
+            let aH = getNaturalHeightWithWater(px, py);
+            if (aH <= 24.5 || (rH - aH) > 3.0) {
+              crosses = true;
+              break;
+            }
+          }
+          if (crosses) {
+            let segHash = nodeHash(i, j, 5.0);
+            if (segHash > 0.10) { // 10% chance to allow bridges/water crossings
+              allowed = false;
+            }
+          }
+
+          if (allowed) {
+            let t = ((wx - ax) * dx + (wy - ay) * dy) / lenSq;
+            t = Math.max(0.0, Math.min(1.0, t));
+            let projx = ax + t * dx;
+            let projy = ay + t * dy;
+            let distx = wx - projx;
+            let disty = wy - projy;
+            let dist = Math.sqrt(distx * distx + disty * disty);
+            if (dist < roadMinDistResult) {
+              roadMinDistResult = dist;
+              roadTResult = t;
+              roadSegLenResult = Math.sqrt(lenSq);
+              roadHResult = getNaturalHeight(projx, projy);
+
+              let mx = ax + 0.5 * dx;
+              let my = ay + 0.5 * dy;
+              let roadTypeNoise = noise2D(mx * 0.0002, my * 0.0002);
+              if (roadTypeNoise > 0.45) {
+                roadTypeResult = 8; // Asphalt
+              } else {
+                roadTypeResult = 7; // Dirt
+              }
+            }
+          }
+        }
+      }
+
+      // Connection 2: top neighbor (i, j+1)
+      let densityB2 = noise2D((i as f64) * 0.05, ((j + 1) as f64) * 0.05);
+      if (densityB2 > 0.05 && nodeHash(i, j, 4.0) > 0.10) {
+        let jxB = (nodeHash(i, j + 1, 1.0) - 0.5) * 0.4 * S;
+        let jyB = (nodeHash(i, j + 1, 2.0) - 0.5) * 0.4 * S;
+        let bx = (i as f64) * S + jxB;
+        let by = ((j + 1) as f64) * S + jyB;
+
+        let dx = bx - ax;
+        let dy = by - ay;
+        let lenSq = dx * dx + dy * dy;
+        if (lenSq > 0.0) {
+          let allowed = true;
+          let crosses = false;
+          for (let step = 1; step <= 3; step++) {
+            let tVal = (step as f64) * 0.25;
+            let px = ax + tVal * dx;
+            let py = ay + tVal * dy;
+            let rH = getNaturalHeight(px, py);
+            let aH = getNaturalHeightWithWater(px, py);
+            if (aH <= 24.5 || (rH - aH) > 3.0) {
+              crosses = true;
+              break;
+            }
+          }
+          if (crosses) {
+            let segHash = nodeHash(i, j, 6.0);
+            if (segHash > 0.10) { // 10% chance to allow bridges/water crossings
+              allowed = false;
+            }
+          }
+
+          if (allowed) {
+            let t = ((wx - ax) * dx + (wy - ay) * dy) / lenSq;
+            t = Math.max(0.0, Math.min(1.0, t));
+            let projx = ax + t * dx;
+            let projy = ay + t * dy;
+            let distx = wx - projx;
+            let disty = wy - projy;
+            let dist = Math.sqrt(distx * distx + disty * disty);
+            if (dist < roadMinDistResult) {
+              roadMinDistResult = dist;
+              roadTResult = t;
+              roadSegLenResult = Math.sqrt(lenSq);
+              roadHResult = getNaturalHeight(projx, projy);
+
+              let mx = ax + 0.5 * dx;
+              let my = ay + 0.5 * dy;
+              let roadTypeNoise = noise2D(mx * 0.0002, my * 0.0002);
+              if (roadTypeNoise > 0.45) {
+                roadTypeResult = 8; // Asphalt
+              } else {
+                roadTypeResult = 7; // Dirt
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // --- Terrain Generation ---
 function getTerrain(x: f64, y: f64): TerrainData {
   let nx = x * 0.003, ny = y * 0.003;
@@ -132,6 +349,34 @@ function getTerrain(x: f64, y: f64): TerrainData {
     baseH = Math.min(baseH, lakeSurface + 1.5 - depth);
   }
 
+  // Query road
+  queryRoad(x, y);
+  let roadType = 0;
+  let roadH = 0.0;
+  let roadMinDist = 999999.0;
+  let roadT = 0.0;
+  let roadSegLen = 0.0;
+
+  if (roadTypeResult != 0) {
+    roadType = roadTypeResult;
+    roadH = roadHResult;
+    roadMinDist = roadMinDistResult;
+    roadT = roadTResult;
+    roadSegLen = roadSegLenResult;
+
+    if (roadH > baseH + 3.0) {
+      // Bridge: do not modify baseH (keep natural valley open)
+    } else {
+      let alpha = 0.0;
+      if (roadMinDist < 3.0) {
+        alpha = 1.0;
+      } else if (roadMinDist < 6.0) {
+        alpha = 1.0 - (roadMinDist - 3.0) / 3.0;
+      }
+      baseH = lerp(baseH, roadH, alpha);
+    }
+  }
+
   let res = new TerrainData();
   res.baseH = baseH;
   res.lakeSurface = lakeSurface;
@@ -139,6 +384,11 @@ function getTerrain(x: f64, y: f64): TerrainData {
   res.oceanSurface = oceanSurface;
   res.moisture = moisture;
   res.elevation = elevation;
+  res.roadType = roadType;
+  res.roadH = roadH;
+  res.roadMinDist = roadMinDist;
+  res.roadT = roadT;
+  res.roadSegLen = roadSegLen;
   return res;
 }
 
@@ -162,6 +412,11 @@ export function getTerrainIsLake(x: i32, y: i32): bool { return getTerrainFast(x
 export function getTerrainOceanSurface(x: i32, y: i32): f64 { return getTerrainFast(x, y).oceanSurface; }
 export function getTerrainMoisture(x: i32, y: i32): f64 { return getTerrainFast(x, y).moisture; }
 export function getTerrainElevation(x: i32, y: i32): f64 { return getTerrainFast(x, y).elevation; }
+export function getTerrainRoadType(x: i32, y: i32): i32 { return getTerrainFast(x, y).roadType; }
+export function getTerrainRoadMinDist(x: i32, y: i32): f64 { return getTerrainFast(x, y).roadMinDist; }
+export function getTerrainRoadH(x: i32, y: i32): f64 { return getTerrainFast(x, y).roadH; }
+export function getTerrainRoadT(x: i32, y: i32): f64 { return getTerrainFast(x, y).roadT; }
+export function getTerrainRoadSegLen(x: i32, y: i32): f64 { return getTerrainFast(x, y).roadSegLen; }
 
 @inline
 function isVoxelSolid(v: i32): bool {
@@ -170,7 +425,7 @@ function isVoxelSolid(v: i32): bool {
 
 @inline
 function isVoxelCube(v: i32): bool {
-  return v >= 3 && v != 6;
+  return v >= 3 && v != 6 && v != 7 && v != 8;
 }
 
 // --- Voxel Storage ---
@@ -184,6 +439,54 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
     return mod <= 0 ? 0 : mod;
   }
 
+  if (t.roadType != 0) {
+    let isBridge = (t.roadH > t.baseH + 3.0);
+    if (isBridge) {
+      if (t.roadMinDist < 3.0) {
+        let isBarrier = (t.roadMinDist >= 2.4);
+        let roadZ = Math.floor(t.roadH) as i32;
+
+        if (isBarrier) {
+          if (z == roadZ || z == roadZ + 1) {
+            return 3; // Concrete barrier
+          }
+          if (z > roadZ + 1) {
+            return 0; // Air above barrier
+          }
+        } else {
+          if (z == roadZ) {
+            return t.roadType; // Asphalt (8) or Dirt (7) road deck
+          }
+          if (z > roadZ) {
+            return 0; // Air above road
+          }
+        }
+
+        if (z < roadZ) {
+          if ((z as f64) > t.baseH) {
+            // Generate support pillars under the bridge
+            let distAlongSeg = t.roadT * t.roadSegLen;
+            let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
+            if (isPillar) {
+              return 3; // Concrete pillar
+            }
+
+            if (z <= (t.oceanSurface as i32)) return 2;
+            if (t.isLake && z <= (t.lakeSurface as i32)) return 2;
+            return 0; // Air under deck
+          }
+        }
+      }
+    } else {
+      if (t.roadMinDist < 3.0) {
+        let roadZ = Math.floor(t.baseH) as i32;
+        if (z == roadZ) {
+          return t.roadType; // Road surface block
+        }
+      }
+    }
+  }
+
   let density = t.baseH - (z as f64);
 
   if (density < -15.0) {
@@ -194,7 +497,20 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
   if (density > 20.0) return 1;
 
   let structure = noise3D((x as f64) * 0.04, (y as f64) * 0.04, (z as f64) * 0.04);
-  density += structure * 10.0;
+  let structureScale = 1.0;
+  if (t.roadType != 0) {
+    let isBridge = (t.roadH > t.baseH + 3.0);
+    if (!isBridge) {
+      let alpha = 0.0;
+      if (t.roadMinDist < 3.0) {
+        alpha = 1.0;
+      } else if (t.roadMinDist < 6.0) {
+        alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+      }
+      structureScale = 1.0 - alpha;
+    }
+  }
+  density += structure * 10.0 * structureScale;
 
   let depth = t.baseH - (z as f64);
   if (depth > 12.0) {
@@ -250,6 +566,31 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
   if (v == 5) {
     let col = new ColorData();
     col.r = 140; col.g = 140; col.b = 140;
+    return col;
+  }
+  if (v == 7) {
+    let col = new ColorData();
+    let noise = hash(x as f64, y as f64, z as f64) * 12.0;
+    col.r = clampColor(110.0 + noise);
+    col.g = clampColor(85.0 + noise);
+    col.b = clampColor(55.0 + noise);
+    return col;
+  }
+  if (v == 8) {
+    let col = new ColorData();
+    let noise = hash(x as f64, y as f64, z as f64) * 8.0;
+    if (t.roadType == 8 && t.roadMinDist < 0.15) {
+      let distAlongSeg = t.roadT * t.roadSegLen;
+      if ((Math.floor(distAlongSeg / 4.0) as i32) % 2 == 0) {
+        col.r = clampColor(225.0 + noise);
+        col.g = clampColor(185.0 + noise);
+        col.b = clampColor(40.0 + noise);
+        return col;
+      }
+    }
+    col.r = clampColor(55.0 + noise);
+    col.g = clampColor(55.0 + noise);
+    col.b = clampColor(58.0 + noise);
     return col;
   }
 
