@@ -1,3 +1,8 @@
+<h3> used as a testbed for a proper cannon-es physics engine and vehicles </h3>
+
+-----
+
+
 #a total experiment. just a basic voxel based survival-fps game.\
 #just wanted to see how far it could be taken with nothing but ai models writing code.\
 #done w essentially all gemini
