@@ -11,7 +11,9 @@ const WEAPON_MODEL_CONFIG = {
 };
 
 const VEHICLE_MODEL_CONFIG = {
-    'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetZ: -0.8 } 
+    'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetZ: -0.8 },
+    'truck_body': { scale: 1.25, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetX: 0.0, offsetY: 0, offsetZ: -0.65 },
+    'truck_wheel': { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 }
 };
 
 async function loadObjModel(name) {
@@ -124,6 +126,8 @@ loadObjModel('pistol');
 loadObjModel('shotgun');
 loadObjModel('smg');
 loadObjModel('truck');
+loadObjModel('truck_body');
+loadObjModel('truck_wheel');
 loadObjModel('45shell1');
 
 function rotate3D(x, y, z, rotX, rotY, rotZ) {

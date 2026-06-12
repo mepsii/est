@@ -43,7 +43,7 @@ const canvas = document.getElementById('gameCanvas');
 const dummyCanvas = document.createElement('canvas');
 const ctx = dummyCanvas.getContext('2d');
 const scoreEl = document.getElementById('score'), hpEl = document.getElementById('hp'), foodEl = document.getElementById('food'), staminaEl = document.getElementById('stamina'), oxygenEl = document.getElementById('oxygen');
-const weaponEl = document.getElementById('weapon-name'), adsEl = document.getElementById('ads-status'), coordsEl = document.getElementById('coords');
+const weaponEl = document.getElementById('weapon-name'), adsEl = document.getElementById('ads-status'), coordsEl = document.getElementById('coords'), speedometerItemEl = document.getElementById('speedometer-item'), speedometerEl = document.getElementById('speedometer'), gearItemEl = document.getElementById('gear-item'), gearStatusEl = document.getElementById('gear-status');
 const overlay = document.getElementById('overlay'), damageFlash = document.getElementById('damage-flash'), healFlash = document.getElementById('heal-flash');
 const fpsCounterEl = document.getElementById('fps-counter'), fpsValEl = document.getElementById('fps-val');
 const timeCounterEl = document.getElementById('time-counter'), timeValEl = document.getElementById('time-val');

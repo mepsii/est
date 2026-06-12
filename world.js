@@ -187,7 +187,8 @@ function getVoxelJS(x, y, z, t = null) {
         if (caveNoise < 0.25) density -= (0.25 - caveNoise) * 40.0;
     }
     
-    if (density > 0) return 1; 
+    if (density > 0.5) return 1; 
+    if (density > 0) return 6; 
     if (z <= t.oceanSurface) return 2; 
     if (t.isLake && z <= t.lakeSurface) return 2; 
     
@@ -195,11 +196,11 @@ function getVoxelJS(x, y, z, t = null) {
 }
 
 function isVoxelSolid(v) {
-    return v === 1 || v >= 3;
+    return v === 1 || v === 6 || v >= 3;
 }
 
 function isVoxelCube(v) {
-    return v >= 3;
+    return v >= 3 && v !== 6;
 }
 
 function getSolidFast(x, y, z) {
@@ -272,6 +273,10 @@ function getSmoothVertex(cx, cy, cz) {
     let sumX = 0, sumY = 0, sumZ = 0, count = 0;
     let touchesCube = false;
     
+    let hasHalfBelow = false;
+    let hasFullBelow = false;
+    let hasSolidAbove = false;
+
     for (let dx = -1; dx <= 0; dx++) {
         for (let dy = -1; dy <= 0; dy++) {
             for (let dz = -1; dz <= 0; dz++) {
@@ -280,8 +285,22 @@ function getSmoothVertex(cx, cy, cz) {
                 if (isVoxelSolid(v)) {
                     sumX += (cx + dx + 0.5);
                     sumY += (cy + dy + 0.5);
-                    sumZ += (cz + dz + 0.5);
+                    if (v === 6) {
+                        sumZ += (cz + dz + 0.25);
+                    } else {
+                        sumZ += (cz + dz + 0.5);
+                    }
                     count++;
+
+                    if (dz === -1) {
+                        if (v === 6) {
+                            hasHalfBelow = true;
+                        } else {
+                            hasFullBelow = true;
+                        }
+                    } else if (dz === 0) {
+                        hasSolidAbove = true;
+                    }
                 }
             }
         }
@@ -291,11 +310,13 @@ function getSmoothVertex(cx, cy, cz) {
 
     if (count === 0 || count === 8) return { x: cx, y: cy, z: cz };
     
+    let targetZ = (hasHalfBelow && !hasFullBelow && !hasSolidAbove) ? (cz - 0.5) : cz;
+
     let w = 0.5;
     return { 
         x: cx + (sumX / count - cx) * w, 
         y: cy + (sumY / count - cy) * w, 
-        z: cz + (sumZ / count - cz) * w 
+        z: targetZ + (sumZ / count - targetZ) * w 
     };
 }
 
@@ -551,8 +572,9 @@ function getAimVoxel(range) {
 }
 
 let startZ = MAX_Z - 1;
-while (startZ > 0 && getVoxel(0, 0, startZ) !== 1) startZ--;
-player.x = 0; player.y = 0; player.z = startZ + 1.5;
+while (startZ > 0 && !isVoxelSolid(getVoxel(0, 0, startZ))) startZ--;
+let topV = getVoxel(0, 0, startZ);
+player.x = 0; player.y = 0; player.z = startZ + ((topV === 6) ? 0.5 : 1.0) + 0.5;
 
 function getEntityAt(gx, gy) {
     if (Math.sqrt(gx*gx + gy*gy) < 20) return null; 
@@ -675,18 +697,21 @@ function getMapChunk(cx, cy) {
                 let wy = y + 0.5 + jy;
                 
                 let floorIntZ = MAX_Z - 1;
-                while(floorIntZ >= 0 && getVoxel(Math.floor(wx), Math.floor(wy), floorIntZ) !== 1) floorIntZ--;
+                while(floorIntZ >= 0 && !isVoxelSolid(getVoxel(Math.floor(wx), Math.floor(wy), floorIntZ))) floorIntZ--;
                 if (floorIntZ < 0) continue; 
                 
-                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: wx, wy: wy, h: (floorIntZ + 1.0) - info.plantOffset, hp: 4, entKey: entKey }); 
+                let topV = getVoxel(Math.floor(wx), Math.floor(wy), floorIntZ);
+                let surfaceH = floorIntZ + ((topV === 6) ? 0.5 : 1.0);
+                chunk.push({ type: 'emoji', emoji: info.emoji, size: info.size, wx: wx, wy: wy, h: surfaceH - info.plantOffset, hp: 4, entKey: entKey }); 
             }
         }
     }
     
     let chunkHash = entityHash(cx, cy, 5), cx_offset = cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy_offset = cy * CHUNK_SIZE + CHUNK_SIZE / 2;
     let bZInt = MAX_Z - 1;
-    while (bZInt >= 0 && getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt) !== 1) bZInt--;
-    let bZ = bZInt + 1.0;
+    while (bZInt >= 0 && !isVoxelSolid(getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt))) bZInt--;
+    let topV = getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt);
+    let bZ = bZInt + ((topV === 6) ? 0.5 : 1.0);
 
     if (getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt + 1) !== 2) {
         if (chunkHash > 0.94) {
@@ -707,7 +732,13 @@ function checkCollision(nx, ny, nz, pHeight = 1.4) {
     for (let x = Math.floor(nx - r); x <= Math.floor(nx + r); x++) {
         for (let y = Math.floor(ny - r); y <= Math.floor(ny + r); y++) {
             for (let z = Math.floor(nz); z <= Math.floor(nz + pHeight); z++) {
-                if (getSolid(x, y, z)) return true;
+                let v = getVoxel(x, y, z);
+                if (isVoxelSolid(v)) {
+                    let topHeight = (v === 6) ? 0.5 : 1.0;
+                    if (nz < z + topHeight && nz + pHeight > z) {
+                        return true;
+                    }
+                }
             }
         }
     }
@@ -764,7 +795,7 @@ function dropMinedItem(x, y, z, v) {
         spawnDroppedItemAt({ id: 'wood_block', type: 'block', emoji: '🪵', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
     } else if (v === 5) {
         spawnDroppedItemAt({ id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
-    } else if (v === 1) {
+    } else if (v === 1 || v === 6) {
         let t = getTerrainFast(x, y);
         let depthFromMacro = t.baseH - z;
         let rockDepth = t.elevation > 0.65 ? 3.0 : 6.0;

@@ -685,7 +685,8 @@ function getPlacementTarget() {
             hitX = rx; hitY = ry; 
             for(let z = Math.floor(rz); z >= 0; z--) {
                 if (getSolid(Math.floor(rx), Math.floor(ry), z)) {
-                    hitZ = z + 1.0; 
+                    let topV = getVoxel(Math.floor(rx), Math.floor(ry), z);
+                    hitZ = z + ((topV === 6) ? 0.5 : 1.0); 
                     foundSolid = true; break;
                 }
             }
@@ -695,7 +696,11 @@ function getPlacementTarget() {
     
     if (!foundSolid) {
         for(let z = Math.floor(player.z + player.baseHeight + 2); z >= 0; z--) {
-            if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) { hitZ = z + 1.0; break; }
+            if (getSolid(Math.floor(hitX), Math.floor(hitY), z)) {
+                let topV = getVoxel(Math.floor(hitX), Math.floor(hitY), z);
+                hitZ = z + ((topV === 6) ? 0.5 : 1.0);
+                break;
+            }
         }
     }
     return { x: hitX, y: hitY, z: hitZ };
@@ -922,6 +927,26 @@ window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     if (isLoading) return;
     keys[e.code] = true;
+    
+    if (player.inVehicle) {
+        let v = player.inVehicle;
+        let currentGear = v.gear || 'D';
+        if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
+            if (currentGear === 'L') {
+                v.gear = 'D';
+            } else if (currentGear === 'D') {
+                v.gear = 'P';
+            }
+            e.preventDefault();
+        } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
+            if (currentGear === 'P') {
+                v.gear = 'D';
+            } else if (currentGear === 'D') {
+                v.gear = 'L';
+            }
+            e.preventDefault();
+        }
+    }
     if (e.key >= '1' && e.key <= '8') selectHotbar(parseInt(e.key) - 1);
     if (e.key.toLowerCase() === 'f') isFlashlightOn = !isFlashlightOn; 
     
@@ -934,6 +959,7 @@ window.addEventListener('keydown', e => {
     if (e.key.toLowerCase() === 'e') {
         if (player.inVehicle) {
             let v = player.inVehicle;
+            v.gear = 'P';
             player.inVehicle = null;
             player.x = v.x - Math.cos(v.angle) * 3;
             player.y = v.y - Math.sin(v.angle) * 3;
@@ -941,6 +967,16 @@ window.addEventListener('keydown', e => {
             player.vz = 0;
         } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) { 
             if (vehicles.includes(interactTarget)) {
+                let v = interactTarget;
+                // Auto-flip upright if flipped when entering on foot
+                let isFlipped = Math.abs(v.roll) > Math.PI / 3 || Math.abs(v.pitch) > Math.PI / 3;
+                if (isFlipped && v.chassisBody) {
+                    v.chassisBody.position.z += 1.5;
+                    v.chassisBody.velocity.set(0, 0, 0);
+                    v.chassisBody.angularVelocity.set(0, 0, 0);
+                    v.chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), v.angle);
+                    v.chassisBody.wakeUp();
+                }
                 player.inVehicle = interactTarget;
                 player.vehicleView = '3rd_back';
             } else if (droppedItems.includes(interactTarget)) {
@@ -1080,7 +1116,10 @@ document.getElementById('btn-stair-cancel').onclick = closeStairMenu;
 
 function getSafeFloorZ(x, y, startZ) {
     for(let z = Math.floor(startZ + 2); z >= 0; z--) {
-        if (getSolid(Math.floor(x), Math.floor(y), z)) return z + 1.0;
+        if (getSolid(Math.floor(x), Math.floor(y), z)) {
+            let topV = getVoxel(Math.floor(x), Math.floor(y), z);
+            return z + ((topV === 6) ? 0.5 : 1.0);
+        }
     }
     return startZ;
 }
@@ -1093,7 +1132,7 @@ window.spawnBuilding = () => {
 };
 window.spawnEnemy = (type) => {
     let ex = player.x + Math.cos(player.angle) * 5, ey = player.y + Math.sin(player.angle) * 5, ez = getSafeFloorZ(ex, ey, player.z);
-    if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez))) {
+    if (!getSolid(Math.floor(ex), Math.floor(ey), Math.floor(ez + 0.5))) {
         if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
         else if (type === 'zombie') enemies.push({ type: 'zombie', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
         else if (type === 'zombie3d') enemies.push({ type: 'zombie3d', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.8, flash: 0 });
@@ -1108,8 +1147,55 @@ window.spawnDebug = (em) => {
 };
 window.spawnVehicle = (type) => { 
     let cx = player.x + Math.cos(player.angle) * 5, cy = player.y + Math.sin(player.angle) * 5;
-    let z = getSafeFloorZ(cx, cy, player.z + 5); 
-    vehicles.push({ type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0 }); 
+    // Scan a 3x3 footprint around the target coordinate to find the highest voxel elevation.
+    // This ensures that neither the chassis nor the wheels overlap uneven voxel blocks on spawn, preventing physics explosions.
+    let maxGroundZ = -1;
+    for (let dx = -1.5; dx <= 1.5; dx += 1.0) {
+        for (let dy = -1.5; dy <= 1.5; dy += 1.0) {
+            let gz = getSafeFloorZ(cx + dx, cy + dy, player.z + 5);
+            if (gz > maxGroundZ) {
+                maxGroundZ = gz;
+            }
+        }
+    }
+    // Spawn chassis center at maxGroundZ + 1.1.
+    // With suspension rest length 0.55m + wheel radius 0.5m, wheels sit exactly on the ground with zero drop/impact force.
+    let z = maxGroundZ + 1.1; 
+
+    // Bounding footprint overlap validator. If any voxel in the vehicle's body/wheel space is solid
+    // (excluding the ground voxel itself), we raise the spawn height step-by-step to guarantee a clear spawn.
+    const isVehicleSpawnBlocked = (xVal, yVal, zVal) => {
+        let xStart = Math.floor(xVal - 1.6);
+        let xEnd = Math.floor(xVal + 1.6);
+        let yStart = Math.floor(yVal - 1.0);
+        let yEnd = Math.floor(yVal + 1.0);
+        let zStart = Math.floor(zVal - 0.05); // Ignores ground voxel but checks chassis and tire height space
+        let zEnd = Math.ceil(zVal + 0.45);
+
+        for (let x = xStart; x <= xEnd; x++) {
+            for (let y = yStart; y <= yEnd; y++) {
+                for (let gz = zStart; gz <= zEnd; gz++) {
+                    if (getSolid(x, y, gz)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
+    // Auto-raise height loop (max 15 iterations) if target position overlaps with solid voxels (trees, walls, ceilings)
+    let iter = 0;
+    while (isVehicleSpawnBlocked(cx, cy, z) && iter < 15) {
+        z += 1.0;
+        iter++;
+    }
+
+    let v = { type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0, currentVehicleSpeedKmHour: 0 };
+    if (typeof initCannonVehicle === 'function') {
+        initCannonVehicle(v);
+    }
+    vehicles.push(v); 
 };
 
 // --- SPLASH TEXT LOADER ---

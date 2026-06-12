@@ -33,7 +33,7 @@ function spawnBlood(x, y, z, colorObj, count) {
     let finalCount = Math.round(count * 1.6);
     for (let i = 0; i < finalCount; i++) {
         let angle = Math.random() * Math.PI * 2, speed = Math.random() * 0.15 + 0.05, vz = Math.random() * 0.15 + 0.05;
-        bloodParticles.push({ x: x, y: y, z: z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz, color: colorObj, life: 60 + Math.random() * 30, size: (Math.random() * 0.08 + 0.04) * 0.25 });
+        bloodParticles.push({ x: x, y: y, z: z, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: vz, color: colorObj, life: 60 + Math.random() * 30, size: (Math.random() * 0.08 + 0.04) * 0.25, isBlood: true });
     }
 }
 
