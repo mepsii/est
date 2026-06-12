@@ -91,6 +91,7 @@ function render() {
     let targetHFov = isZooming ? fovDegrees / 2.0 : fovDegrees;
     let aspect = window.innerWidth / window.innerHeight;
     camera.fov = (2 * Math.atan(Math.tan((targetHFov * Math.PI) / 360) / aspect) * 180) / Math.PI;
+    camera.far = Math.max(1000, VIEW_DIST * 4.0 + 200);
     camera.updateProjectionMatrix();
     
     let sky = getSkyColor(gameTime);
@@ -266,6 +267,23 @@ function render() {
                     let wx = cx * cloudGrid + cloudMoveX;
                     let wy = cy * cloudGrid;
                     
+                    let dx = (wx + cloudGrid * 0.5) - player.x;
+                    let dy = (wy + cloudGrid * 0.5) - player.y;
+                    let dist = Math.hypot(dx, dy);
+                    if (dist > cloudViewDist) continue;
+                    
+                    let fadeStart = cloudViewDist * 0.6;
+                    let alphaScale = 1.0;
+                    if (dist > fadeStart) {
+                        alphaScale = Math.max(0, 1.0 - (dist - fadeStart) / (cloudViewDist - fadeStart));
+                    }
+                    if (alphaScale <= 0) continue;
+                    
+                    let cellColorTop = { ...colorTop, a: colorTop.a * alphaScale };
+                    let cellColorBottom = { ...colorBottom, a: colorBottom.a * alphaScale };
+                    let cellColorSide1 = { ...colorSide1, a: colorSide1.a * alphaScale };
+                    let cellColorSide2 = { ...colorSide2, a: colorSide2.a * alphaScale };
+                    
                     let n_px = cloudNoise[(x + 1) + y * cGridSize] > 0.45;
                     let n_nx = cloudNoise[(x - 1) + y * cGridSize] > 0.45;
                     let n_py = cloudNoise[x + (y + 1) * cGridSize] > 0.45;
@@ -281,13 +299,13 @@ function render() {
                         addFaceToDynamicBuffer('cloud', pts, col, norm);
                     };
                     
-                    addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight} ], colorBottom);
-                    addCloudFace([ {x: wx, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], colorTop);
+                    addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight} ], cellColorBottom);
+                    addCloudFace([ {x: wx, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], cellColorTop);
                     
-                    if (!n_nx) addCloudFace([ {x: wx, y: wy, z: cloudHeight}, {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy, z: cloudHeight + cH} ], colorSide1);
-                    if (!n_px) addCloudFace([ {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH} ], colorSide1);
-                    if (!n_ny) addCloudFace([ {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH} ], colorSide2);
-                    if (!n_py) addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], colorSide2);
+                    if (!n_nx) addCloudFace([ {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight}, {x: wx, y: wy, z: cloudHeight + cH}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH} ], cellColorSide1);
+                    if (!n_px) addCloudFace([ {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH} ], cellColorSide1);
+                    if (!n_ny) addCloudFace([ {x: wx, y: wy, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight}, {x: wx + cloudGrid, y: wy, z: cloudHeight + cH}, {x: wx, y: wy, z: cloudHeight + cH} ], cellColorSide2);
+                    if (!n_py) addCloudFace([ {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight}, {x: wx, y: wy + cloudGrid, z: cloudHeight}, {x: wx, y: wy + cloudGrid, z: cloudHeight + cH}, {x: wx + cloudGrid, y: wy + cloudGrid, z: cloudHeight + cH} ], cellColorSide2);
                 }
             }
         }

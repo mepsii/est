@@ -321,8 +321,9 @@ function initThree() {
     const cloudMat = new THREE.MeshBasicMaterial({
         vertexColors: true,
         transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false
+        side: THREE.FrontSide,
+        depthWrite: false,
+        fog: false
     });
     dynamicCloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
     scene.add(dynamicCloudMesh);
