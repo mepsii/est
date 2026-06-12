@@ -686,13 +686,38 @@ function initCannonVehicle(v) {
         var numWheels = wheelInfos.length;
         var chassisBody = this.chassisBody;
 
+        v.gear = v.gear || 'D';
+        if (v.gear === 'P') {
+            if (chassisBody.type !== CANNON.Body.STATIC) {
+                chassisBody.type = CANNON.Body.STATIC;
+                chassisBody.velocity.set(0, 0, 0);
+                chassisBody.angularVelocity.set(0, 0, 0);
+                chassisBody.force.set(0, 0, 0);
+                chassisBody.torque.set(0, 0, 0);
+            }
+            for (var i = 0; i < numWheels; i++) {
+                this.updateWheelTransform(i);
+            }
+            this.currentVehicleSpeedKmHour = 0;
+            return;
+        }
+
         // Dynamically adjust mass, stiffness, and friction based on gear to give Low gear extra traction/stability cheat.
         // To guarantee the visual ride height remains exactly identical (no visual sag/popping when shifting),
         // we scale the suspension stiffness in Low gear (68.75) to perfectly balance the increased load (mass),
         // and we cancel the downforce compression using suspension compensation, allowing us to use a constant suspension rest length (0.55).
-        v.gear = v.gear || 'D';
         var targetMass = v.gear === 'L' ? 3500 : 2800;
-        if (chassisBody.mass !== targetMass) {
+        if (chassisBody.type === CANNON.Body.STATIC) {
+            chassisBody.type = CANNON.Body.DYNAMIC;
+            // Force reset mass properties when shifting out of Park
+            chassisBody.mass = targetMass;
+            chassisBody.invMass = 1.0 / targetMass;
+            chassisBody.updateMassProperties();
+            chassisBody.inertia.scale(8.5, chassisBody.inertia);
+            chassisBody.invInertia.x = 1.0 / chassisBody.inertia.x;
+            chassisBody.invInertia.y = 1.0 / chassisBody.inertia.y;
+            chassisBody.invInertia.z = 1.0 / chassisBody.inertia.z;
+        } else if (chassisBody.mass !== targetMass) {
             chassisBody.mass = targetMass;
             chassisBody.invMass = 1.0 / targetMass;
             chassisBody.updateMassProperties();
@@ -983,6 +1008,17 @@ function update() {
                 v.raycastVehicle.setBrake(maxBrake, 1);
                 v.raycastVehicle.setBrake(maxBrake, 2);
                 v.raycastVehicle.setBrake(maxBrake, 3);
+            } else if (v.gear === 'P') {
+                v.raycastVehicle.setSteeringValue(0, 0);
+                v.raycastVehicle.setSteeringValue(0, 1);
+                v.raycastVehicle.applyEngineForce(0, 0);
+                v.raycastVehicle.applyEngineForce(0, 1);
+                v.raycastVehicle.applyEngineForce(0, 2);
+                v.raycastVehicle.applyEngineForce(0, 3);
+                v.raycastVehicle.setBrake(3000, 0);
+                v.raycastVehicle.setBrake(3000, 1);
+                v.raycastVehicle.setBrake(3000, 2);
+                v.raycastVehicle.setBrake(3000, 3);
             } else {
                 // Swapped sign: gas = -1 when W is pressed (forward), gas = 1 when S is pressed (reverse)
                 const gas = keys['KeyW'] ? -1 : (keys['KeyS'] ? 1 : 0);

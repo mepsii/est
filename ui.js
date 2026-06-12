@@ -929,11 +929,21 @@ window.addEventListener('keydown', e => {
     keys[e.code] = true;
     
     if (player.inVehicle) {
+        let v = player.inVehicle;
+        let currentGear = v.gear || 'D';
         if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
-            player.inVehicle.gear = 'D';
+            if (currentGear === 'L') {
+                v.gear = 'D';
+            } else if (currentGear === 'D') {
+                v.gear = 'P';
+            }
             e.preventDefault();
         } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
-            player.inVehicle.gear = 'L';
+            if (currentGear === 'P') {
+                v.gear = 'D';
+            } else if (currentGear === 'D') {
+                v.gear = 'L';
+            }
             e.preventDefault();
         }
     }
@@ -949,6 +959,7 @@ window.addEventListener('keydown', e => {
     if (e.key.toLowerCase() === 'e') {
         if (player.inVehicle) {
             let v = player.inVehicle;
+            v.gear = 'P';
             player.inVehicle = null;
             player.x = v.x - Math.cos(v.angle) * 3;
             player.y = v.y - Math.sin(v.angle) * 3;
