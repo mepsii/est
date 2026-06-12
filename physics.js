@@ -645,7 +645,7 @@ function initCannonVehicle(v) {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, 0, -1), // points down
         suspensionStiffness: 55, // Middle-ground spring stiffness for balanced, realistic weight
-        suspensionRestLength: 0.65, // Level default rest length to compensate for static compression
+        suspensionRestLength: 0.55, // Level default rest length to compensate for static compression
         maxSuspensionForce: 100000,
         maxSuspensionTravel: 0.90, // Large suspension travel limit allowing tires to clip up into body under compression
         dampingRelaxation: 4.8, // Controlled relaxation damping to prevent bounce/stoppies
@@ -669,13 +669,14 @@ function initCannonVehicle(v) {
     };
 
     // Add 4 wheels at connection points in local coordinates.
-    // Level connection height (Z = -0.30 for all wheels) to keep visual body ride height level.
+    // Level connection height (Z = -0.20 for all wheels) to keep visual body ride height level and low.
     // Center the wheelbase on the physical center of mass (X=0.0) to balance weight distribution (approx 50/50 front/rear).
     // Front wheels are set to 1.05 and rear wheels to -1.10.
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, 0.95, -0.30) }); // Front Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, -0.95, -0.30) });  // Front Right
-    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, 0.95, -0.30) }); // Rear Left
-    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, -0.95, -0.30) });  // Rear Right
+    // Track width narrowed to Y = +/- 0.70 to tuck the wheels even further under the body fenders.
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, 0.70, -0.20) }); // Front Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(1.05, -0.70, -0.20) });  // Front Right
+    vehicle.addWheel({ ...leftWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, 0.70, -0.20) }); // Rear Left
+    vehicle.addWheel({ ...rightWheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(-1.10, -0.70, -0.20) });  // Rear Right
 
     // Override updateVehicle to apply suspension forces vertically along the local suspension axis 
     // (-directionWorld) instead of the ground hit normal. This fixes Cannon's lateral impulse bug 
@@ -685,7 +686,10 @@ function initCannonVehicle(v) {
         var numWheels = wheelInfos.length;
         var chassisBody = this.chassisBody;
 
-        // Dynamically adjust mass and suspension properties based on gear
+        // Dynamically adjust mass, stiffness, and friction based on gear to give Low gear extra traction/stability cheat.
+        // To guarantee the visual ride height remains exactly identical (no visual sag/popping when shifting),
+        // we scale the suspension stiffness in Low gear (68.75) to perfectly balance the increased load (mass),
+        // and we cancel the downforce compression using suspension compensation, allowing us to use a constant suspension rest length (0.55).
         v.gear = v.gear || 'D';
         var targetMass = v.gear === 'L' ? 3500 : 2800;
         if (chassisBody.mass !== targetMass) {
@@ -698,13 +702,18 @@ function initCannonVehicle(v) {
             chassisBody.invInertia.z = 1.0 / chassisBody.inertia.z;
         }
 
-        var targetStiffness = v.gear === 'L' ? 45 : 55; // Middle ground stiffness: 55 in D, 45 in L for off-road crawls
-        // Since the center of mass is centered between the axles, weight distribution is symmetric (approx 50/50).
-        // Front and rear rest lengths are set equal to keep the vehicle perfectly level and flush in all gears.
-        var targetRestLength = v.gear === 'L' ? 0.80 : 0.60;
+        var stiffnessScale = targetMass / 2800; // 1.25 in Low gear, 1.0 in Drive
+        var targetStiffness = 55 * stiffnessScale; // 68.75 in Low gear, 55 in Drive
+        var targetRestLength = 0.55; // Identical visual ride height in all gears
+        var targetFriction = v.gear === 'L' ? 2.4 : 1.6; // Low gear gets a major tire traction cheat (50% more grip)
+        var targetDampingRelaxation = 4.8 * stiffnessScale; // 6.0 in Low gear
+        var targetDampingCompression = 3.5 * stiffnessScale; // 4.375 in Low gear
         for (var i = 0; i < numWheels; i++) {
             wheelInfos[i].suspensionStiffness = targetStiffness;
             wheelInfos[i].suspensionRestLength = targetRestLength;
+            wheelInfos[i].frictionSlip = targetFriction;
+            wheelInfos[i].dampingRelaxation = targetDampingRelaxation;
+            wheelInfos[i].dampingCompression = targetDampingCompression;
         }
 
         for (var i = 0; i < numWheels; i++) {
@@ -720,35 +729,12 @@ function initCannonVehicle(v) {
             this.currentVehicleSpeedKmHour *= -1;
         }
 
-        // simulate suspension
+        // simulate suspension raycasts
         for (var i = 0; i < numWheels; i++) {
             this.castRay(wheelInfos[i]);
         }
 
-        this.updateSuspension(timeStep);
-
-        var impulse = new CANNON.Vec3();
-        for (var i = 0; i < numWheels; i++) {
-            var wheel = wheelInfos[i];
-            var suspensionForce = wheel.suspensionForce;
-            if (suspensionForce > wheel.maxSuspensionForce) {
-                suspensionForce = wheel.maxSuspensionForce;
-            }
-            // Apply suspension force vertically along the world Z axis (0, 0, 1) rather than the tilted
-            // local axis direction. This completely eliminates phantom horizontal forces, preventing
-            // the parked/empty vehicle from slowly rolling backward or forward when on a slight pitch tilt.
-            var suspensionDirection = new CANNON.Vec3(0, 0, 1);
-            suspensionDirection.scale(suspensionForce * timeStep, impulse);
-
-            // Apply the suspension impulse at the wheel's chassis connection point in world space.
-            // We MUST pass wheel.chassisConnectionPointWorld (absolute world coordinates) rather than
-            // a body-relative vector, as Cannon.js's applyImpulse expects an absolute world position 
-            // for calculating torque correctly. This fixes the catastrophic glitch where the truck 
-            // spun, spazzed out, and launched across the map when moving away from the coordinate origin.
-            chassisBody.applyImpulse(impulse, wheel.chassisConnectionPointWorld);
-        }
-
-        // Apply ground magnetism (downforce) to stabilize climbing on steep voxel terrain
+        // Calculate ground magnetism (downforce) first, so we can apply suspension force compensation
         var avgNormal = new CANNON.Vec3(0, 0, 0);
         var contacts = 0;
         for (var i = 0; i < numWheels; i++) {
@@ -766,21 +752,12 @@ function initCannonVehicle(v) {
         }
         this.smoothContactRatio += (targetContact - this.smoothContactRatio) * 0.35;
 
-        if (this.smoothContactRatio > 0.01) {
-            // Calculate slope sideways direction
-            var slopeSideways = new CANNON.Vec3();
-            var hasSideways = false;
-            if (contacts > 0) {
-                avgNormal.normalize();
-                var gravityDir = new CANNON.Vec3(0, 0, -1);
-                avgNormal.cross(gravityDir, slopeSideways);
-                var sidewaysLen = slopeSideways.norm();
-                if (sidewaysLen > 0.001) {
-                    slopeSideways.scale(1.0 / sidewaysLen, slopeSideways);
-                    hasSideways = true;
-                }
-            }
+        var localForce = new CANNON.Vec3(0, 0, 0);
+        var worldForce = new CANNON.Vec3(0, 0, 0);
+        var forcePosition = new CANNON.Vec3(chassisBody.position.x, chassisBody.position.y, chassisBody.position.z);
+        var downwardZ = 0;
 
+        if (this.smoothContactRatio > 0.01) {
             // Get local vehicle down axis in world coordinates
             var localDown = new CANNON.Vec3(0, 0, -1);
             var worldDown = new CANNON.Vec3();
@@ -797,7 +774,7 @@ function initCannonVehicle(v) {
             var rollSteepness = Math.abs(rgtAxis.z);
             
             // 1. Incline (pitch) boost: increase downforce when going straight up/down steep inclines to prevent slipping
-            // Crawl gear gets 1.5x downforce boost (base 6750 N, max 13500 N total downforce)
+            // Crawl gear gets 1.5x downforce boost (base 6750 N, max 13500 N total downforce) for climbing traction
             var gearScale = v.gear === 'L' ? 1.5 : 1.0;
             var baseMagnet = 4500 * gearScale; 
             var inclineBoost = Math.min(1.0, pitchSteepness / 0.5) * 4500 * gearScale; 
@@ -808,11 +785,10 @@ function initCannonVehicle(v) {
             var speedMph = speedKmH * 0.621371;
             var speedScale = 1.0;
             if (speedMph > 30) {
-                speedScale = 1.0 - Math.min(0.85, (speedMph - 30) / 15); // fade starts at 30 mph, reaching 85% reduction at 45 mph
+                speedScale = 1.0 - Math.min(0.85, (speedMph - 30) / 15);
             }
             
             // 3. Sideways roll scaling: reduce downforce slightly when side-hilling to keep steering feeling responsive
-            // Capped at 30% reduction (retaining 70% grip) to keep the truck glued sideways
             var rollScale = 1.0 - Math.min(0.30, rollSteepness / 0.5);
             
             // Calculate final force vector
@@ -823,11 +799,8 @@ function initCannonVehicle(v) {
             var worldForceAmount = magnetForceAmount * 0.40;
             
             // Apply local downforce at center of mass (perpendicular to chassis)
-            // Project worldDown onto the contact normal avgNormal to ensure the force is strictly
-            // perpendicular to the slope, completely eliminating any horizontal tangent components
-            // that cause lateral acceleration glitches and side-sliding on diagonal inclines.
-            var localForce = new CANNON.Vec3();
             if (contacts > 0) {
+                avgNormal.normalize();
                 var dot = worldDown.dot(avgNormal);
                 // Only project if worldDown points towards the ground (dot < 0)
                 if (dot < 0) {
@@ -839,25 +812,58 @@ function initCannonVehicle(v) {
                 worldDown.scale(localForceAmount, localForce);
             }
             
-            chassisBody.applyForce(localForce, chassisBody.position);
-            
             // Apply self-righting downforce below the center of mass in the direction of the slope normal (CoG cheat)
-            // This aligns the chassis with the terrain slope dynamically, preventing horizontal climbing glitches.
             var cgOffsetZ = v.gear === 'L' ? -1.20 : -0.70;
             var localOffset = new CANNON.Vec3(0, 0, cgOffsetZ);
             var worldOffset = new CANNON.Vec3();
             chassisBody.vectorToWorldFrame(localOffset, worldOffset);
-            var forcePosition = new CANNON.Vec3();
             chassisBody.position.vadd(worldOffset, forcePosition);
             
             var selfRightingDirection = new CANNON.Vec3(0, 0, -1);
             if (contacts > 0) {
-                // Point force perpendicular into the slope normal to align the chassis with the hill
                 avgNormal.scale(-1, selfRightingDirection);
             }
             
-            var worldForce = new CANNON.Vec3();
             selfRightingDirection.scale(worldForceAmount, worldForce);
+            
+            // Calculate total downward vertical force from magnetism
+            downwardZ = localForce.z + worldForce.z;
+        }
+
+        // Run the suspension physics update to calculate base suspension forces
+        this.updateSuspension(timeStep);
+
+        // To keep the ride height exactly the same under dynamic downforce/magnetism,
+        // we cancel the vertical suspension compression on the ground. We add a compensating
+        // upward force to each wheel that is in contact, so the net vertical force on the chassis
+        // is zero, but the wheels still receive the full downforce for tire friction calculations.
+        if (contacts > 0 && downwardZ < 0) {
+            var suspensionCompensation = -downwardZ / contacts;
+            for (var i = 0; i < numWheels; i++) {
+                var wheel = wheelInfos[i];
+                if (wheel.isInContact) {
+                    wheel.suspensionForce += suspensionCompensation;
+                }
+            }
+        }
+
+        // Apply suspension impulses to the chassis body
+        var impulse = new CANNON.Vec3();
+        for (var i = 0; i < numWheels; i++) {
+            var wheel = wheelInfos[i];
+            var suspensionForce = wheel.suspensionForce;
+            if (suspensionForce > wheel.maxSuspensionForce) {
+                suspensionForce = wheel.maxSuspensionForce;
+            }
+            // Apply suspension force vertically along the world Z axis (0, 0, 1) rather than the tilted local axis
+            var suspensionDirection = new CANNON.Vec3(0, 0, 1);
+            suspensionDirection.scale(suspensionForce * timeStep, impulse);
+            chassisBody.applyImpulse(impulse, wheel.chassisConnectionPointWorld);
+        }
+
+        // Apply physical magnetism forces to the chassis body
+        if (this.smoothContactRatio > 0.01) {
+            chassisBody.applyForce(localForce, chassisBody.position);
             chassisBody.applyForce(worldForce, forcePosition);
         }
 
