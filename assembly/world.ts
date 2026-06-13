@@ -537,18 +537,36 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
         }
 
         if (z < roadZ - 1) {
-          if ((z as f64) > t.baseH) {
-            // Generate support pillars under the bridge
-            let distAlongSeg = t.roadT * t.roadSegLen;
-            let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
-            if (isPillar) {
-              return t.roadType == 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
+          let naturalV = 0;
+          let density = t.baseH - (z as f64);
+          if (density < -15.0) {
+            if (z <= (t.oceanSurface as i32)) naturalV = 2;
+            else if (t.isLake && z <= (t.lakeSurface as i32)) naturalV = 2;
+          } else if (density > 20.0) {
+            naturalV = 1;
+          } else {
+            let structure = noise3D((x as f64) * 0.04, (y as f64) * 0.04, (z as f64) * 0.04);
+            let densityAdjusted = density + structure * 10.0;
+            if (densityAdjusted > 0.0) {
+              naturalV = 1;
+            } else {
+              if (z <= (t.oceanSurface as i32)) naturalV = 2;
+              else if (t.isLake && z <= (t.lakeSurface as i32)) naturalV = 2;
             }
-
-            if (z <= (t.oceanSurface as i32)) return 2;
-            if (t.isLake && z <= (t.lakeSurface as i32)) return 2;
-            return 0; // Air under deck
           }
+
+          if (naturalV == 1) {
+            return 1;
+          }
+
+          // Generate support pillars under the bridge
+          let distAlongSeg = t.roadT * t.roadSegLen;
+          let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
+          if (isPillar) {
+            return t.roadType == 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
+          }
+
+          return naturalV;
         }
       }
     } else {

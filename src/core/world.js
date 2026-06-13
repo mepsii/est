@@ -479,15 +479,36 @@ function getVoxelJS(x, y, z, t = null) {
                 }
 
                 if (z < roadZ - 1) {
-                    if (z > t.baseH) {
-                        let distAlongSeg = t.roadT * t.roadSegLen;
-                        let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
-                        if (isPillar) return t.roadType === 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
-
-                        if (z <= t.oceanSurface) return 2;
-                        if (t.isLake && z <= t.lakeSurface) return 2;
-                        return 0;
+                    let naturalV = 0;
+                    let density = t.baseH - z;
+                    if (density < -15) {
+                        if (z <= t.oceanSurface) naturalV = 2;
+                        else if (t.isLake && z <= t.lakeSurface) naturalV = 2;
+                    } else if (density > 20) {
+                        naturalV = 1;
+                    } else {
+                        let structure = noise3D(x * 0.04, y * 0.04, z * 0.04);
+                        let densityAdjusted = density + structure * 10.0;
+                        if (densityAdjusted > 0.0) {
+                            naturalV = 1;
+                        } else {
+                            if (z <= t.oceanSurface) naturalV = 2;
+                            else if (t.isLake && z <= t.lakeSurface) naturalV = 2;
+                        }
                     }
+
+                    if (naturalV === 1) {
+                        return 1;
+                    }
+
+                    // Generate support pillars under the bridge
+                    let distAlongSeg = t.roadT * t.roadSegLen;
+                    let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
+                    if (isPillar) {
+                        return t.roadType === 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
+                    }
+
+                    return naturalV;
                 }
             }
         } else {
