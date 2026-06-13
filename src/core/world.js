@@ -419,9 +419,11 @@ function getTerrainJS(x, y) {
         if (roadH > baseH + 3.0) {
             // Bridge: do not modify baseH
         } else {
+            let widthLimit = (roadType === 8 || roadType === 18) ? 4.2 : 3.0;
+            let blendLimit = widthLimit + 3.0;
             let alpha = 0;
-            if (roadMinDist < 3.0) alpha = 1.0;
-            else if (roadMinDist < 6.0) alpha = 1.0 - (roadMinDist - 3.0) / 3.0;
+            if (roadMinDist < widthLimit) alpha = 1.0;
+            else if (roadMinDist < blendLimit) alpha = 1.0 - (roadMinDist - widthLimit) / 3.0;
             baseH = lerp(baseH, roadH, alpha);
         }
     }
@@ -460,22 +462,23 @@ function getVoxelJS(x, y, z, t = null) {
     if (!t) t = getTerrainFast(x, y);
 
     if (t.roadType && t.roadType !== 0) {
+        let widthLimit = (t.roadType === 8 || t.roadType === 18) ? 4.2 : 3.0;
         let isBridge = (t.roadH > t.baseH + 3.0);
         if (isBridge) {
-            if (t.roadMinDist < 3.0) {
-                let isBarrier = (t.roadMinDist >= 2.4);
+            if (t.roadMinDist < widthLimit) {
+                let isBarrier = (t.roadMinDist >= (widthLimit - 0.6));
                 let roadZ = Math.floor(t.roadH);
 
                 if (isBarrier) {
-                    if (z === roadZ || z === roadZ + 1) return t.roadType === 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
+                    if (z === roadZ || z === roadZ + 1 || z === roadZ - 1) return t.roadType === 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
                     if (z > roadZ + 1) return 0;
                 } else {
-                    if (z === roadZ) {
+                    if (z === roadZ || z === roadZ - 1) {
                         return t.roadType;
                     }
                 }
 
-                if (z < roadZ) {
+                if (z < roadZ - 1) {
                     if (z > t.baseH) {
                         let distAlongSeg = t.roadT * t.roadSegLen;
                         let isPillar = (t.roadMinDist < 1.0) && (Math.abs(distAlongSeg - Math.round(distAlongSeg / 12.0) * 12.0) < 1.0);
@@ -488,7 +491,7 @@ function getVoxelJS(x, y, z, t = null) {
                 }
             }
         } else {
-            if (t.roadMinDist < 3.0) {
+            if (t.roadMinDist < widthLimit) {
                 let roadZ = Math.floor(t.baseH);
                 if (z === roadZ) {
                     return t.roadType;
@@ -511,9 +514,10 @@ function getVoxelJS(x, y, z, t = null) {
     if (t.roadType && t.roadType !== 0) {
         let isBridge = (t.roadH > t.baseH + 3.0);
         if (!isBridge) {
-            let alpha = 0;
-            if (t.roadMinDist < 3.0) alpha = 1.0;
-            else if (t.roadMinDist < 6.0) alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+            let widthLimit = (t.roadType === 8 || t.roadType === 18) ? 4.2 : 3.0;
+            let blendLimit = widthLimit + 3.0;
+            if (t.roadMinDist < widthLimit) alpha = 1.0;
+            else if (t.roadMinDist < blendLimit) alpha = 1.0 - (t.roadMinDist - widthLimit) / 3.0;
             structureScale = 1.0 - alpha;
         }
     }
@@ -539,6 +543,12 @@ function isVoxelSolid(v) {
 
 function isVoxelCube(v) {
     return v >= 3 && v !== 6 && v !== 7 && v !== 8;
+}
+
+function shouldRenderFace(v, neighbor) {
+    if (!isVoxelSolid(neighbor)) return true;
+    if (isVoxelCube(v) !== isVoxelCube(neighbor)) return true;
+    return false;
 }
 
 function getSolidFast(x, y, z) {
@@ -581,17 +591,6 @@ function getVoxelColorJS(x, y, z, vType = null) {
     }
     if (v === 8 || v === 18) {
         let noise = hash(x, y, z) * 8;
-        let t = getTerrainFast(x, y);
-        if ((t.roadType === 8 || t.roadType === 18) && t.roadMinDist < 0.15) {
-            let distAlongSeg = t.roadT * t.roadSegLen;
-            if (Math.floor(distAlongSeg / 4.0) % 2 === 0) {
-                return {
-                    r: Math.max(0, Math.min(255, 225 + noise)) | 0,
-                    g: Math.max(0, Math.min(255, 185 + noise)) | 0,
-                    b: Math.max(0, Math.min(255, 40 + noise)) | 0
-                };
-            }
-        }
         return {
             r: Math.max(0, Math.min(255, 55 + noise)) | 0,
             g: Math.max(0, Math.min(255, 55 + noise)) | 0,
@@ -682,19 +681,23 @@ function getSmoothVertex(cx, cy, cz) {
 
     // Snap roadway surface vertices to the smooth grade of the road
     let t = getTerrainFast(cx, cy);
-    if (t.roadType && t.roadMinDist < 6.0) {
-        let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
-        if (cz > Math.floor(targetH) + 0.5 && Math.abs(cz - targetH) < 1.2) {
-            let alpha = 0.0;
-            if (t.roadMinDist < 3.0) {
-                alpha = 1.0;
-            } else {
-                alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+    if (t.roadType) {
+        let widthLimit = (t.roadType === 8 || t.roadType === 18) ? 4.2 : 3.0;
+        let blendLimit = widthLimit + 3.0;
+        if (t.roadMinDist < blendLimit) {
+            let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
+            if (cz > Math.floor(targetH) + 0.5 && Math.abs(cz - targetH) < 1.2) {
+                let alpha = 0.0;
+                if (t.roadMinDist < widthLimit) {
+                    alpha = 1.0;
+                } else {
+                    alpha = 1.0 - (t.roadMinDist - widthLimit) / 3.0;
+                }
+                let roadZ = targetH;
+                resX = resX * (1.0 - alpha) + cx * alpha;
+                resY = resY * (1.0 - alpha) + cy * alpha;
+                resZ = resZ * (1.0 - alpha) + roadZ * alpha;
             }
-            let roadZ = targetH;
-            resX = resX * (1.0 - alpha) + cx * alpha;
-            resY = resY * (1.0 - alpha) + cy * alpha;
-            resZ = resZ * (1.0 - alpha) + roadZ * alpha;
         }
     }
 
@@ -836,12 +839,12 @@ function buildChunkMeshJS(cx, cy) {
                     let py = getVoxel(x, y+1, z);
                     let ny = getVoxel(x, y-1, z);
 
-                    if (z === MAX_Z - 1 || !isVoxelSolid(up)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col, v);
-                    if (z === 0 || !isVoxelSolid(dn)) addFace(x, y, z, [x, y+1, z], [x+1, y+1, z], [x+1, y, z], [x, y, z], 0, 0, -1, 0.3, col, v);
-                    if (!isVoxelSolid(px)) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, col, v);
-                    if (!isVoxelSolid(nx)) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, col, v);
-                    if (!isVoxelSolid(py)) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col, v);
-                    if (!isVoxelSolid(ny)) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, v);
+                    if (z === MAX_Z - 1 || shouldRenderFace(v, up)) addFace(x, y, z, [x, y, z+1], [x+1, y, z+1], [x+1, y+1, z+1], [x, y+1, z+1], 0, 0, 1, 1.0, col, v);
+                    if (z === 0 || shouldRenderFace(v, dn)) addFace(x, y, z, [x, y+1, z], [x+1, y+1, z], [x+1, y, z], [x, y, z], 0, 0, -1, 0.3, col, v);
+                    if (shouldRenderFace(v, px)) addFace(x, y, z, [x+1, y, z], [x+1, y+1, z], [x+1, y+1, z+1], [x+1, y, z+1], 1, 0, 0, 0.7, col, v);
+                    if (shouldRenderFace(v, nx)) addFace(x, y, z, [x, y+1, z], [x, y, z], [x, y, z+1], [x, y+1, z+1], -1, 0, 0, 0.5, col, v);
+                    if (shouldRenderFace(v, py)) addFace(x, y, z, [x+1, y+1, z], [x, y+1, z], [x, y+1, z+1], [x+1, y+1, z+1], 0, 1, 0, 0.8, col, v);
+                    if (shouldRenderFace(v, ny)) addFace(x, y, z, [x, y, z], [x+1, y, z], [x+1, y, z+1], [x, y, z+1], 0, -1, 0, 0.6, col, v);
                 } 
                 else if (v === 2) { 
                     let colorNoise = hash(x, y, z) * 10;
@@ -961,7 +964,10 @@ function getEntityAt(gx, gy) {
     if (Math.sqrt(gx*gx + gy*gy) < 20) return null; 
     
     let t = getTerrainFast(gx, gy);
-    if (t.roadType && t.roadType !== 0 && t.roadMinDist < 6.0) return null;
+    if (t.roadType && t.roadType !== 0) {
+        let blendLimit = (t.roadType === 8 || t.roadType === 18) ? 7.2 : 6.0;
+        if (t.roadMinDist < blendLimit) return null;
+    }
     if (t.isLake || t.baseH <= t.oceanSurface) return null; 
 
     let cluster = fbm2D(gx * 0.1, gy * 0.1, 2);
@@ -1097,7 +1103,8 @@ function getMapChunk(cx, cy) {
 
     if (getVoxel(Math.floor(cx_offset), Math.floor(cy_offset), bZInt + 1) !== 2) {
         let centerT = getTerrainFast(cx_offset, cy_offset);
-        let onRoad = centerT.roadType && centerT.roadMinDist < 6.0;
+        let blendLimit = (centerT.roadType === 8 || centerT.roadType === 18) ? 7.2 : 6.0;
+        let onRoad = centerT.roadType && centerT.roadMinDist < blendLimit;
         if (!onRoad) {
             if (chunkHash > 0.94) {
                 let items = new Array(10).fill(null); 

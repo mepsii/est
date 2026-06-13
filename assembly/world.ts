@@ -431,11 +431,13 @@ function getTerrain(x: f64, y: f64): TerrainData {
     if (roadH > baseH + 3.0) {
       // Bridge: do not modify baseH (keep natural valley open)
     } else {
+      let widthLimit: f64 = (roadType == 8 || roadType == 18) ? 4.2 : 3.0;
+      let blendLimit: f64 = widthLimit + 3.0;
       let alpha = 0.0;
-      if (roadMinDist < 3.0) {
+      if (roadMinDist < widthLimit) {
         alpha = 1.0;
-      } else if (roadMinDist < 6.0) {
-        alpha = 1.0 - (roadMinDist - 3.0) / 3.0;
+      } else if (roadMinDist < blendLimit) {
+        alpha = 1.0 - (roadMinDist - widthLimit) / 3.0;
       }
       baseH = lerp(baseH, roadH, alpha);
     }
@@ -492,6 +494,13 @@ function isVoxelCube(v: i32): bool {
   return v >= 3 && v != 6 && v != 7 && v != 8;
 }
 
+@inline
+function shouldRenderFace(v: i32, neighbor: i32): bool {
+  if (!isVoxelSolid(neighbor)) return true;
+  if (isVoxelCube(v) != isVoxelCube(neighbor)) return true;
+  return false;
+}
+
 // --- Voxel Storage ---
 function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
   if (z < 0) return 1;
@@ -505,20 +514,21 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
 
   if (t.roadType != 0) {
     let isBridge = (t.roadH > t.baseH + 3.0);
+    let widthLimit: f64 = (t.roadType == 8 || t.roadType == 18) ? 4.2 : 3.0;
     if (isBridge) {
-      if (t.roadMinDist < 3.0) {
-        let isBarrier = (t.roadMinDist >= 2.4);
+      if (t.roadMinDist < widthLimit) {
+        let isBarrier = (t.roadMinDist >= (widthLimit - 0.6));
         let roadZ = Math.floor(t.roadH) as i32;
 
         if (isBarrier) {
-          if (z == roadZ || z == roadZ + 1) {
+          if (z == roadZ || z == roadZ + 1 || z == roadZ - 1) {
             return t.roadType == 7 ? 4 : 3; // Wood (4) for dirt road, Concrete (3) for asphalt
           }
           if (z > roadZ + 1) {
             return 0; // Air above barrier
           }
         } else {
-          if (z == roadZ) {
+          if (z == roadZ || z == roadZ - 1) {
             return t.roadType; // Asphalt (8) or Dirt (7) road deck
           }
           if (z > roadZ) {
@@ -526,7 +536,7 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
           }
         }
 
-        if (z < roadZ) {
+        if (z < roadZ - 1) {
           if ((z as f64) > t.baseH) {
             // Generate support pillars under the bridge
             let distAlongSeg = t.roadT * t.roadSegLen;
@@ -542,7 +552,7 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
         }
       }
     } else {
-      if (t.roadMinDist < 3.0) {
+      if (t.roadMinDist < widthLimit) {
         let roadZ = Math.floor(t.baseH) as i32;
         if (z == roadZ) {
           return t.roadType; // Road surface block
@@ -565,11 +575,13 @@ function getVoxel(x: i32, y: i32, z: i32, t: TerrainData): i32 {
   if (t.roadType != 0) {
     let isBridge = (t.roadH > t.baseH + 3.0);
     if (!isBridge) {
+      let widthLimit: f64 = (t.roadType == 8 || t.roadType == 18) ? 4.2 : 3.0;
+      let blendLimit: f64 = widthLimit + 3.0;
       let alpha = 0.0;
-      if (t.roadMinDist < 3.0) {
+      if (t.roadMinDist < widthLimit) {
         alpha = 1.0;
-      } else if (t.roadMinDist < 6.0) {
-        alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+      } else if (t.roadMinDist < blendLimit) {
+        alpha = 1.0 - (t.roadMinDist - widthLimit) / 3.0;
       }
       structureScale = 1.0 - alpha;
     }
@@ -643,15 +655,6 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
   if (v == 8 || v == 18) {
     let col = new ColorData();
     let noise = hash(x as f64, y as f64, z as f64) * 8.0;
-    if ((t.roadType == 8 || t.roadType == 18) && t.roadMinDist < 0.15) {
-      let distAlongSeg = t.roadT * t.roadSegLen;
-      if ((Math.floor(distAlongSeg / 4.0) as i32) % 2 == 0) {
-        col.r = clampColor(225.0 + noise);
-        col.g = clampColor(185.0 + noise);
-        col.b = clampColor(40.0 + noise);
-        return col;
-      }
-    }
     col.r = clampColor(55.0 + noise);
     col.g = clampColor(55.0 + noise);
     col.b = clampColor(58.0 + noise);
@@ -832,19 +835,23 @@ function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx:
 
   // Snap roadway surface vertices to the smooth grade of the road
   let t = getTerrainFast(gx as i32, gy as i32);
-  if (t.roadType != 0 && t.roadMinDist < 6.0) {
-    let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
-    if ((gz as f64) > Math.floor(targetH) + 0.5 && Math.abs((gz as f64) - targetH) < 1.2) {
-      let alpha = 0.0;
-      if (t.roadMinDist < 3.0) {
-        alpha = 1.0;
-      } else {
-        alpha = 1.0 - (t.roadMinDist - 3.0) / 3.0;
+  if (t.roadType != 0) {
+    let widthLimit: f64 = (t.roadType == 8 || t.roadType == 18) ? 4.2 : 3.0;
+    let blendLimit: f64 = widthLimit + 3.0;
+    if (t.roadMinDist < blendLimit) {
+      let targetH = (t.roadH > t.baseH + 3.0) ? t.roadH : t.baseH;
+      if ((gz as f64) > Math.floor(targetH) + 0.5 && Math.abs((gz as f64) - targetH) < 1.2) {
+        let alpha = 0.0;
+        if (t.roadMinDist < widthLimit) {
+          alpha = 1.0;
+        } else {
+          alpha = 1.0 - (t.roadMinDist - widthLimit) / 3.0;
+        }
+        let roadZ = targetH as f32;
+        res.x = (res.x * (1.0 - alpha as f32) + gx * alpha as f32) as f32;
+        res.y = (res.y * (1.0 - alpha as f32) + gy * alpha as f32) as f32;
+        res.z = (res.z * (1.0 - alpha as f32) + roadZ * alpha as f32) as f32;
       }
-      let roadZ = targetH as f32;
-      res.x = (res.x * (1.0 - alpha as f32) + gx * alpha as f32) as f32;
-      res.y = (res.y * (1.0 - alpha as f32) + gy * alpha as f32) as f32;
-      res.z = (res.z * (1.0 - alpha as f32) + roadZ * alpha as f32) as f32;
     }
   }
 
@@ -1009,7 +1016,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
           let fR = col.r, fG = col.g, fB = col.b, fA: u8 = 255;
 
           // up
-          if (lz == 95 || !isVoxelSolid(up)) {
+          if (lz == 95 || shouldRenderFace(v, up)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy) as f32, (lz+1) as f32,
                     (gx+1) as f32, (gy) as f32, (lz+1) as f32,
@@ -1018,7 +1025,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 0, 1, 1.0, fR, fG, fB, fA, v, voxels, t);
           }
           // dn
-          if (lz == 0 || !isVoxelSolid(dn)) {
+          if (lz == 0 || shouldRenderFace(v, dn)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
@@ -1027,7 +1034,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 0, -1, 0.3, fR, fG, fB, fA, v, voxels, t);
           }
           // px
-          if (!isVoxelSolid(px)) {
+          if (shouldRenderFace(v, px)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx+1) as f32, (gy) as f32, (lz) as f32,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
@@ -1036,7 +1043,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     1, 0, 0, 0.7, fR, fG, fB, fA, v, voxels, t);
           }
           // nx
-          if (!isVoxelSolid(nx)) {
+          if (shouldRenderFace(v, nx)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
                     (gx) as f32, (gy) as f32, (lz) as f32,
@@ -1045,7 +1052,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     -1, 0, 0, 0.5, fR, fG, fB, fA, v, voxels, t);
           }
           // py
-          if (!isVoxelSolid(py)) {
+          if (shouldRenderFace(v, py)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
@@ -1054,7 +1061,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 1, 0, 0.8, fR, fG, fB, fA, v, voxels, t);
           }
           // ny
-          if (!isVoxelSolid(ny)) {
+          if (shouldRenderFace(v, ny)) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy) as f32, (lz) as f32,
                     (gx+1) as f32, (gy) as f32, (lz) as f32,
