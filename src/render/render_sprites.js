@@ -183,7 +183,7 @@ function getMuzzleWorldPos() {
         let cosH = Math.cos(rotAngle);
         let sinH = Math.sin(rotAngle);
         
-        let pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
+        let pitchAngle = player.pitch;
         let rArmPitch = 1.57 - pitchAngle;
         let rElbowBend = 0.1;
         

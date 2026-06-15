@@ -216,8 +216,7 @@ function add3DZombieFaces(e, ambient) {
             let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
             let rx = dx * cosA + dy * sinA;
             let rz = dz;
-            let fov = canvas.width * baseZoom;
-            let pitchAngle = Math.atan2(currentCamPitch, fov);
+            let pitchAngle = currentCamPitch;
             let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
             let cz_depth = rz * sinP + rx * cosP;
 
@@ -348,8 +347,7 @@ function add3DLimbFaces(b, ambient) {
         let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
         let rx = dx * cosA + dy * sinA;
         let rz = dz;
-        let fov = canvas.width * baseZoom;
-        let pitchAngle = Math.atan2(currentCamPitch, fov);
+        let pitchAngle = currentCamPitch;
         let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
         let cz_depth = rz * sinP + rx * cosP;
 
@@ -399,8 +397,7 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
     let headPitch = 0;
     let headYaw = 0;
 
-    const fov = canvas.width * baseZoom;
-    const pitchAngle = Math.atan2(player.pitch, fov);
+    const pitchAngle = player.pitch;
 
     let isSitting = (player.inVehicle !== null);
     let realX, realY, realZ, bodyAngle;
@@ -635,7 +632,7 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
             let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
             let rx_depth = dx * cosA + dy * sinA;
             let rz_depth = dz;
-            let pitchAngle_depth = Math.atan2(currentCamPitch, fov);
+            let pitchAngle_depth = currentCamPitch;
             let cosP = Math.cos(pitchAngle_depth), sinP = Math.sin(pitchAngle_depth);
             let cz_depth = rz_depth * sinP + rx_depth * cosP;
 
@@ -726,7 +723,7 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
                 let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
                 let rx_depth = dx * cosA + dy * sinA;
                 let rz_depth = dz;
-                let pitchAngle_depth = Math.atan2(currentCamPitch, fov);
+                let pitchAngle_depth = currentCamPitch;
                 let cosP = Math.cos(pitchAngle_depth), sinP = Math.sin(pitchAngle_depth);
                 let cz_depth = rz_depth * sinP + rx_depth * cosP;
 

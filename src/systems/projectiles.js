@@ -7,7 +7,7 @@ function updateProjectiles() {
         let w = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
 
         if (w) {
-            const pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
+            const pitchAngle = player.pitch;
             if (w.isMelee) {
                 let hitTarget = null;
                 if (gameState === 'overworld') {
@@ -17,7 +17,7 @@ function updateProjectiles() {
                     let hitAnimalIndex = -1;
 
                     // Set up melee segment from player eye height in player look direction
-                    let pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
+                    let pitchAngle = player.pitch;
                     let waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
                     let startX = player.x;
                     let startY = player.y;

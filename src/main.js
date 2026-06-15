@@ -5,14 +5,14 @@ document.addEventListener('mousemove', (e) => {
         if (freecam) {
             freecamAngle += e.movementX * (isZooming ? 0.001 : 0.003); 
             
-            let maxPitch = canvas.height * 2.5; 
-            freecamPitch -= e.movementY * (isZooming ? 0.5 : 1.5); 
+            let maxPitch = Math.PI / 2 - 0.01; 
+            freecamPitch -= e.movementY * (isZooming ? 0.001 : 0.003); 
             freecamPitch = Math.max(-maxPitch, Math.min(maxPitch, freecamPitch));
         } else {
             player.angle += e.movementX * (isZooming ? 0.001 : 0.003); 
             
-            let maxPitch = canvas.height * 2.5; 
-            player.pitch -= e.movementY * (isZooming ? 0.5 : 1.5); 
+            let maxPitch = Math.PI / 2 - 0.01; 
+            player.pitch -= e.movementY * (isZooming ? 0.001 : 0.003); 
             player.pitch = Math.max(-maxPitch, Math.min(maxPitch, player.pitch)); 
         }
     } 

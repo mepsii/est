@@ -84,7 +84,7 @@ function render() {
     camera.position.set(camX, camZ, camY);
     camera.rotation.set(0, 0, 0, 'YXZ');
     camera.rotation.y = -renderAngle - Math.PI / 2;
-    camera.rotation.x = Math.atan2(renderPitch, canvas.width * baseZoom);
+    camera.rotation.x = renderPitch;
     
     // Smooth camera FOV zooming updates
     let fovDegrees = parseInt(document.getElementById('dbg-fov').value || 80);

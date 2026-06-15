@@ -537,6 +537,7 @@ function getVoxelJS(x, y, z, t = null) {
         if (!isBridge) {
             let widthLimit = (t.roadType === 8 || t.roadType === 18) ? 4.2 : 3.0;
             let blendLimit = widthLimit + 3.0;
+            let alpha = 0.0;
             if (t.roadMinDist < widthLimit) alpha = 1.0;
             else if (t.roadMinDist < blendLimit) alpha = 1.0 - (t.roadMinDist - widthLimit) / 3.0;
             structureScale = 1.0 - alpha;
@@ -955,7 +956,7 @@ function modifyTerrainJS(cx, cy, cz, radius, amount) {
 }
 
 function getAimVoxel(range) {
-    const pitchAngle = Math.atan2(player.pitch, canvas.width * baseZoom);
+    const pitchAngle = player.pitch;
     const waterBob = (gameState === 'overworld' && player.isSubmerged) ? Math.sin(gameTime * 200) * 0.05 : 0;
     const camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
     let step = 0.2;

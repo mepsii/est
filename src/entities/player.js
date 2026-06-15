@@ -133,7 +133,7 @@ function updatePlayer() {
             curSpeed *= 3.0;
         }
         
-        let pitchAngle = Math.atan2(freecamPitch, canvas.width * baseZoom);
+        let pitchAngle = freecamPitch;
         let fwdX = Math.cos(freecamAngle) * Math.cos(pitchAngle);
         let fwdY = Math.sin(freecamAngle) * Math.cos(pitchAngle);
         let fwdZ = Math.sin(pitchAngle);
@@ -182,7 +182,7 @@ function updatePlayer() {
             player.y = v.camY + Math.sin(player.angle) * dirSign * 9.5;
             player.z = v.camZ + 1.0; 
             
-            let pitchTarget = v.pitch * 300; 
+            let pitchTarget = v.pitch; 
             player.pitch += (pitchTarget - player.pitch) * 0.1;
         } else {
             player.x = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32; 
