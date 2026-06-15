@@ -544,3 +544,24 @@ body { margin: 0; overflow: hidden; background-color: #000; }
 #submerged-overlay.visible {
     opacity: 1;
 }
+
+/* MINING PROGRESS CIRCLE */
+#mining-progress-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 60px;
+    z-index: 14;
+    pointer-events: none;
+    display: none;
+}
+#mining-progress-container svg {
+    transform: rotate(-90deg);
+    display: block;
+}
+#mining-progress-circle {
+    transition: stroke-dashoffset 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    filter: drop-shadow(0 0 4px #00ff88);
+}

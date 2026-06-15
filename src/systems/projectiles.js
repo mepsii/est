@@ -2,6 +2,16 @@
 
 function updateProjectiles() {
     if (fireCooldown > 0) fireCooldown--;
+
+    if (miningProgress > 0) {
+        miningResetTimer--;
+        if (miningResetTimer <= 0) {
+            miningProgress = 0;
+            miningTarget = null;
+            if (typeof updateMiningProgressUI === 'function') updateMiningProgressUI();
+        }
+    }
+
     if (isMouseDown && fireCooldown <= 0 && (!player.inVehicle || player.vehicleView === '1st')) {
         let activeItem = inventory[hotbarSelection];
         let w = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
@@ -187,17 +197,63 @@ function updateProjectiles() {
                         let my = isFine ? Math.floor(targetY) : targetY;
                         let mz = isFine ? Math.floor(targetZ) : targetZ;
 
-                        modifyTerrain(mx, my, mz, rad, amt);
-                        
-                        let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
-                        spawnBlood(targetX, targetY, targetZ, pCol, 8); 
+                        if (isPlace || instantBreak) {
+                            modifyTerrain(mx, my, mz, rad, amt);
+                            
+                            let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
+                            spawnBlood(targetX, targetY, targetZ, pCol, 8); 
 
-                        if (isPlace) {
-                            activeItem.count--;
-                            if (activeItem.count <= 0) {
-                                inventory[hotbarSelection] = null;
+                            if (isPlace) {
+                                activeItem.count--;
+                                if (activeItem.count <= 0) {
+                                    inventory[hotbarSelection] = null;
+                                }
+                                updateInventories();
                             }
-                            updateInventories();
+                        } else {
+                            // Progressive mining block breaking
+                            let clickPos = { x: targetX, y: targetY, z: targetZ };
+                            let isSame = false;
+                            
+                            if (miningTarget) {
+                                let dist = Math.hypot(clickPos.x - miningTarget.pos.x, clickPos.y - miningTarget.pos.y, clickPos.z - miningTarget.pos.z);
+                                if (dist <= 1.8) {
+                                    isSame = true;
+                                }
+                            }
+                            
+                            if (isSame) {
+                                miningProgress++;
+                            } else {
+                                miningProgress = 1;
+                                miningTarget = {
+                                    pos: clickPos,
+                                    mx: mx,
+                                    my: my,
+                                    mz: mz,
+                                    rad: rad,
+                                    amt: amt,
+                                    w: w
+                                };
+                            }
+                            
+                            miningResetTimer = 90;
+                            
+                            let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
+                            // Spawn fewer particles on partial hits
+                            spawnBlood(targetX, targetY, targetZ, pCol, 2);
+                            
+                            if (miningProgress >= maxMiningClicks) {
+                                // Break the block!
+                                modifyTerrain(miningTarget.mx, miningTarget.my, miningTarget.mz, miningTarget.rad, miningTarget.amt);
+                                spawnBlood(miningTarget.pos.x, miningTarget.pos.y, miningTarget.pos.z, pCol, 8);
+                                miningProgress = 0;
+                                miningTarget = null;
+                            }
+                            
+                            if (typeof updateMiningProgressUI === 'function') {
+                                updateMiningProgressUI();
+                            }
                         }
                     }
                 }

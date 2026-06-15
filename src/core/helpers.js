@@ -151,6 +151,11 @@ function spawnDirt(x, y, z, vx, vy, isHeavy) {
 function selectHotbar(index) {
     hotbarSelection = index;
     player.pistolReloadTimer = 0;
+
+    miningProgress = 0;
+    miningTarget = null;
+    if (typeof updateMiningProgressUI === 'function') updateMiningProgressUI();
+
     let item = inventory[index];
     if (item && item.id && ITEMS[item.id]) {
         weaponEl.innerText = ITEMS[item.id].name;

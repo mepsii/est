@@ -143,9 +143,9 @@ const ITEMS = {
     'pistol': { name: "Pistol", fireRate: 15, spread: 0.005, speed: 2.5, count: 1, dmg: 3, type: 'weapon' }, 
     'smg': { name: "SMG", fireRate: 4, spread: 0.04, speed: 3.0, count: 1, dmg: 1, type: 'weapon' }, 
     'shotgun': { name: "Shotgun", fireRate: 40, spread: 0.08, speed: 2.2, count: 12, dmg: 2, type: 'weapon' },
-    'axe': { name: "Axe", fireRate: 25, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe', type: 'tool' },
-    'pickaxe': { name: "Pickaxe", fireRate: 25, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe', type: 'tool' },
-    'shovel': { name: "Shovel", fireRate: 15, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel', type: 'tool' },
+    'axe': { name: "Axe", fireRate: 12, isMelee: true, range: 2.5, dmg: 3, toolType: 'axe', type: 'tool' },
+    'pickaxe': { name: "Pickaxe", fireRate: 10, isMelee: true, range: 2.5, dmg: 2, toolType: 'pickaxe', type: 'tool' },
+    'shovel': { name: "Shovel", fireRate: 8, isMelee: true, range: 4.5, dmg: 1, toolType: 'shovel', type: 'tool' },
     'dirt': { name: "Dirt Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 1 },
     'cube': { name: "Cube Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 3 },
     'wood_block': { name: "Wood Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 4 },
@@ -220,3 +220,10 @@ let freecamY = 0;
 let freecamZ = 0;
 let freecamAngle = 0;
 let freecamPitch = 0;
+
+// --- Mining Progress State ---
+let instantBreak = false;
+let miningProgress = 0;
+let miningTarget = null;
+let maxMiningClicks = 5;
+let miningResetTimer = 0;

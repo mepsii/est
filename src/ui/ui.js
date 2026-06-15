@@ -836,6 +836,9 @@ document.addEventListener('pointerlockchange', () => {
     isPaused = document.pointerLockElement !== canvas; 
     if (isPaused) { 
         placementItem = null; 
+        miningProgress = 0;
+        miningTarget = null;
+        if (typeof updateMiningProgressUI === 'function') updateMiningProgressUI(); 
         if (isLoading) {
             overlay.style.display = 'none';
             document.getElementById('loading-screen').style.display = 'flex';
@@ -1109,6 +1112,14 @@ document.getElementById('dbg-flight').onchange = e => flightMode = e.target.chec
 document.getElementById('dbg-spawnenemies').onchange = e => spawnEnemiesToggle = e.target.checked;
 document.getElementById('dbg-info').onchange = e => showDebugInfo = e.target.checked;
 document.getElementById('dbg-lock-fps').onchange = e => lockFps30 = e.target.checked;
+document.getElementById('dbg-instant-break').onchange = e => {
+    instantBreak = e.target.checked;
+    if (instantBreak) {
+        miningProgress = 0;
+        miningTarget = null;
+        if (typeof updateMiningProgressUI === 'function') updateMiningProgressUI();
+    }
+};
 
 document.getElementById('dbg-fov').oninput = e => { 
     let fovDegrees = parseInt(e.target.value);
@@ -1477,3 +1488,21 @@ window.addEventListener('mousedown', (e) => {
         e.stopPropagation();
     }
 }, true); // Capture phase is critical to run before normal game input listeners!
+
+// --- Mining Progress UI ---
+function updateMiningProgressUI() {
+    let container = document.getElementById('mining-progress-container');
+    let circle = document.getElementById('mining-progress-circle');
+    if (!container || !circle) return;
+
+    if (miningProgress > 0 && !instantBreak) {
+        container.style.display = 'block';
+        let circumference = 138.23;
+        let pct = Math.min(1.0, miningProgress / maxMiningClicks);
+        circle.style.strokeDashoffset = circumference * (1.0 - pct);
+    } else {
+        container.style.display = 'none';
+        circle.style.strokeDashoffset = 138.23;
+    }
+}
+window.updateMiningProgressUI = updateMiningProgressUI;
