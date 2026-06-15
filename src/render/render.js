@@ -682,17 +682,30 @@ function render() {
     // Draw targeted voxel highlight box outline
     let activeItem = inventory[hotbarSelection];
     let curW = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
-    if (curW && (curW.type === 'block' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel')) {
-        let miningLock = (!instantBreak && miningProgress > 0 && miningTarget && (curW.toolType === 'pickaxe' || curW.toolType === 'shovel'));
+    if (curW && (curW.type === 'block' || curW.toolType === 'pickaxe' || curW.toolType === 'shovel' || curW.toolType === 'axe')) {
+        let miningLock = (!instantBreak && miningProgress > 0 && miningTarget && (curW.toolType === 'pickaxe' || curW.toolType === 'shovel' || curW.toolType === 'axe'));
         let mx, my, mz, isFine;
-        let showHighlight = false;
         
         if (miningLock) {
-            mx = miningTarget.mx;
-            my = miningTarget.my;
-            mz = miningTarget.mz;
-            isFine = (miningTarget.w.type === 'block' && isVoxelCube(miningTarget.w.blockId)) || miningTarget.w.toolType === 'pickaxe';
-            showHighlight = true;
+            if (miningTarget.isStatic) {
+                let sObj = miningTarget.sObj;
+                aimBox.position.set(sObj.wx, sObj.h + sObj.size / 2, sObj.wy);
+                aimBox.scale.set(sObj.size * 1.2, sObj.size * 1.2, sObj.size * 1.2);
+                aimBox.visible = true;
+            } else {
+                mx = miningTarget.mx;
+                my = miningTarget.my;
+                mz = miningTarget.mz;
+                isFine = (miningTarget.w.type === 'block' && isVoxelCube(miningTarget.w.blockId)) || miningTarget.w.toolType === 'pickaxe';
+                if (isFine) {
+                    aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
+                    aimBox.scale.set(1, 1, 1);
+                } else {
+                    aimBox.position.set(mx, mz, my);
+                    aimBox.scale.set(1.4, 1.4, 1.4);
+                }
+                aimBox.visible = true;
+            }
         } else {
             let aim = getAimVoxel(curW.range);
             if (aim) {
@@ -705,21 +718,18 @@ function render() {
                 mx = isFine ? Math.floor(targetX) : targetX;
                 my = isFine ? Math.floor(targetY) : targetY;
                 mz = isFine ? Math.floor(targetZ) : targetZ;
-                showHighlight = true;
-            }
-        }
-
-        if (showHighlight) {
-            if (isFine) {
-                aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
-                aimBox.scale.set(1, 1, 1);
+                
+                if (isFine) {
+                    aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
+                    aimBox.scale.set(1, 1, 1);
+                } else {
+                    aimBox.position.set(mx, mz, my);
+                    aimBox.scale.set(1.4, 1.4, 1.4);
+                }
+                aimBox.visible = true;
             } else {
-                aimBox.position.set(mx, mz, my);
-                aimBox.scale.set(1.4, 1.4, 1.4);
+                aimBox.visible = false;
             }
-            aimBox.visible = true;
-        } else {
-            aimBox.visible = false;
         }
     } else {
         aimBox.visible = false;

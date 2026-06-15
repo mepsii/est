@@ -154,29 +154,106 @@ function updateProjectiles() {
                         if (a.hp <= 0) { a.dead = true; score += 25; scoreEl.innerText = score; a.items = new Array(10).fill(null); for(let k=0; k<Math.floor(Math.random()*3)+1; k++) a.items[k] = { ...a.drop }; }
                     } else if (hitTarget.type === 'static') {
                         let sObj = hitTarget.obj, isTree = TREE_EMOJIS.has(sObj.emoji), isRock = sObj.emoji === '🪨', validHit = false;
-                        if (isTree && w.toolType === 'axe') { giveItem({ type: 'resource', emoji: '🪵' }); validHit = true; } else if (isRock && w.toolType === 'pickaxe') { giveItem({ type: 'resource', emoji: '🪨' }); validHit = true; }
+                        if (isTree && w.toolType === 'axe') {
+                            validHit = true;
+                        } else if (isRock && w.toolType === 'pickaxe') {
+                            validHit = true;
+                        }
+
                         if (validHit) {
-                            sObj.hp -= w.dmg;
-                            addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg);
-                            let pCol = isTree ? { r: 120, g: 80, b: 40 } : { r: 140, g: 140, b: 140 };
-                            spawnBlockParticles(sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5, pCol, 8);
-                            if (sObj.hp <= 0) {
-                                destroyedEntities.add(sObj.entKey);
-                                hitTarget.chunkArray.splice(hitTarget.index, 1);
+                            if (instantBreak) {
+                                sObj.hp = 0; // Break instantly!
+                                addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg);
+                                let pCol = isTree ? { r: 120, g: 80, b: 40 } : { r: 140, g: 140, b: 140 };
+                                spawnBlockParticles(sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5, pCol, 8);
                                 
-                                // Clean up cached Three.js chunk to force static billboard entity rebuild
-                                let [ex, ey] = sObj.entKey.split(',').map(Number);
-                                let ecx = Math.floor(ex / CHUNK_SIZE);
-                                let ecy = Math.floor(ey / CHUNK_SIZE);
-                                let chunkKey = `${ecx},${ecy}`;
-                                if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
-                                    let cached = threeChunks.get(chunkKey);
-                                    if (cached.entities) {
-                                        for (let sprite of cached.entities) {
-                                            scene.remove(sprite);
+                                if (isTree) {
+                                    spawnDroppedItemAt({ type: 'resource', emoji: '🪵', count: 1 }, sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5);
+                                } else {
+                                    spawnDroppedItemAt({ type: 'resource', emoji: '🪨', count: 1 }, sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5);
+                                }
+
+                                if (sObj.hp <= 0) {
+                                    destroyedEntities.add(sObj.entKey);
+                                    hitTarget.chunkArray.splice(hitTarget.index, 1);
+                                    
+                                    let [ex, ey] = sObj.entKey.split(',').map(Number);
+                                    let ecx = Math.floor(ex / CHUNK_SIZE);
+                                    let ecy = Math.floor(ey / CHUNK_SIZE);
+                                    let chunkKey = `${ecx},${ecy}`;
+                                    if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
+                                        let cached = threeChunks.get(chunkKey);
+                                        if (cached.entities) {
+                                            for (let sprite of cached.entities) {
+                                                scene.remove(sprite);
+                                            }
                                         }
+                                        threeChunks.delete(chunkKey);
                                     }
-                                    threeChunks.delete(chunkKey);
+                                }
+                            } else {
+                                if (!sObj.maxHp) {
+                                    let randomHits = Math.floor(Math.random() * 3) + 2; // 2, 3, or 4 hits
+                                    sObj.maxHp = randomHits * w.dmg;
+                                    sObj.hp = sObj.maxHp;
+                                }
+                                
+                                let isSame = false;
+                                if (miningTarget && miningTarget.isStatic && miningTarget.sObj === sObj) {
+                                    isSame = true;
+                                }
+                                
+                                if (isSame) {
+                                    sObj.hp -= w.dmg;
+                                } else {
+                                    sObj.hp -= w.dmg;
+                                    miningTarget = {
+                                        isStatic: true,
+                                        sObj: sObj,
+                                        pos: { x: sObj.wx, y: sObj.wy, z: sObj.h },
+                                        w: w
+                                    };
+                                }
+                                
+                                miningResetTimer = 90;
+                                
+                                addDamageText(sObj.wx, sObj.wy, sObj.h + sObj.size, w.dmg);
+                                let pCol = isTree ? { r: 120, g: 80, b: 40 } : { r: 140, g: 140, b: 140 };
+                                spawnBlockParticles(sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5, pCol, 3);
+                                
+                                if (isTree) {
+                                    spawnDroppedItemAt({ type: 'resource', emoji: '🪵', count: 1 }, sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5);
+                                } else {
+                                    spawnDroppedItemAt({ type: 'resource', emoji: '🪨', count: 1 }, sObj.wx, sObj.wy, sObj.h + sObj.size * 0.5);
+                                }
+                                
+                                let dmgPct = Math.max(0, Math.min(1.0, (sObj.maxHp - sObj.hp) / sObj.maxHp));
+                                miningProgress = Math.round(dmgPct * maxMiningClicks);
+                                if (miningProgress <= 0 && sObj.hp > 0) miningProgress = 1;
+                                
+                                if (sObj.hp <= 0) {
+                                    destroyedEntities.add(sObj.entKey);
+                                    hitTarget.chunkArray.splice(hitTarget.index, 1);
+                                    
+                                    let [ex, ey] = sObj.entKey.split(',').map(Number);
+                                    let ecx = Math.floor(ex / CHUNK_SIZE);
+                                    let ecy = Math.floor(ey / CHUNK_SIZE);
+                                    let chunkKey = `${ecx},${ecy}`;
+                                    if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
+                                        let cached = threeChunks.get(chunkKey);
+                                        if (cached.entities) {
+                                            for (let sprite of cached.entities) {
+                                                scene.remove(sprite);
+                                            }
+                                        }
+                                        threeChunks.delete(chunkKey);
+                                    }
+                                    miningProgress = 0;
+                                    miningTarget = null;
+                                }
+                                
+                                if (typeof updateMiningProgressUI === 'function') {
+                                    updateMiningProgressUI();
                                 }
                             }
                         }
