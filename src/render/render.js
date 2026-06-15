@@ -11,6 +11,17 @@ function render() {
         initThree();
     }
     
+    // Reset visibility of cached GPU meshes
+    for (let vehicleObj of threeVehicles.values()) {
+        vehicleObj.group.visible = false;
+        for (let wMesh of vehicleObj.wheelMeshes) {
+            wMesh.visible = false;
+        }
+    }
+    for (let itemObj of threeDroppedItems.values()) {
+        itemObj.group.visible = false;
+    }
+    
     if (waterMaterial) {
         waterMaterial.userData.uTime.value = performance.now() * 0.0015;
     }
@@ -496,29 +507,47 @@ function render() {
             
             if (model) {
                 let conf = WEAPON_MODEL_CONFIG[modelName] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
-                let scale = conf.scale * 1.5;
                 let spinAngle = e.hoverTime * 0.012;
-                let ryaw = conf.rotZ + spinAngle;
                 
-                for (let f of model.faces) {
-                    let wPts = [];
-                    for (let pt of f.pts) {
-                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, ryaw);
-                        wPts.push({
-                            x: e.x + p1.x * scale,
-                            y: e.y + p1.y * scale,
-                            z: itemZ + p1.z * scale + 0.15
-                        });
+                let meshObj = threeDroppedItems.get(e);
+                if (!meshObj) {
+                    const group = new THREE.Group();
+                    const mesh = buildThreeMeshFromModel(modelName, { scale: conf.scale * 1.5, rotX: conf.rotX, rotY: conf.rotY, rotZ: 0 });
+                    if (mesh) {
+                        group.add(mesh);
+                        scene.add(group);
+                        meshObj = { group, mesh, lastModelName: modelName };
+                        threeDroppedItems.set(e, meshObj);
                     }
+                } else if (meshObj.lastModelName !== modelName) {
+                    scene.remove(meshObj.group);
+                    meshObj.mesh.geometry.dispose();
+                    if (Array.isArray(meshObj.mesh.material)) {
+                        meshObj.mesh.material.forEach(m => m.dispose());
+                    } else {
+                        meshObj.mesh.material.dispose();
+                    }
+                    meshObj.group.clear();
                     
-                    let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
-                    let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
-                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-                    let len = Math.hypot(nx, ny, nz);
-                    let norm = { x: nx/len, y: ny/len, z: nz/len };
+                    const mesh = buildThreeMeshFromModel(modelName, { scale: conf.scale * 1.5, rotX: conf.rotX, rotY: conf.rotY, rotZ: 0 });
+                    if (mesh) {
+                        meshObj.group.add(mesh);
+                        scene.add(meshObj.group);
+                        meshObj.mesh = mesh;
+                        meshObj.lastModelName = modelName;
+                    }
+                }
+                
+                if (meshObj) {
+                    meshObj.group.position.set(e.x, itemZ + 0.15, e.y);
+                    meshObj.group.rotation.y = conf.rotZ + spinAngle;
+                    meshObj.group.visible = true;
                     
-                    let color = e === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
-                    addFaceToDynamicBuffer('solid', wPts, color, norm);
+                    if (e === interactTarget) {
+                        meshObj.mesh.material.emissive.setRGB(0.15, 0.15, 0.15);
+                    } else {
+                        meshObj.mesh.material.emissive.setRGB(0, 0, 0);
+                    }
                 }
             } else {
                 drawBillboardEmoji(e, e.item.emoji, 0.55, e.x, e.y, itemZ, e === interactTarget, false, false, Math.cos(e.hoverTime * 0.012));
@@ -746,111 +775,90 @@ function render() {
     
     // Draw vehicles
     for (let v of vehicles) {
-        if (v.type === 'truck') {
-            // Draw truck chassis body
-            let bodyModel = WEAPON_MODELS['truck_body'];
-            if (bodyModel && typeof v.qx !== 'undefined') {
-                let conf = VEHICLE_MODEL_CONFIG['truck_body'] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
-                let bodyQuat = new THREE.Quaternion(v.qx, v.qy, v.qz, v.qw);
-
-                for (let f of bodyModel.faces) {
-                    let wPts = [];
-                    for (let pt of f.pts) {
-                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
-                        p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
+        let dist = Math.hypot(v.x - player.x, v.y - player.y);
+        if (dist < VIEW_DIST) {
+            let vehicleObj = threeVehicles.get(v);
+            
+            if (v.type === 'truck') {
+                let bodyModel = WEAPON_MODELS['truck_body'];
+                let wheelModel = WEAPON_MODELS['truck_wheel'];
+                
+                if (bodyModel && wheelModel && typeof v.qx !== 'undefined') {
+                    if (!vehicleObj) {
+                        const group = new THREE.Group();
                         
-                        let localPt = new THREE.Vector3(
-                            p1.x + (conf.offsetX || 0),
-                            p1.y + (conf.offsetY || 0),
-                            p1.z + (conf.offsetZ || 0)
-                        );
-                        let vec = localPt.applyQuaternion(bodyQuat);
+                        // Body Mesh
+                        let bodyConf = VEHICLE_MODEL_CONFIG['truck_body'] || { scale: 1.25, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetX: 0.0, offsetY: 0, offsetZ: -0.65 };
+                        const bodyMesh = buildThreeMeshFromModel('truck_body', bodyConf);
+                        if (bodyMesh) group.add(bodyMesh);
                         
-                        wPts.push({ x: v.x + vec.x, y: v.y + vec.y, z: v.z + vec.z });
+                        // Wheel Meshes: 4 wheels
+                        const wheelMeshes = [];
+                        let wheelConf = VEHICLE_MODEL_CONFIG['truck_wheel'] || { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                        for (let i = 0; i < 4; i++) {
+                            const wheelMesh = buildThreeMeshFromModel('truck_wheel', wheelConf);
+                            if (wheelMesh) {
+                                scene.add(wheelMesh); // add to scene absolutely for simple absolute placement
+                                wheelMeshes.push(wheelMesh);
+                            }
+                        }
+                        
+                        scene.add(group);
+                        vehicleObj = { group, bodyMesh, wheelMeshes, type: 'truck' };
+                        threeVehicles.set(v, vehicleObj);
                     }
                     
-                    let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
-                    let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
-                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-                    let len = Math.hypot(nx, ny, nz);
-                    let norm = { x: nx/len, y: ny/len, z: nz/len };
+                    // Update position and quaternion of the vehicle group
+                    vehicleObj.group.position.set(v.x, v.z, v.y);
+                    vehicleObj.group.quaternion.set(v.qx, v.qz, v.qy, -v.qw);
+                    vehicleObj.group.visible = true;
                     
-                    let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
-                    addFaceToDynamicBuffer('solid', wPts, color, norm);
-                }
-            }
-
-            // Draw separate wheels at their actual physical transforms
-            if (v.wheels) {
-                let wheelModel = WEAPON_MODELS['truck_wheel'];
-                if (wheelModel) {
-                    let conf = VEHICLE_MODEL_CONFIG['truck_wheel'] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
-                    for (let w of v.wheels) {
-                        let wheelQuat = new THREE.Quaternion(w.qx, w.qy, w.qz, w.qw);
-
-                        for (let f of wheelModel.faces) {
-                            let wPts = [];
-                            for (let pt of f.pts) {
-                                let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
-                                p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
-                                
-                                let vec = new THREE.Vector3(p1.x, p1.y, p1.z).applyQuaternion(wheelQuat);
-                                
-                                wPts.push({ x: w.x + vec.x, y: w.y + vec.y, z: w.z + vec.z + (conf.offsetZ || 0) });
-                            }
-                            
-                            let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
-                            let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
-                            let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-                            let len = Math.hypot(nx, ny, nz);
-                            let norm = { x: nx/len, y: ny/len, z: nz/len };
-                            
-                            let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
-                            addFaceToDynamicBuffer('solid', wPts, color, norm);
+                    // Update individual wheels
+                    if (v.wheels && vehicleObj.wheelMeshes.length === v.wheels.length) {
+                        let wheelConf = VEHICLE_MODEL_CONFIG['truck_wheel'] || { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                        for (let i = 0; i < v.wheels.length; i++) {
+                            const w = v.wheels[i];
+                            const wMesh = vehicleObj.wheelMeshes[i];
+                            wMesh.position.set(w.x, w.z + (wheelConf.offsetZ || 0), w.y);
+                            wMesh.quaternion.set(w.qx, w.qz, w.qy, -w.qw);
+                            wMesh.visible = true;
                         }
                     }
-                }
-            }
-        } else {
-            let model = WEAPON_MODELS[v.type];
-            if (model) {
-                let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
-                let vcx = Math.cos(v.angle), vsx = Math.sin(v.angle);
-                
-                for (let f of model.faces) {
-                    let wPts = [];
-                    for (let pt of f.pts) {
-                        let p1 = rotate3D(pt.x, pt.y, pt.z, conf.rotX, conf.rotY, conf.rotZ);
-                        p1.x *= conf.scale; p1.y *= conf.scale; p1.z *= conf.scale;
-                        
-                        let cp = Math.cos(v.pitch), sp = Math.sin(v.pitch);
-                        let cr = Math.cos(v.roll), sr = Math.sin(v.roll);
-                        
-                        let p2x = p1.x * cp - p1.z * sp;
-                        let p2y = p1.y;
-                        let p2z = p1.x * sp + p1.z * cp;
-                        
-                        let p3x = p2x;
-                        let p3y = p2y * cr - p2z * sr;
-                        let p3z = p2y * sr + p2z * cr;
-                        
-                        let wx = p3x * vcx - p3y * vsx;
-                        let wy = p3x * vsx + p3y * vcx;
-                        
-                        wPts.push({ x: v.x + wx, y: v.y + wy, z: v.z + p3z + (conf.offsetZ || 0) });
+                    
+                    // Highlight if target
+                    if (v === interactTarget) {
+                        vehicleObj.bodyMesh.material.emissive.setRGB(0.15, 0.15, 0.15);
+                        vehicleObj.wheelMeshes.forEach(w => w.material.emissive.setRGB(0.15, 0.15, 0.15));
+                    } else {
+                        vehicleObj.bodyMesh.material.emissive.setRGB(0, 0, 0);
+                        vehicleObj.wheelMeshes.forEach(w => w.material.emissive.setRGB(0, 0, 0));
                     }
-                    
-                    let ux = wPts[1].x - wPts[0].x, uy = wPts[1].y - wPts[0].y, uz = wPts[1].z - wPts[0].z;
-                    let wx = wPts[2].x - wPts[0].x, wy = wPts[2].y - wPts[0].y, wz = wPts[2].z - wPts[0].z;
-                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-                    let len = Math.hypot(nx, ny, nz);
-                    let norm = { x: nx/len, y: ny/len, z: nz/len };
-                    
-                    let color = v === interactTarget ? { r: f.color.r + 40, g: f.color.g + 40, b: f.color.b + 40 } : f.color;
-                    addFaceToDynamicBuffer('solid', wPts, color, norm);
                 }
             } else {
-                drawBillboardEmoji(v, '🚚', 4.0, v.x, v.y, v.z, v === interactTarget);
+                let model = WEAPON_MODELS[v.type];
+                if (model) {
+                    let conf = VEHICLE_MODEL_CONFIG[v.type] || { scale: 1, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 };
+                    if (!vehicleObj) {
+                        const group = new THREE.Group();
+                        const bodyMesh = buildThreeMeshFromModel(v.type, conf);
+                        if (bodyMesh) group.add(bodyMesh);
+                        scene.add(group);
+                        vehicleObj = { group, bodyMesh, wheelMeshes: [], type: v.type };
+                        threeVehicles.set(v, vehicleObj);
+                    }
+                    
+                    vehicleObj.group.position.set(v.x, v.z + (conf.offsetZ || 0), v.y);
+                    vehicleObj.group.quaternion.set(v.qx, v.qz, v.qy, -v.qw);
+                    vehicleObj.group.visible = true;
+                    
+                    if (v === interactTarget) {
+                        vehicleObj.bodyMesh.material.emissive.setRGB(0.15, 0.15, 0.15);
+                    } else {
+                        vehicleObj.bodyMesh.material.emissive.setRGB(0, 0, 0);
+                    }
+                } else {
+                    drawBillboardEmoji(v, '🚚', 4.0, v.x, v.y, v.z, v === interactTarget);
+                }
             }
         }
     }
@@ -1237,6 +1245,44 @@ function render() {
             }
         }
         triggerCoordPick = false;
+    }
+    
+    // Prune destroyed vehicle meshes from cache
+    for (let [key, vehicleObj] of threeVehicles.entries()) {
+        if (!vehicles.includes(key)) {
+            scene.remove(vehicleObj.group);
+            vehicleObj.bodyMesh.geometry.dispose();
+            if (Array.isArray(vehicleObj.bodyMesh.material)) {
+                vehicleObj.bodyMesh.material.forEach(m => m.dispose());
+            } else {
+                vehicleObj.bodyMesh.material.dispose();
+            }
+            
+            for (let wMesh of vehicleObj.wheelMeshes) {
+                scene.remove(wMesh);
+                wMesh.geometry.dispose();
+                if (Array.isArray(wMesh.material)) {
+                    wMesh.material.forEach(m => m.dispose());
+                } else {
+                    wMesh.material.dispose();
+                }
+            }
+            threeVehicles.delete(key);
+        }
+    }
+    
+    // Prune destroyed dropped item meshes from cache
+    for (let [key, itemObj] of threeDroppedItems.entries()) {
+        if (!droppedItems.includes(key)) {
+            scene.remove(itemObj.group);
+            itemObj.mesh.geometry.dispose();
+            if (Array.isArray(itemObj.mesh.material)) {
+                itemObj.mesh.material.forEach(m => m.dispose());
+            } else {
+                itemObj.mesh.material.dispose();
+            }
+            threeDroppedItems.delete(key);
+        }
     }
     
     // Restore player coordinate states

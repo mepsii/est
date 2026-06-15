@@ -122,7 +122,97 @@ async function loadObjModel(name) {
     }
 }
 
-loadObjModel('pistol');
+function loadGlbModel(name) {
+    try {
+        const loader = new THREE.GLTFLoader();
+        loader.load(`models/${name}.glb`, (gltf) => {
+            const vertices = [];
+            const faces = [];
+            const vertexMap = new Map();
+
+            gltf.scene.updateMatrixWorld(true);
+            gltf.scene.traverse((node) => {
+                if (node.isMesh) {
+                    const geom = node.geometry;
+                    if (!geom) return;
+
+                    const posAttr = geom.attributes.position;
+                    if (!posAttr) return;
+
+                    let meshColor = { r: 150, g: 150, b: 150 };
+                    if (node.material) {
+                        let mat = node.material;
+                        if (Array.isArray(mat)) mat = mat[0];
+                        if (mat.color) {
+                            meshColor = {
+                                r: Math.round(mat.color.r * 255),
+                                g: Math.round(mat.color.g * 255),
+                                b: Math.round(mat.color.b * 255)
+                            };
+                        }
+                    }
+
+                    const indexAttr = geom.index;
+                    const vertexCount = indexAttr ? indexAttr.count : posAttr.count;
+                    const colorAttr = geom.attributes.color;
+
+                    for (let i = 0; i < vertexCount; i += 3) {
+                        const faceVerts = [];
+                        let faceColor = { ...meshColor };
+
+                        if (colorAttr) {
+                            const firstIdx = indexAttr ? indexAttr.getX(i) : i;
+                            faceColor = {
+                                r: Math.round(colorAttr.getX(firstIdx) * 255),
+                                g: Math.round(colorAttr.getY(firstIdx) * 255),
+                                b: Math.round(colorAttr.getZ(firstIdx) * 255)
+                            };
+                        }
+
+                        for (let j = 0; j < 3; j++) {
+                            const idx = indexAttr ? indexAttr.getX(i + j) : (i + j);
+                            const lx = posAttr.getX(idx);
+                            const ly = posAttr.getY(idx);
+                            const lz = posAttr.getZ(idx);
+
+                            const localPos = new THREE.Vector3(lx, ly, lz);
+                            localPos.applyMatrix4(node.matrixWorld);
+
+                            const key = `${localPos.x.toFixed(5)},${localPos.y.toFixed(5)},${localPos.z.toFixed(5)}`;
+                            let vIdx;
+                            if (vertexMap.has(key)) {
+                                vIdx = vertexMap.get(key);
+                            } else {
+                                vertices.push({ x: localPos.x, y: localPos.y, z: localPos.z });
+                                vIdx = vertices.length - 1;
+                                vertexMap.set(key, vIdx);
+                            }
+                            faceVerts.push(vertices[vIdx]);
+                        }
+
+                        faces.push({
+                            pts: faceVerts,
+                            color: faceColor
+                        });
+                    }
+                }
+            });
+
+            WEAPON_MODELS[name] = { vertices, faces };
+            console.log(`[GLTF Loader] Loaded ${name}.glb: ${vertices.length} vertices, ${faces.length} faces`);
+
+            if (typeof updateInventories === 'function') {
+                updateInventories();
+            }
+        }, undefined, (err) => {
+            console.error(`Error loading GLB model ${name}:`, err);
+        });
+    } catch (e) {
+        console.error(`Error initiating GLB loader for ${name}:`, e);
+    }
+}
+
+loadGlbModel('pistol');
 loadObjModel('shotgun');
 loadObjModel('smg');
 loadObjModel('truck');
