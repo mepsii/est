@@ -784,11 +784,17 @@ class Vertex {
   z: f32;
 }
 
-// pre-allocated voxels buffer for chunk meshing (neighborhood includes padding: size 10x10x98)
-const voxels = new Uint8Array(10 * 10 * 98);
+const CHUNK_SIZE_VAL: i32 = 32;
+const PADDED_SIZE: i32 = CHUNK_SIZE_VAL + 2;
+const LAYER_SIZE: i32 = PADDED_SIZE * PADDED_SIZE;
+const VOXEL_BUFFER_SIZE: i32 = PADDED_SIZE * PADDED_SIZE * 98;
+const MESH_BUFFER_SIZE: i32 = 960000;
 
-// pre-allocated flat mesh buffer (max 10,000 faces, each 24 floats = 240,000 floats)
-const meshBuffer = new Float32Array(240000);
+// pre-allocated voxels buffer for chunk meshing (neighborhood includes padding: size 34x34x98)
+const voxels = new Uint8Array(VOXEL_BUFFER_SIZE);
+
+// pre-allocated flat mesh buffer (max 40,000 faces, each 24 floats = 960,000 floats)
+const meshBuffer = new Float32Array(MESH_BUFFER_SIZE);
 let faceCount = 0;
 
 export function getMeshBufferPointer(): usize {
@@ -797,7 +803,7 @@ export function getMeshBufferPointer(): usize {
 
 @inline
 function getVoxelLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32): u8 {
-  return voxels[(lx + 1) + (ly + 1) * 10 + (lz + 1) * 100];
+  return voxels[(lx + 1) + (ly + 1) * PADDED_SIZE + (lz + 1) * LAYER_SIZE];
 }
 
 function getSmoothVertexLocal(voxels: Uint8Array, lx: i32, ly: i32, lz: i32, gx: f32, gy: f32, gz: f32): Vertex {
@@ -994,13 +1000,13 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
   faceCount = 0;
 
   // Populate local voxels array
-  for (let lx = -1; lx <= 8; lx++) {
-    let gx = cx * 8 + lx;
-    for (let ly = -1; ly <= 8; ly++) {
-      let gy = cy * 8 + ly;
+  for (let lx = -1; lx <= CHUNK_SIZE_VAL; lx++) {
+    let gx = cx * CHUNK_SIZE_VAL + lx;
+    for (let ly = -1; ly <= CHUNK_SIZE_VAL; ly++) {
+      let gy = cy * CHUNK_SIZE_VAL + ly;
       let t = getTerrainFast(gx, gy);
       for (let lz = -1; lz <= 96; lz++) {
-        let idx = (lx + 1) + (ly + 1) * 10 + (lz + 1) * 100;
+        let idx = (lx + 1) + (ly + 1) * PADDED_SIZE + (lz + 1) * LAYER_SIZE;
         if (lz < 0) {
           voxels[idx] = 1;
         } else if (lz >= 96) {
@@ -1013,23 +1019,23 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
   }
 
   // Generate faces
-  for (let lx = 0; lx < 8; lx++) {
-    let gx = cx * 8 + lx;
-    for (let ly = 0; ly < 8; ly++) {
-      let gy = cy * 8 + ly;
+  for (let lx = 0; lx < CHUNK_SIZE_VAL; lx++) {
+    let gx = cx * CHUNK_SIZE_VAL + lx;
+    for (let ly = 0; ly < CHUNK_SIZE_VAL; ly++) {
+      let gy = cy * CHUNK_SIZE_VAL + ly;
       let t = getTerrainFast(gx, gy);
       for (let lz = 0; lz < 96; lz++) {
-        let idx = (lx + 1) + (ly + 1) * 10 + (lz + 1) * 100;
+        let idx = (lx + 1) + (ly + 1) * PADDED_SIZE + (lz + 1) * LAYER_SIZE;
         let v = voxels[idx];
         if (isVoxelSolid(v)) {
           let col = getVoxelColor(gx, gy, lz, v, t);
 
-          let up = voxels[idx + 100];
-          let dn = voxels[idx - 100];
+          let up = voxels[idx + LAYER_SIZE];
+          let dn = voxels[idx - LAYER_SIZE];
           let px = voxels[idx + 1];
           let nx = voxels[idx - 1];
-          let py = voxels[idx + 10];
-          let ny = voxels[idx - 10];
+          let py = voxels[idx + PADDED_SIZE];
+          let ny = voxels[idx - PADDED_SIZE];
 
           let fR = col.r, fG = col.g, fB = col.b, fA: u8 = 255;
 
@@ -1094,7 +1100,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
           let fB: u8 = clampColor(200.0 + colorNoise);
           let fA: u8 = 140; // 0.55 * 255 = 140
 
-          let up = voxels[idx + 100];
+          let up = voxels[idx + LAYER_SIZE];
 
           // up
           if (lz == 95 || up == 0) {
@@ -1124,7 +1130,7 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     -1, 0, 0, 0.5, fR, fG, fB, fA, v, voxels, t);
           }
           // py
-          if (voxels[idx + 10] == 0) {
+          if (voxels[idx + PADDED_SIZE] == 0) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx+1) as f32, (gy+1) as f32, (lz) as f32,
                     (gx) as f32, (gy+1) as f32, (lz) as f32,
@@ -1133,11 +1139,11 @@ export function buildChunkMeshWasm(cx: i32, cy: i32): i32 {
                     0, 1, 0, 0.8, fR, fG, fB, fA, v, voxels, t);
           }
           // ny
-          if (voxels[idx - 10] == 0) {
+          if (voxels[idx - PADDED_SIZE] == 0) {
             addFace(lx, ly, lz, gx, gy, lz,
                     (gx) as f32, (gy) as f32, (lz) as f32,
                     (gx+1) as f32, (gy) as f32, (lz) as f32,
-                    (gx+1) as f32, (gy+1) as f32, (lz+1) as f32,
+                    (gx+1) as f32, (gy) as f32, (lz+1) as f32,
                     (gx) as f32, (gy) as f32, (lz+1) as f32,
                     0, -1, 0, 0.6, fR, fG, fB, fA, v, voxels, t);
           }

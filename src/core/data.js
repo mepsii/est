@@ -165,7 +165,7 @@ const TREE_EMOJIS = new Set(['🌲', '🌳', '🪾']), FLOWER_EMOJIS = new Set([
 
 // Dynamic rendering controls
 let VIEW_DIST = 180;
-const CHUNK_SIZE = 8; 
+const CHUNK_SIZE = 32; 
 
 // --- Game State Variables ---
 let gameTime = 12.0;
