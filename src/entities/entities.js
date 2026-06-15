@@ -68,6 +68,25 @@ function updateEntities() {
         if (item.cooldown > 0) item.cooldown--;
     }
 
+    // Merge close dropped items of the same ID
+    for (let i = 0; i < droppedItems.length; i++) {
+        let itemA = droppedItems[i];
+        for (let j = i + 1; j < droppedItems.length; j++) {
+            let itemB = droppedItems[j];
+            if (itemA.item.id === itemB.item.id && itemA.item.emoji === itemB.item.emoji) {
+                let dx = itemA.x - itemB.x;
+                let dy = itemA.y - itemB.y;
+                let dz = itemA.z - itemB.z;
+                if (Math.hypot(dx, dy, dz) < 3.5) {
+                    itemA.item.count = (itemA.item.count || 1) + (itemB.item.count || 1);
+                    droppedItems.splice(j, 1);
+                    j--;
+                }
+            }
+        }
+    }
+
+
 
     if (gameState === 'overworld') {
         let pxC = Math.floor(player.x / CHUNK_SIZE), pyC = Math.floor(player.y / CHUNK_SIZE);
@@ -480,7 +499,12 @@ function updateEntities() {
         else if (interactTarget.label) interactTooltip.innerText = "[E] " + interactTarget.label; 
         else if (droppedItems.includes(interactTarget)) {
             let details = resolveItemDetails(interactTarget.item);
-            interactTooltip.innerText = `[E] Pick up ${details ? details.name : 'Item'}`;
+            let name = details ? details.name : 'Item';
+            if (interactTarget.item.count > 1) {
+                interactTooltip.innerText = `[E] Pick up stack of ${name} x${interactTarget.item.count}`;
+            } else {
+                interactTooltip.innerText = `[E] Pick up ${name}`;
+            }
         }
         else interactTooltip.innerText = "[E] Loot";
         interactTooltip.style.display = 'block';
