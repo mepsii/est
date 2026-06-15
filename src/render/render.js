@@ -63,9 +63,9 @@ function render() {
             }
             
             // 3. Speed-dependent camera distance
-            let baseDist = 9.5;
+            let baseDist = 7.0;
             let speedFactorDist = Math.min(1.0, v.speed / 25.0);
-            let dist = baseDist + speedFactorDist * 3.0; // Zoom out up to 12.5 blocks
+            let dist = baseDist + speedFactorDist * 2.0; // Zoom out up to 9.0 blocks
             
             // 4. Position camera above and behind player (spherical coordinates)
             let dirSign = player.vehicleView === '3rd_front' ? 1.0 : -1.0;
