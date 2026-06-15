@@ -14,6 +14,16 @@ function isSolidAt(x, y, z_val) {
     return v === 1 || v >= 3;
 }
 
+function getDroppedItemFloorZ(x, y, startZ) {
+    for (let z = Math.floor(startZ + 0.5); z >= 0; z--) {
+        if (getSolid(Math.floor(x), Math.floor(y), z)) {
+            let topV = getVoxel(Math.floor(x), Math.floor(y), z);
+            return z + ((topV === 6) ? 0.5 : 1.0);
+        }
+    }
+    return 0.0;
+}
+
 function updateEntities() {
     // Update Dropped Items physics
     for (let i = droppedItems.length - 1; i >= 0; i--) {
@@ -51,8 +61,8 @@ function updateEntities() {
         }
         
         // Floor level check
-        let floorZ = (gameState === 'overworld') ? getSafeFloorZ(item.x, item.y, item.z) : 0.0;
-        if (nz <= floorZ) {
+        let floorZ = (gameState === 'overworld') ? getDroppedItemFloorZ(item.x, item.y, item.z) : 0.0;
+        if (nz <= floorZ && (floorZ - item.z) <= 0.5) {
             item.z = floorZ;
             item.vz = 0;
             // Apply ground friction
