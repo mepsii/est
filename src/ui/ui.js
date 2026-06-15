@@ -1038,6 +1038,18 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { if (e.target.tagName !== 'INPUT') keys[e.code] = false; });
 
+window.addEventListener('wheel', (e) => {
+    if (isPaused) return; 
+    e.preventDefault();
+    let nextSelection = hotbarSelection;
+    if (e.deltaY > 0) {
+        nextSelection = (hotbarSelection + 1) % 8;
+    } else if (e.deltaY < 0) {
+        nextSelection = (hotbarSelection - 1 + 8) % 8;
+    }
+    selectHotbar(nextSelection);
+}, { passive: false });
+
 // --- Debug Menu Hooks ---
 dbgTimeEl.oninput = e => {
     gameTime = parseFloat(e.target.value);
