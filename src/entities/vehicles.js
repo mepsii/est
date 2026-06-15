@@ -727,7 +727,11 @@ function postUpdateVehicles() {
                 let deltaYaw = v.angle - v.lastAngle;
                 while (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
                 while (deltaYaw < -Math.PI) deltaYaw += Math.PI * 2;
-                player.angle += deltaYaw;
+                
+                let isCrazy = Math.abs(v.roll) > 1.0 || Math.abs(v.pitch) > 1.0;
+                if (!isCrazy) {
+                    player.angle += deltaYaw;
+                }
             }
 
             let isGrounded = false;

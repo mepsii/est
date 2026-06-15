@@ -176,19 +176,10 @@ function updatePlayer() {
         v.camY += (v.y - v.camY) * 0.15;
         v.camZ += (v.z - v.camZ) * 0.15;
 
-        if (player.vehicleView === '3rd_back' || player.vehicleView === '3rd_front') {
-            let dirSign = player.vehicleView === '3rd_front' ? 1.0 : -1.0;
-            player.x = v.camX + Math.cos(player.angle) * dirSign * 9.5; 
-            player.y = v.camY + Math.sin(player.angle) * dirSign * 9.5;
-            player.z = v.camZ + 1.0; 
-            
-            let pitchTarget = v.pitch; 
-            player.pitch += (pitchTarget - player.pitch) * 0.1;
-        } else {
-            player.x = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32; 
-            player.y = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
-            player.z = v.z + 0.45; 
-        }
+        // Player physical coordinates are always set to the physical seat coordinates in the vehicle
+        player.x = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32; 
+        player.y = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
+        player.z = v.z + 0.45; 
         player.vz = 0;
         
         if (typeof speedometerItemEl !== 'undefined' && speedometerItemEl && speedometerEl) {

@@ -14,6 +14,10 @@ document.addEventListener('mousemove', (e) => {
             let maxPitch = Math.PI / 2 - 0.01; 
             player.pitch -= e.movementY * (isZooming ? 0.001 : 0.003); 
             player.pitch = Math.max(-maxPitch, Math.min(maxPitch, player.pitch)); 
+            
+            if (player.inVehicle) {
+                player.lastMouseLookTime = performance.now();
+            } 
         }
     } 
 });

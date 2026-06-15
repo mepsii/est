@@ -979,6 +979,9 @@ window.addEventListener('keydown', e => {
                 }
                 player.inVehicle = interactTarget;
                 player.vehicleView = '3rd_back';
+                player.angle = interactTarget.angle;
+                player.pitch = -0.15;
+                player.lastMouseLookTime = 0;
             } else if (droppedItems.includes(interactTarget)) {
                 let success = giveItem({ ...interactTarget.item });
                 if (success) {

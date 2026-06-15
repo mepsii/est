@@ -33,41 +33,120 @@ function render() {
         renderAngle = freecamAngle;
         renderPitch = freecamPitch;
     } else {
-        camX = player.x;
-        camY = player.y;
-        camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
-        
-        if (!player.inVehicle && (player.view === '3rd_back' || player.view === '3rd_front')) {
-            let dist = 4.2;
-            let startX = player.x;
-            let startY = player.y;
-            let startZ = player.z + 1.0;
+        if (player.inVehicle && (player.vehicleView === '3rd_back' || player.vehicleView === '3rd_front')) {
+            let v = player.inVehicle;
             
+            // 1. Reactive Yaw / Chase Cam rotation logic
+            let timeSinceMouseLook = performance.now() - (player.lastMouseLookTime || 0);
+            if (timeSinceMouseLook > 1500 && v.speed > 0.5) {
+                let targetAngle = v.angle;
+                if (player.vehicleView === '3rd_front') {
+                    targetAngle += Math.PI;
+                }
+                let diff = targetAngle - player.angle;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                
+                // Speed-dependent auto-align rate
+                let speedFactor = Math.min(1.0, v.speed / 15.0);
+                let lerpRate = 0.01 + speedFactor * 0.04;
+                player.angle += diff * lerpRate;
+            }
+            
+            // 2. Camera Pitch smoothing/centering (ease back to -0.15 when not looking around)
+            if (timeSinceMouseLook > 1500) {
+                let defaultPitch = -0.15;
+                // Add a small hint of vehicle incline if the vehicle is not in a crazy orientation
+                let pitchIncline = (Math.abs(v.pitch) < 1.0 && Math.abs(v.roll) < 1.0) ? v.pitch * 0.2 : 0;
+                let targetPitch = defaultPitch + pitchIncline;
+                player.pitch += (targetPitch - player.pitch) * 0.05;
+            }
+            
+            // 3. Speed-dependent camera distance
+            let baseDist = 9.5;
+            let speedFactorDist = Math.min(1.0, v.speed / 25.0);
+            let dist = baseDist + speedFactorDist * 3.0; // Zoom out up to 12.5 blocks
+            
+            // 4. Position camera above and behind player (spherical coordinates)
+            let dirSign = player.vehicleView === '3rd_front' ? 1.0 : -1.0;
+            
+            // Focus point of the camera (chassis center + offset)
+            let focusX = v.camX;
+            let focusY = v.camY;
+            let focusZ = v.camZ + 1.2;
+            
+            let cosP = Math.cos(player.pitch);
+            let sinP = Math.sin(player.pitch);
+            let cosA = Math.cos(player.angle);
+            let sinA = Math.sin(player.angle);
+            
+            let targetX = focusX + cosA * cosP * dirSign * dist;
+            let targetY = focusY + sinA * cosP * dirSign * dist;
+            let targetZ = focusZ + sinP * dirSign * dist;
+            
+            // 5. Collision checks / raycasting to prevent clipping into hills/ground
             let reachedDist = dist;
             let step = 0.25;
-            let dirSign = (player.view === '3rd_front') ? 1.0 : -1.0;
             for (let d = step; d <= dist; d += step) {
-                let checkX = player.x + Math.cos(player.angle) * dirSign * d;
-                let checkY = player.y + Math.sin(player.angle) * dirSign * d;
-                let checkZ = startZ + (0.2 / dist) * d;
+                let t = d / dist;
+                let checkX = focusX + (targetX - focusX) * t;
+                let checkY = focusY + (targetY - focusY) * t;
+                let checkZ = focusZ + (targetZ - focusZ) * t;
+                
                 if (getSolid(Math.floor(checkX), Math.floor(checkY), Math.floor(checkZ))) {
                     reachedDist = d - 0.25;
                     break;
                 }
             }
-            if (reachedDist < 0.25) reachedDist = 0.25;
+            if (reachedDist < 1.0) reachedDist = 1.0; // clamp min distance
             
-            camX = player.x + Math.cos(player.angle) * dirSign * reachedDist;
-            camY = player.y + Math.sin(player.angle) * dirSign * reachedDist;
-            camZ = startZ + (0.2 / dist) * reachedDist + (player.zOffset || 0) + waterBob;
-        }
-        
-        renderAngle = player.angle;
-        renderPitch = player.pitch;
-        let isFrontView = (player.inVehicle ? player.vehicleView === '3rd_front' : player.view === '3rd_front');
-        if (isFrontView) {
-            renderAngle = player.angle + Math.PI;
-            renderPitch = -player.pitch;
+            camX = focusX + cosA * cosP * dirSign * reachedDist;
+            camY = focusY + sinA * cosP * dirSign * reachedDist;
+            camZ = focusZ + sinP * dirSign * reachedDist + waterBob;
+            
+            renderAngle = player.angle;
+            renderPitch = player.pitch;
+            if (player.vehicleView === '3rd_front') {
+                renderAngle = player.angle + Math.PI;
+                renderPitch = -player.pitch;
+            }
+        } else {
+            camX = player.x;
+            camY = player.y;
+            camZ = player.z + player.baseHeight + (player.zOffset || 0) + waterBob;
+            
+            if (!player.inVehicle && (player.view === '3rd_back' || player.view === '3rd_front')) {
+                let dist = 4.2;
+                let startX = player.x;
+                let startY = player.y;
+                let startZ = player.z + 1.0;
+                
+                let reachedDist = dist;
+                let step = 0.25;
+                let dirSign = (player.view === '3rd_front') ? 1.0 : -1.0;
+                for (let d = step; d <= dist; d += step) {
+                    let checkX = player.x + Math.cos(player.angle) * dirSign * d;
+                    let checkY = player.y + Math.sin(player.angle) * dirSign * d;
+                    let checkZ = startZ + (0.2 / dist) * d;
+                    if (getSolid(Math.floor(checkX), Math.floor(checkY), Math.floor(checkZ))) {
+                        reachedDist = d - 0.25;
+                        break;
+                    }
+                }
+                if (reachedDist < 0.25) reachedDist = 0.25;
+                
+                camX = player.x + Math.cos(player.angle) * dirSign * reachedDist;
+                camY = player.y + Math.sin(player.angle) * dirSign * reachedDist;
+                camZ = startZ + (0.2 / dist) * reachedDist + (player.zOffset || 0) + waterBob;
+            }
+            
+            renderAngle = player.angle;
+            renderPitch = player.pitch;
+            let isFrontView = (player.inVehicle ? player.vehicleView === '3rd_front' : player.view === '3rd_front');
+            if (isFrontView) {
+                renderAngle = player.angle + Math.PI;
+                renderPitch = -player.pitch;
+            }
         }
     }
     
