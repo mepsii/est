@@ -28,6 +28,12 @@ let billboardGeo;
 let activeBillboardMeshes = new Set();
 let waterMaterial = null;
 
+let globalInstancedMeshes = new Map();
+const instPos = new THREE.Vector3();
+const instScale = new THREE.Vector3();
+const instMatrix = new THREE.Matrix4();
+
+
 // Persistent vectors to avoid allocation in render loop
 const particleCamRight = new THREE.Vector3();
 const particleCamUp = new THREE.Vector3();
@@ -240,6 +246,7 @@ const DmgTextCache = {
 
 // Initialize Three.js scene, camera, lights, and mesh containers
 function initThree() {
+    globalInstancedMeshes.clear();
     camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
     scene = new THREE.Scene();
     
@@ -373,6 +380,28 @@ function checkResize() {
     }
 }
 
+function getOrCreateInstancedMesh(emoji) {
+    let instData = globalInstancedMeshes.get(emoji);
+    if (!instData) {
+        let texture = ThreeTextureCache.get(emoji, false, false, 1.0);
+        let mat = new THREE.MeshStandardMaterial({
+            map: texture,
+            transparent: true,
+            alphaTest: 0.5,
+            roughness: 1.0,
+            metalness: 0.0,
+            side: THREE.DoubleSide
+        });
+        let capacity = 1024;
+        let instMesh = new THREE.InstancedMesh(billboardGeo, mat, capacity);
+        instMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(instMesh);
+        instData = { mesh: instMesh, capacity: capacity, count: 0 };
+        globalInstancedMeshes.set(emoji, instData);
+    }
+    return instData;
+}
+
 // Convert chunk faces from WASM/JS mesher to persistent BufferGeometries in Three.js
 function updateChunkMesh(key, faces) {
     if (threeChunks.has(key)) {
@@ -383,7 +412,9 @@ function updateChunkMesh(key, faces) {
         if (cached.waterMesh) cached.waterMesh.geometry.dispose();
         if (cached.entities) {
             for (let sprite of cached.entities) {
-                scene.remove(sprite);
+                if (sprite instanceof THREE.Object3D) {
+                    scene.remove(sprite);
+                }
             }
         }
         threeChunks.delete(key);
@@ -407,29 +438,9 @@ function updateChunkMesh(key, faces) {
     // Build static billboards inside chunk (trees, rocks, flowers, cactuses, skulls)
     let [cx, cy] = key.split(',').map(Number);
     let chunkEntities = getMapChunk(cx, cy);
-    const entitiesSprites = [];
     
-    for (let obj of chunkEntities) {
-        let texture = ThreeTextureCache.get(obj.emoji, false, false, 1.0);
-        let mat = new THREE.MeshStandardMaterial({
-            map: texture,
-            transparent: true,
-            alphaTest: 0.5,
-            roughness: 1.0,
-            metalness: 0.0,
-            side: THREE.DoubleSide
-        });
-        let mesh = new THREE.Mesh(billboardGeo, mat);
-        let size = obj.size;
-        
-        // Base aligned coordinate system mapping
-        mesh.position.set(obj.wx, obj.h + size / 2, obj.wy);
-        mesh.scale.set(size * 1.5, size * 1.5, 1.0);
-        scene.add(mesh);
-        entitiesSprites.push(mesh);
-    }
-    
-    threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: entitiesSprites });
+    // Store the raw chunkEntities directly so they can be rendered via instancing in render.js
+    threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: chunkEntities });
 }
 
 function getWaterMaterial() {

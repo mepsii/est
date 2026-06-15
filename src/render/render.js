@@ -11,6 +11,10 @@ function render() {
         initThree();
     }
     
+    for (let data of globalInstancedMeshes.values()) {
+        data.count = 0;
+    }
+    
     // Reset visibility of cached GPU meshes
     for (let vehicleObj of threeVehicles.values()) {
         vehicleObj.group.visible = false;
@@ -298,8 +302,21 @@ function render() {
                     cached = threeChunks.get(key);
                 }
                 if (cached && cached.entities) {
-                    for (let mesh of cached.entities) {
-                        activeBillboardMeshes.add(mesh);
+                    for (let obj of cached.entities) {
+                        let instData = getOrCreateInstancedMesh(obj.emoji);
+                        if (instData.count >= instData.capacity) {
+                            scene.remove(instData.mesh);
+                            instData.capacity *= 2;
+                            let instMesh = new THREE.InstancedMesh(billboardGeo, instData.mesh.material, instData.capacity);
+                            instMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                            scene.add(instMesh);
+                            instData.mesh = instMesh;
+                        }
+                        instPos.set(obj.wx, obj.h + obj.size / 2, obj.wy);
+                        instScale.set(obj.size * 1.5, obj.size * 1.5, 1.0);
+                        instMatrix.compose(instPos, camera.quaternion, instScale);
+                        instData.mesh.setMatrixAt(instData.count, instMatrix);
+                        instData.count++;
                     }
                 }
             }
@@ -316,7 +333,9 @@ function render() {
             if (cached.waterMesh) cached.waterMesh.geometry.dispose();
             if (cached.entities) {
                 for (let sprite of cached.entities) {
-                    scene.remove(sprite);
+                    if (sprite instanceof THREE.Object3D) {
+                        scene.remove(sprite);
+                    }
                 }
             }
             threeChunks.delete(key);
@@ -1154,6 +1173,14 @@ function render() {
         mesh.quaternion.copy(camera.quaternion);
         if (mesh.material && mesh.material.emissive) {
             mesh.material.emissive.copy(emissiveColor);
+        }
+    }
+    
+    for (let data of globalInstancedMeshes.values()) {
+        data.mesh.count = data.count;
+        data.mesh.instanceMatrix.needsUpdate = true;
+        if (data.mesh.material && data.mesh.material.emissive) {
+            data.mesh.material.emissive.copy(emissiveColor);
         }
     }
     

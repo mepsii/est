@@ -185,7 +185,9 @@ function updateProjectiles() {
                                         let cached = threeChunks.get(chunkKey);
                                         if (cached.entities) {
                                             for (let sprite of cached.entities) {
-                                                scene.remove(sprite);
+                                                if (sprite instanceof THREE.Object3D) {
+                                                    scene.remove(sprite);
+                                                }
                                             }
                                         }
                                         threeChunks.delete(chunkKey);
@@ -243,7 +245,9 @@ function updateProjectiles() {
                                         let cached = threeChunks.get(chunkKey);
                                         if (cached.entities) {
                                             for (let sprite of cached.entities) {
-                                                scene.remove(sprite);
+                                                if (sprite instanceof THREE.Object3D) {
+                                                    scene.remove(sprite);
+                                                }
                                             }
                                         }
                                         threeChunks.delete(chunkKey);
@@ -580,7 +584,9 @@ function updateProjectiles() {
                                 let cached = threeChunks.get(chunkKey);
                                 if (cached.entities) {
                                     for (let sprite of cached.entities) {
-                                        scene.remove(sprite);
+                                        if (sprite instanceof THREE.Object3D) {
+                                            scene.remove(sprite);
+                                        }
                                     }
                                 }
                                 threeChunks.delete(chunkKey);
