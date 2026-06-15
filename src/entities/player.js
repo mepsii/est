@@ -217,7 +217,7 @@ function updatePlayer() {
 
             // X movement
             let testZ_x = player.z;
-            if (player.vz <= 0) {
+            if (player.vz <= 0 && !flightMode) {
                 let groundH_x = getGroundHeight(nx, player.y, player.z);
                 if (groundH_x !== -1) {
                     let diff = groundH_x - player.z;
@@ -249,7 +249,7 @@ function updatePlayer() {
 
             // Y movement
             let testZ_y = player.z;
-            if (player.vz <= 0) {
+            if (player.vz <= 0 && !flightMode) {
                 let groundH_y = getGroundHeight(player.x, ny, player.z);
                 if (groundH_y !== -1) {
                     let diff = groundH_y - player.z;
