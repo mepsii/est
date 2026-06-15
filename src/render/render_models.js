@@ -400,18 +400,37 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
     const pitchAngle = player.pitch;
 
     let isSitting = (player.inVehicle !== null);
+    let v = player.inVehicle;
     let realX, realY, realZ, bodyAngle;
     let bodyRoll = 0;
     let bodyPitch = 0;
 
     if (isSitting) {
-        let v = player.inVehicle;
-        realX = v.x + Math.cos(v.angle) * 0.30 + Math.sin(v.angle) * 0.32;
-        realY = v.y + Math.sin(v.angle) * 0.30 - Math.cos(v.angle) * 0.32;
-        realZ = v.z - 0.62;
+        // 1. Calculate seat position using the vehicle's full 3D quaternion rotation
+        let localSeat = new THREE.Vector3(0.30, -0.32, -0.62);
+        let bodyQuat = new THREE.Quaternion(v.qx, v.qy, v.qz, v.qw);
+        localSeat.applyQuaternion(bodyQuat);
+        realX = v.x + localSeat.x;
+        realY = v.y + localSeat.y;
+        realZ = v.z + localSeat.z;
+        
+        // 2. Lock relative player leaning/movement to 15 degrees (0.2618 radians)
+        let maxLean = 15 * Math.PI / 180;
+        // Invert pitch and roll so the player leans against the vehicle tilt to stay upright relative to gravity
+        let leanPitch = -Math.max(-maxLean, Math.min(maxLean, v.pitch || 0));
+        let leanRoll = -Math.max(-maxLean, Math.min(maxLean, v.roll || 0));
+        
+        // Invert turning lean so the player leans outward in a turn under centrifugal G-force
+        let turnLean = 0;
+        if (v.raycastVehicle && v.raycastVehicle.wheelInfos && v.raycastVehicle.wheelInfos[0]) {
+            let steer = v.raycastVehicle.wheelInfos[0].steering || 0;
+            turnLean = -steer * Math.min(1.0, (v.speed || 0) / 10.0) * 0.12; 
+        }
+        leanRoll = Math.max(-maxLean, Math.min(maxLean, leanRoll + turnLean));
+        
         bodyAngle = v.angle;
-        bodyPitch = v.pitch;
-        bodyRoll = v.roll;
+        bodyPitch = leanPitch;
+        bodyRoll = leanRoll;
 
         rLegPitch = -Math.PI / 2;
         lLegPitch = -Math.PI / 2;
@@ -585,17 +604,29 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
                 let cp = Math.cos(bodyPitch), sp = Math.sin(bodyPitch);
                 let cr = Math.cos(bodyRoll), sr = Math.sin(bodyRoll);
                 
+                // Rotate locally by lean Pitch (around Y)
                 let p2x = rx * cp - rz * sp;
                 let p2y = ry;
                 let p2z = rx * sp + rz * cp;
                 
+                // Rotate locally by lean Roll (around X)
                 let p3x = p2x;
                 let p3y = p2y * cr - p2z * sr;
                 let p3z = p2y * sr + p2z * cr;
                 
-                wx = p3x * cosH - p3y * sinH;
-                wy = p3x * sinH + p3y * cosH;
-                wz = p3z;
+                // Rotate the player model's default orientation to face forward relative to the vehicle
+                let rRotX = p3y;
+                let rRotY = -p3x;
+                let rRotZ = p3z;
+                
+                // Apply vehicle's full 3D quaternion rotation so we are locked to the body orientation
+                let localPt = new THREE.Vector3(rRotX, rRotY, rRotZ);
+                let bodyQuat = new THREE.Quaternion(v.qx, v.qy, v.qz, v.qw);
+                localPt.applyQuaternion(bodyQuat);
+                
+                wx = localPt.x;
+                wy = localPt.y;
+                wz = localPt.z;
             } else {
                 wx = rx * cosH - ry * sinH;
                 wy = rx * sinH + ry * cosH;
