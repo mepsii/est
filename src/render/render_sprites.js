@@ -99,60 +99,99 @@ function updateHeldWeapon(wData) {
             heldWeaponMeshes[key].visible = false;
         }
         
-        // If the mesh is not yet cached, build it once
+        // If the mesh is not yet cached, build/clone it once
         if (!heldWeaponMeshes[wName]) {
             let conf = WEAPON_MODEL_CONFIG[wName] || { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0 };
             
-            console.log(`[Weapon System] Building and caching 3D mesh from model faces for: ${wData.name}`);
-            const positions = [];
-            const colors = [];
-            const normals = [];
-            const indices = [];
-            let vertCount = 0;
-            
-            for (let f of model.faces) {
-                let pts = [];
-                for (let v of f.pts) {
-                    let r = rotate3D(v.x, v.y, v.z, conf.rotX, conf.rotY, conf.rotZ);
-                    let mx = r.x * conf.scale;
-                    let my = -r.z * conf.scale;
-                    let mz = r.y * conf.scale;
-                    pts.push({ x: mx, y: mz, z: -my });
+            if (window.NATIVE_GLTF_MODELS && window.NATIVE_GLTF_MODELS[wName]) {
+                console.log(`[Weapon System] Cloning, optimizing, and caching native 3D GLTF mesh for: ${wData.name}`);
+                const modelClone = window.NATIVE_GLTF_MODELS[wName].clone();
+                
+                // Swap standard materials with lightweight flat-shaded MeshLambertMaterial for GPU performance gains
+                modelClone.traverse((child) => {
+                    if (child.isMesh) {
+                        let originalMat = child.material;
+                        if (Array.isArray(originalMat)) originalMat = originalMat[0];
+                        
+                        const lambertMat = new THREE.MeshLambertMaterial({
+                            color: originalMat && originalMat.color ? originalMat.color.clone() : new THREE.Color(0x969696),
+                            map: (originalMat && originalMat.map) ? originalMat.map : null,
+                            vertexColors: (originalMat && originalMat.vertexColors) || false,
+                            flatShading: true,
+                            side: THREE.FrontSide
+                        });
+                        
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => { if (m && typeof m.dispose === 'function') m.dispose(); });
+                            } else {
+                                if (typeof child.material.dispose === 'function') child.material.dispose();
+                            }
+                        }
+                        child.material = lambertMat;
+                        child.frustumCulled = false; // Disable CPU-bound culling for camera-locked mesh
+                    }
+                });
+
+                // Apply config scale
+                modelClone.scale.set(conf.scale, conf.scale, conf.scale);
+                // Set native GLTF model rotation to standard forward-pointing upright (rotX=0, rotY=Math.PI/2 + 0.011, rotZ=0)
+                modelClone.rotation.set(0, Math.PI / 2 + 0.011, 0);
+                
+                heldWeaponGroup.add(modelClone);
+                heldWeaponMeshes[wName] = modelClone;
+            } else {
+                console.log(`[Weapon System] Building and caching 3D mesh from OBJ faces for: ${wData.name}`);
+                const positions = [];
+                const colors = [];
+                const normals = [];
+                const indices = [];
+                let vertCount = 0;
+                
+                for (let f of model.faces) {
+                    let pts = [];
+                    for (let v of f.pts) {
+                        let r = rotate3D(v.x, v.y, v.z, conf.rotX, conf.rotY, conf.rotZ);
+                        let mx = r.x * conf.scale;
+                        let my = -r.z * conf.scale;
+                        let mz = r.y * conf.scale;
+                        pts.push({ x: mx, y: mz, z: -my });
+                    }
+                    
+                    for (let pt of pts) {
+                        positions.push(pt.x, pt.y, pt.z);
+                        colors.push(f.color.r / 255, f.color.g / 255, f.color.b / 255, 1.0);
+                    }
+                    
+                    let ux = pts[1].x - pts[0].x, uy = pts[1].y - pts[0].y, uz = pts[1].z - pts[0].z;
+                    let wx = pts[2].x - pts[0].x, wy = pts[2].y - pts[0].y, wz = pts[2].z - pts[0].z;
+                    let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+                    let len = Math.hypot(nx, ny, nz);
+                    
+                    for (let i = 0; i < pts.length; i++) {
+                        normals.push(nx/len, ny/len, nz/len);
+                    }
+                    
+                    indices.push(vertCount, vertCount + 1, vertCount + 2);
+                    vertCount += 3;
                 }
                 
-                for (let pt of pts) {
-                    positions.push(pt.x, pt.y, pt.z);
-                    colors.push(f.color.r / 255, f.color.g / 255, f.color.b / 255, 1.0);
-                }
+                const geom = new THREE.BufferGeometry();
+                geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+                geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+                geom.setIndex(indices);
                 
-                let ux = pts[1].x - pts[0].x, uy = pts[1].y - pts[0].y, uz = pts[1].z - pts[0].z;
-                let wx = pts[2].x - pts[0].x, wy = pts[2].y - pts[0].y, wz = pts[2].z - pts[0].z;
-                let nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
-                let len = Math.hypot(nx, ny, nz);
+                const mat = new THREE.MeshLambertMaterial({
+                    vertexColors: true,
+                    flatShading: true,
+                    side: THREE.FrontSide
+                });
                 
-                for (let i = 0; i < pts.length; i++) {
-                    normals.push(nx/len, ny/len, nz/len);
-                }
-                
-                indices.push(vertCount, vertCount + 1, vertCount + 2);
-                vertCount += 3;
+                const mesh = new THREE.Mesh(geom, mat);
+                heldWeaponGroup.add(mesh);
+                heldWeaponMeshes[wName] = mesh;
             }
-            
-            const geom = new THREE.BufferGeometry();
-            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
-            geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-            geom.setIndex(indices);
-            
-            const mat = new THREE.MeshLambertMaterial({
-                vertexColors: true,
-                flatShading: true,
-                side: THREE.FrontSide
-            });
-            
-            const mesh = new THREE.Mesh(geom, mat);
-            heldWeaponGroup.add(mesh);
-            heldWeaponMeshes[wName] = mesh;
         }
         
         // Show the active weapon mesh
