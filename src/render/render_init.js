@@ -450,7 +450,7 @@ function getSolidMaterial() {
     if (solidMaterial) return solidMaterial;
     solidMaterial = new THREE.MeshLambertMaterial({
         vertexColors: true,
-        side: THREE.DoubleSide
+        side: THREE.FrontSide
     });
     return solidMaterial;
 }
