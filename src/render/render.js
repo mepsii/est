@@ -1,5 +1,156 @@
 //THIS IS render.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
+// WebGL HUD render pipeline variables (Method 3)
+let hudScene = null;
+let hudCamera = null;
+let hotbarQuad = null;
+let bulletQuad = null;
+let mainRenderTarget = null;
+let screenScene = null;
+let screenCamera = null;
+let screenQuad = null;
+let blurMaterial = null;
+let hotbarRect = null;
+
+window.addEventListener('resize', () => {
+    hotbarRect = null;
+});
+
+function initHUD() {
+    if (!renderer || !renderer.domElement) return;
+    
+    hudScene = new THREE.Scene();
+    hudCamera = new THREE.OrthographicCamera(
+        0, window.innerWidth,
+        window.innerHeight, 0,
+        -1, 1
+    );
+    
+    const w = renderer.domElement.width;
+    const h = renderer.domElement.height;
+    
+    // Create standard WebGLRenderTarget
+    mainRenderTarget = new THREE.WebGLRenderTarget(w, h, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat
+    });
+    
+    // Create screen scene for copying mainRenderTarget to the canvas backbuffer
+    screenScene = new THREE.Scene();
+    screenCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    screenQuad = new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 2),
+        new THREE.MeshBasicMaterial({ map: mainRenderTarget.texture })
+    );
+    screenScene.add(screenQuad);
+    
+    // ShaderMaterial for 9-tap dynamic box blur
+    blurMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            tDiffuse: { value: mainRenderTarget.texture },
+            uResolution: { value: new THREE.Vector2(w, h) }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D tDiffuse;
+            uniform vec2 uResolution;
+            varying vec2 vUv;
+            void main() {
+                vec2 screenUV = gl_FragCoord.xy / uResolution;
+                vec4 color = vec4(0.0);
+                float totalWeight = 0.0;
+                float blurRadius = 6.0;
+                for (float x = -2.0; x <= 2.0; x += 1.0) {
+                    for (float y = -2.0; y <= 2.0; y += 1.0) {
+                        vec2 offset = vec2(x, y) * blurRadius / uResolution;
+                        float weight = 1.0 - (length(vec2(x, y)) / 3.0);
+                        if (weight > 0.0) {
+                            color += texture2D(tDiffuse, screenUV + offset) * weight;
+                            totalWeight += weight;
+                        }
+                    }
+                }
+                color /= totalWeight;
+                gl_FragColor = color;
+            }
+        `,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true
+    });
+    
+    const geom = new THREE.PlaneGeometry(1, 1);
+    
+    hotbarQuad = new THREE.Mesh(geom, blurMaterial);
+    hudScene.add(hotbarQuad);
+    
+    bulletQuad = new THREE.Mesh(geom, blurMaterial);
+    hudScene.add(bulletQuad);
+}
+
+function updateHUDQuads() {
+    if (!renderer || !renderer.domElement) return;
+    if (!hudScene) {
+        initHUD();
+    }
+    
+    const w = renderer.domElement.width;
+    const h = renderer.domElement.height;
+    
+    // Handle viewport resize: resize target and update uniforms/projection
+    if (blurMaterial && (blurMaterial.uniforms.uResolution.value.x !== w || blurMaterial.uniforms.uResolution.value.y !== h)) {
+        if (mainRenderTarget) mainRenderTarget.setSize(w, h);
+        blurMaterial.uniforms.uResolution.value.set(w, h);
+        
+        hudCamera.left = 0;
+        hudCamera.right = window.innerWidth;
+        hudCamera.top = window.innerHeight;
+        hudCamera.bottom = 0;
+        hudCamera.updateProjectionMatrix();
+    }
+    
+    // Update Hotbar Quad positioning
+    const hotbarWrapper = document.getElementById('hotbar-wrapper');
+    if (hotbarWrapper && hotbarQuad) {
+        if (!hotbarRect) {
+            hotbarRect = hotbarWrapper.getBoundingClientRect();
+        }
+        if (hotbarRect && hotbarRect.width > 0) {
+            hotbarQuad.visible = true;
+            hotbarQuad.position.x = hotbarRect.left + hotbarRect.width / 2;
+            hotbarQuad.position.y = window.innerHeight - (hotbarRect.top + hotbarRect.height / 2);
+            hotbarQuad.scale.set(hotbarRect.width, hotbarRect.height, 1);
+        } else {
+            hotbarQuad.visible = false;
+        }
+    } else if (hotbarQuad) {
+        hotbarQuad.visible = false;
+    }
+    
+    // Update Bullet Counter Quad positioning (only when visible)
+    const bulletWrapper = document.getElementById('bullet-counter-wrapper');
+    if (bulletWrapper && bulletQuad && bulletWrapper.classList.contains('visible')) {
+        const rect = bulletWrapper.getBoundingClientRect();
+        if (rect && rect.width > 0) {
+            bulletQuad.visible = true;
+            bulletQuad.position.x = rect.left + rect.width / 2;
+            bulletQuad.position.y = window.innerHeight - (rect.top + rect.height / 2);
+            bulletQuad.scale.set(rect.width, rect.height, 1);
+        } else {
+            bulletQuad.visible = false;
+        }
+    } else if (bulletQuad) {
+        bulletQuad.visible = false;
+    }
+}
+
 // MAIN RENDER LOOP ROUTINE
 function render() {
     if (isLoading) return;
@@ -1187,8 +1338,31 @@ function render() {
         }
     }
     
-    // Run WebGL Render Call
-    renderer.render(scene, camera);
+    // Run WebGL Render Call (render scene into offscreen target)
+    if (threeInitialized) {
+        updateHUDQuads(); // ensures mainRenderTarget, hudScene, etc. exist
+        
+        if (mainRenderTarget && screenScene && screenCamera && hudScene && hudCamera) {
+            // 1. Render primary 3D scene to offscreen render target
+            renderer.setRenderTarget(mainRenderTarget);
+            renderer.render(scene, camera);
+            
+            // 2. Render copy quad to actual canvas backbuffer on screen
+            renderer.setRenderTarget(null);
+            renderer.render(screenScene, screenCamera);
+            
+            // 3. Render HUD scene containing blurred quads on top
+            renderer.autoClear = false;
+            renderer.render(hudScene, hudCamera);
+            renderer.autoClear = true;
+        } else {
+            // Fallback: render directly to screen if HUD not ready yet
+            renderer.render(scene, camera);
+        }
+    } else {
+        // Fallback: standard direct rendering
+        renderer.render(scene, camera);
+    }
     
     // Update HTML overlay indicators
     let crosshairEl = document.getElementById('crosshair');

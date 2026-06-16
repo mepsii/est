@@ -431,11 +431,12 @@ function getItemModelName(item) {
 
 function updateBulletCounterUI() {
     let counterEl = document.getElementById('bullet-counter');
-    if (!counterEl) return;
+    let wrapperEl = document.getElementById('bullet-counter-wrapper');
+    if (!counterEl || !wrapperEl) return;
     
     let activeItem = inventory[hotbarSelection];
     if (activeItem && activeItem.id === 'pistol') {
-        counterEl.classList.add('visible');
+        wrapperEl.classList.add('visible');
         ensurePistolAmmo(activeItem);
         
         if (player.pistolReloadTimer > 0) {
@@ -445,7 +446,7 @@ function updateBulletCounterUI() {
             counterEl.innerHTML = `🔫 ${activeItem.bullets} / ${reserve}`;
         }
     } else {
-        counterEl.classList.remove('visible');
+        wrapperEl.classList.remove('visible');
     }
 }
 
