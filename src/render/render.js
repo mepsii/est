@@ -1075,6 +1075,9 @@ function render() {
     for (let [key, sprite] of threeDynamicSprites.entries()) {
         if (!activeSpritesThisFrame.has(key)) {
             scene.remove(sprite);
+            if (sprite.material) {
+                sprite.material.dispose();
+            }
             threeDynamicSprites.delete(key);
         }
     }
