@@ -251,7 +251,7 @@ function initThree() {
     camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
     scene = new THREE.Scene();
     
-    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false, logarithmicDepthBuffer: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     
@@ -317,10 +317,8 @@ function initThree() {
     
     // Dynamic Solid Color mesh for weapons, vehicles, limbs
     const solidGeo = new THREE.BufferGeometry();
-    const solidMat = new THREE.MeshStandardMaterial({
+    const solidMat = new THREE.MeshLambertMaterial({
         vertexColors: true,
-        roughness: 0.8,
-        metalness: 0.1,
         side: THREE.DoubleSide
     });
     dynamicSolidMesh = new THREE.Mesh(solidGeo, solidMat);
@@ -450,10 +448,8 @@ function updateChunkMesh(key, faces) {
 
 function getSolidMaterial() {
     if (solidMaterial) return solidMaterial;
-    solidMaterial = new THREE.MeshStandardMaterial({
+    solidMaterial = new THREE.MeshLambertMaterial({
         vertexColors: true,
-        roughness: 0.8,
-        metalness: 0.1,
         side: THREE.DoubleSide
     });
     return solidMaterial;
