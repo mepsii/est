@@ -67,11 +67,16 @@ function loop(timestamp) {
     if (dt > 250) dt = 250; // Cap dt to avoid "spiral of death" during lag spikes
     lastLoopTime = now;
 
-    // Fixed timestep physics update
+    // Fixed timestep physics update with safety cap to prevent lag spiral
     physicsAccumulator += dt;
-    while (physicsAccumulator >= physicsTickRate) {
+    let updates = 0;
+    while (physicsAccumulator >= physicsTickRate && updates < 3) {
         update(); 
         physicsAccumulator -= physicsTickRate;
+        updates++;
+    }
+    if (physicsAccumulator > physicsTickRate * 5) {
+        physicsAccumulator = 0;
     }
 
     // Render throttling with pacing tolerance

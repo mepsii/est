@@ -27,6 +27,7 @@ let lastPlayerPitch = undefined;
 let billboardGeo;
 let activeBillboardMeshes = new Set();
 let waterMaterial = null;
+let solidMaterial = null;
 
 let globalInstancedMeshes = new Map();
 const instPos = new THREE.Vector3();
@@ -323,6 +324,7 @@ function initThree() {
         side: THREE.DoubleSide
     });
     dynamicSolidMesh = new THREE.Mesh(solidGeo, solidMat);
+    dynamicSolidMesh.frustumCulled = false;
     scene.add(dynamicSolidMesh);
     
     // Dynamic transparent mesh for clouds
@@ -336,6 +338,7 @@ function initThree() {
     });
     dynamicCloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
     dynamicCloudMesh.renderOrder = 2;
+    dynamicCloudMesh.frustumCulled = false;
     scene.add(dynamicCloudMesh);
     
     // Dynamic Player Steve skin mesh
@@ -347,6 +350,7 @@ function initThree() {
         side: THREE.DoubleSide
     });
     dynamicPlayerMesh = new THREE.Mesh(playerGeo, playerMat);
+    dynamicPlayerMesh.frustumCulled = false;
     scene.add(dynamicPlayerMesh);
     
     // Dynamic Zombie skin mesh
@@ -358,6 +362,7 @@ function initThree() {
         side: THREE.DoubleSide
     });
     dynamicZombieMesh = new THREE.Mesh(zombieGeo, zombieMat);
+    dynamicZombieMesh.frustumCulled = false;
     scene.add(dynamicZombieMesh);
     
     billboardGeo = new THREE.PlaneGeometry(1, 1);
@@ -441,6 +446,17 @@ function updateChunkMesh(key, faces) {
     
     // Store the raw chunkEntities directly so they can be rendered via instancing in render.js
     threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: chunkEntities });
+}
+
+function getSolidMaterial() {
+    if (solidMaterial) return solidMaterial;
+    solidMaterial = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+    });
+    return solidMaterial;
 }
 
 function getWaterMaterial() {
@@ -547,12 +563,7 @@ function buildFacesMesh(faces, isWater) {
     if (isWater) {
         material = getWaterMaterial();
     } else {
-        material = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            roughness: 0.8,
-            metalness: 0.1,
-            side: THREE.DoubleSide
-        });
+        material = getSolidMaterial();
     }
     
     return new THREE.Mesh(geometry, material);
@@ -605,20 +616,59 @@ function uploadDynamicBuffers() {
     updateBufferGeometry(dynamicZombieMesh.geometry, dynamicBuffers.zombie, true);
 }
 
+function updateDynamicAttribute(geometry, attributeName, dataArray, itemSize) {
+    let attr = geometry.getAttribute(attributeName);
+    const requiredLength = dataArray.length;
+    
+    if (!attr || attr.array.length < requiredLength) {
+        const capacity = Math.max(Math.ceil(requiredLength * 1.3 / itemSize) * itemSize, 1024 * itemSize);
+        const typedArray = new Float32Array(capacity);
+        typedArray.set(dataArray);
+        
+        attr = new THREE.BufferAttribute(typedArray, itemSize);
+        attr.setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute(attributeName, attr);
+    } else {
+        attr.array.set(dataArray);
+        attr.needsUpdate = true;
+        attr.updateRange.offset = 0;
+        attr.updateRange.count = requiredLength;
+    }
+}
+
 // Update buffer geometry attributes
 function updateBufferGeometry(geometry, data, hasUVs) {
     if (data.vertCount === 0) {
-        geometry.setIndex([]);
+        geometry.setDrawRange(0, 0);
         return;
     }
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 4));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+    
+    updateDynamicAttribute(geometry, 'position', data.positions, 3);
+    updateDynamicAttribute(geometry, 'color', data.colors, 4);
+    updateDynamicAttribute(geometry, 'normal', data.normals, 3);
     if (hasUVs) {
-        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
+        updateDynamicAttribute(geometry, 'uv', data.uvs, 2);
     }
-    geometry.setIndex(data.indices);
-    geometry.computeBoundingSphere();
+    
+    // Update index
+    let indexAttr = geometry.getIndex();
+    const requiredIndices = data.indices.length;
+    if (!indexAttr || indexAttr.array.length < requiredIndices) {
+        const capacity = Math.max(Math.ceil(requiredIndices * 1.3), 1024);
+        const typedArray = new Uint32Array(capacity);
+        typedArray.set(data.indices);
+        
+        indexAttr = new THREE.BufferAttribute(typedArray, 1);
+        indexAttr.setUsage(THREE.DynamicDrawUsage);
+        geometry.setIndex(indexAttr);
+    } else {
+        indexAttr.array.set(data.indices);
+        indexAttr.needsUpdate = true;
+        indexAttr.updateRange.offset = 0;
+        indexAttr.updateRange.count = requiredIndices;
+    }
+    
+    geometry.setDrawRange(0, requiredIndices);
 }
 
 function buildThreeMeshFromModel(modelName, conf) {
