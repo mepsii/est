@@ -674,7 +674,6 @@ function buildThreeMeshFromModel(modelName, conf) {
     
     const positions = [];
     const colors = [];
-    const normals = [];
     const indices = [];
     let vertCount = 0;
     
@@ -697,19 +696,6 @@ function buildThreeMeshFromModel(modelName, conf) {
             colors.push(f.color.r / 255, f.color.g / 255, f.color.b / 255, 1.0);
         }
         
-        // Compute face normal in Y-up space
-        let ux = pts[1].x - pts[0].x, uy = pts[1].y - pts[0].y, uz = pts[1].z - pts[0].z;
-        let wx = pts[2].x - pts[0].x, wy = pts[2].y - pts[0].y, wz = pts[2].z - pts[0].z;
-        let cx = uy*wz - uz*wy;
-        let cy = uz*wx - ux*wz;
-        let cz = ux*wy - uy*wx;
-        let len = Math.hypot(cx, cy, cz);
-        if (len > 0) { cx /= len; cy /= len; cz /= len; }
-        
-        for (let i = 0; i < pts.length; i++) {
-            normals.push(cx, cy, cz);
-        }
-        
         indices.push(vertCount, vertCount + 2, vertCount + 1);
         vertCount += 3;
     }
@@ -717,8 +703,8 @@ function buildThreeMeshFromModel(modelName, conf) {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
-    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geom.setIndex(indices);
+    geom.computeVertexNormals();
     
     const mat = new THREE.MeshStandardMaterial({
         vertexColors: true,
