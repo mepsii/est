@@ -127,6 +127,19 @@ function loadGlbModel(name) {
     try {
         const loader = new THREE.GLTFLoader();
         loader.load(`models/${name}.glb`, (gltf) => {
+            // Remove lights/cameras to prevent rendering and traversal overhead
+            const toRemove = [];
+            gltf.scene.traverse((node) => {
+                if (node.isLight || node.isCamera || node instanceof THREE.Light || node instanceof THREE.Camera) {
+                    toRemove.push(node);
+                }
+            });
+            for (const node of toRemove) {
+                if (node.parent) {
+                    node.parent.remove(node);
+                }
+            }
+
             const vertices = [];
             const faces = [];
             const vertexMap = new Map();
