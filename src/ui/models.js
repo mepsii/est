@@ -2,6 +2,7 @@
 //THIS IS models.js , NO LLM/AI SHOULD REMOVE THIS COMMENT, HOWEVER IT SHOULD USE IT TO KNOW THE FILE TREE
 
 // --- 3D Model Support ---
+window.NATIVE_GLTF_MODELS = {};
 const WEAPON_MODELS = {};
 const WEAPON_MODEL_CONFIG = {
     'pistol':  { scale: 0.2, rotX: Math.PI / 2, rotY: Math.PI / 2 + 0.011, rotZ: Math.PI / 2, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2, zoomOffsetX: 0.0, zoomOffsetY: 0.4, zoomOffsetZ: -0.145 },
@@ -199,6 +200,7 @@ function loadGlbModel(name) {
             });
 
             WEAPON_MODELS[name] = { vertices, faces };
+            window.NATIVE_GLTF_MODELS[name] = gltf.scene;
             console.log(`[GLTF Loader] Loaded ${name}.glb: ${vertices.length} vertices, ${faces.length} faces`);
 
             if (typeof updateInventories === 'function') {
