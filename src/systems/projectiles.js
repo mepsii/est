@@ -181,16 +181,8 @@ function updateProjectiles() {
                                     let ecx = Math.floor(ex / CHUNK_SIZE);
                                     let ecy = Math.floor(ey / CHUNK_SIZE);
                                     let chunkKey = `${ecx},${ecy}`;
-                                    if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
-                                        let cached = threeChunks.get(chunkKey);
-                                        if (cached.entities) {
-                                            for (let sprite of cached.entities) {
-                                                if (sprite instanceof THREE.Object3D) {
-                                                    scene.remove(sprite);
-                                                }
-                                            }
-                                        }
-                                        threeChunks.delete(chunkKey);
+                                    if (typeof chunkMeshes !== 'undefined') {
+                                        chunkMeshes.delete(chunkKey);
                                     }
                                 }
                             } else {
@@ -241,16 +233,8 @@ function updateProjectiles() {
                                     let ecx = Math.floor(ex / CHUNK_SIZE);
                                     let ecy = Math.floor(ey / CHUNK_SIZE);
                                     let chunkKey = `${ecx},${ecy}`;
-                                    if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
-                                        let cached = threeChunks.get(chunkKey);
-                                        if (cached.entities) {
-                                            for (let sprite of cached.entities) {
-                                                if (sprite instanceof THREE.Object3D) {
-                                                    scene.remove(sprite);
-                                                }
-                                            }
-                                        }
-                                        threeChunks.delete(chunkKey);
+                                    if (typeof chunkMeshes !== 'undefined') {
+                                        chunkMeshes.delete(chunkKey);
                                     }
                                     miningProgress = 0;
                                     miningTarget = null;
@@ -580,17 +564,9 @@ function updateProjectiles() {
                             let ecx = Math.floor(ex / CHUNK_SIZE);
                             let ecy = Math.floor(ey / CHUNK_SIZE);
                             let chunkKey = `${ecx},${ecy}`;
-                            if (typeof threeChunks !== 'undefined' && threeChunks.has(chunkKey)) {
-                                let cached = threeChunks.get(chunkKey);
-                                if (cached.entities) {
-                                    for (let sprite of cached.entities) {
-                                        if (sprite instanceof THREE.Object3D) {
-                                            scene.remove(sprite);
-                                        }
+                            if (typeof chunkMeshes !== 'undefined') {
+                                        chunkMeshes.delete(chunkKey);
                                     }
-                                }
-                                threeChunks.delete(chunkKey);
-                            }
                         }
                     }
                 }
