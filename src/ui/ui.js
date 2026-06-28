@@ -859,6 +859,14 @@ window.addEventListener('mouseup', e => {
 
 window.addEventListener('contextmenu', e => e.preventDefault());
 
+const craftingExpandBtn = document.getElementById('crafting-expand-btn');
+if (craftingExpandBtn) {
+    craftingExpandBtn.addEventListener('click', () => {
+        const expanded = craftingList.classList.toggle('expanded');
+        craftingExpandBtn.innerText = expanded ? 'Collapse ▴' : 'Expand ▾';
+    });
+}
+
 // --- Input Bindings ---
 overlay.addEventListener('click', () => { if(!isInventoryOpen && !isDebugOpen && !isStairMenuOpen) canvas.requestPointerLock(); });
 
