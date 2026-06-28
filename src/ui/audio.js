@@ -136,9 +136,24 @@ function updateAmbiance() {
         const isThrottling = keys['KeyW'] || keys['KeyS'];
 
         // Simulated Automatic gear shifting (4-speed) for engine pitch
-        let targetRPM = 800; // Idle
+        let targetRPM = 520; // Idle
+        
+        // Handle free revving decay when not throttling in Park, or when gear changes
+        if (!isThrottling || v.gear !== 'P') {
+            if (v.freeRevRPM) {
+                v.freeRevRPM -= 280; // fast decay back to idle
+                if (v.freeRevRPM < 520) v.freeRevRPM = 520;
+            }
+        }
+
         if (isThrottling) {
-            if (v.gear === 'L') {
+            if (v.gear === 'P') {
+                // Free revving simulation when in Park!
+                if (!v.freeRevRPM) v.freeRevRPM = 520;
+                v.freeRevRPM += 200; // rise speed rate
+                if (v.freeRevRPM > 4800) v.freeRevRPM = 4800; // rev limit
+                targetRPM = v.freeRevRPM;
+            } else if (v.gear === 'L') {
                 targetRPM = 1800 + (speedKmH / 42) * 3800; // Crawl revs
             } else {
                 let speedMph = speedKmH * 0.621371;
@@ -162,8 +177,15 @@ function updateAmbiance() {
             }
             targetRPM += Math.random() * 40; // light engine noise jitter
         } else {
-            // Idle or coasting
-            targetRPM = 800 + (speedKmH / 120) * 1200;
+            // Idle or coasting with a slow loping V8 rumble
+            const time = performance.now();
+            // Loping pitch fluctuation (hunting effect) at 6.0 Hz (toned down to 30 RPM)
+            const lope = Math.sin(time * 0.006) * 30;
+            const mechanicalJitter = (Math.random() - 0.5) * 12;
+            
+            // Low idle at 520 RPM, climbing as we coast faster
+            targetRPM = 520 + lope + mechanicalJitter + (speedKmH / 120) * 1400;
+            targetRPM = Math.max(450, targetRPM); // clamp to prevent logic errors
         }
 
         engineSound.update(targetRPM, isThrottling);
@@ -296,8 +318,10 @@ class RetroEngineSound {
         this.filter = null;
         this.gainNode = null;
         this.distortion = null;
+        this.lfo = null;
+        this.lfoGain = null;
         this.isPlaying = false;
-        this.currentRPM = 800;
+        this.currentRPM = 520;
     }
 
     init() {
@@ -341,7 +365,7 @@ class RetroEngineSound {
         this.gainSub.gain.value = 2.2; // High sub-bass rumble for big-block weight
 
         this.distortion = ctx.createWaveShaper();
-        this.distortion.curve = this.makeDistortionCurve(40);
+        this.distortion.curve = this.makeDistortionCurve(20); // Softer distortion curve to prevent sharp clipping pops
         this.distortion.oversample = '4x';
 
         // Low-pass filter with resonant peak (Q) to simulate deep throaty exhaust chamber
@@ -351,6 +375,18 @@ class RetroEngineSound {
 
         this.gainNode = ctx.createGain();
         this.gainNode.gain.setValueAtTime(0.0, ctx.currentTime);
+
+        // LFO for choppy V8 "cam lope" volume chugging
+        this.lfo = ctx.createOscillator();
+        this.lfo.type = 'sine';
+        this.lfo.frequency.setValueAtTime(6.2, ctx.currentTime); // ~6.2 Hz lope chop rate
+
+        this.lfoGain = ctx.createGain();
+        this.lfoGain.gain.setValueAtTime(0.10, ctx.currentTime); // 10% gain modulation (toned down from 18% for less poppy idle)
+
+        // Connect LFO to modulate the master volume gain parameter
+        this.lfo.connect(this.lfoGain);
+        this.lfoGain.connect(this.gainNode.gain);
 
         // Connections: Oscillators -> Gains -> Distortion -> Filter -> Master Gain -> Destination
         this.osc1.connect(this.gainOsc1);
@@ -369,8 +405,9 @@ class RetroEngineSound {
         this.osc1.start();
         this.osc2.start();
         this.subOsc.start();
+        this.lfo.start();
 
-        this.gainNode.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.15);
+        this.gainNode.gain.linearRampToValueAtTime(0.30, ctx.currentTime + 0.15);
     }
 
     makeDistortionCurve(amount) {
@@ -397,14 +434,23 @@ class RetroEngineSound {
         const firingFreq = (this.currentRPM / 60) * 2.0;
 
         this.osc1.frequency.setTargetAtTime(firingFreq, ctx.currentTime, 0.05);
-        this.osc2.frequency.setTargetAtTime(firingFreq + 1.2, ctx.currentTime, 0.05);
+        this.osc2.frequency.setTargetAtTime(firingFreq + 0.6, ctx.currentTime, 0.05); // Less detuning to avoid phasing pops
         this.subOsc.frequency.setTargetAtTime(firingFreq * 0.5, ctx.currentTime, 0.05);
+
+        // Fade out lope depth as engine revs up (disappears above 1200 RPM)
+        const lopeDepth = Math.max(0.0, 0.10 - (this.currentRPM - 520) / 680);
+        this.lfoGain.gain.setTargetAtTime(lopeDepth, ctx.currentTime, 0.05);
+
+        // LFO chop speeds up slightly with RPM to match engine rhythm
+        const lfoSpeed = 6.2 + (this.currentRPM - 520) * 0.005;
+        this.lfo.frequency.setTargetAtTime(lfoSpeed, ctx.currentTime, 0.05);
 
         // Low-pass filter sweeps low to swallow high-pitched whiny distortion harmonics
         const cutoffFreq = 70 + (firingFreq * 0.95);
         this.filter.frequency.setTargetAtTime(cutoffFreq, ctx.currentTime, 0.05);
 
-        const volumeScale = throttleInput ? 0.15 : 0.07;
+        // Louder master volume gains (was 0.15 and 0.07)
+        const volumeScale = throttleInput ? 0.38 : 0.22;
         this.gainNode.gain.setTargetAtTime(volumeScale, ctx.currentTime, 0.1);
     }
 
@@ -423,13 +469,15 @@ class RetroEngineSound {
                     if (this.osc1) { this.osc1.stop(); this.osc1.disconnect(); }
                     if (this.osc2) { this.osc2.stop(); this.osc2.disconnect(); }
                     if (this.subOsc) { this.subOsc.stop(); this.subOsc.disconnect(); }
+                    if (this.lfo) { this.lfo.stop(); this.lfo.disconnect(); }
                     if (this.gainOsc1) this.gainOsc1.disconnect();
                     if (this.gainOsc2) this.gainOsc2.disconnect();
                     if (this.gainSub) this.gainSub.disconnect();
+                    if (this.lfoGain) this.lfoGain.disconnect();
                     if (this.distortion) this.distortion.disconnect();
                     if (this.filter) this.filter.disconnect();
                     if (this.gainNode) this.gainNode.disconnect();
-                    this.osc1 = this.osc2 = this.subOsc = this.gainOsc1 = this.gainOsc2 = this.gainSub = this.distortion = this.filter = this.gainNode = null;
+                    this.osc1 = this.osc2 = this.subOsc = this.lfo = this.gainOsc1 = this.gainOsc2 = this.gainSub = this.lfoGain = this.distortion = this.filter = this.gainNode = null;
                 }
             }, 200);
         }
