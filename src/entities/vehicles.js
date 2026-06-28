@@ -852,7 +852,7 @@ function postUpdateVehicles() {
                         let maxLife = 70 + Math.floor(throttleFactor * 50) + Math.floor(Math.random() * 30);
                         let maxOpacity = 0.18 + throttleFactor * 0.17;
 
-                        let baseColor = 45 - throttleFactor * 25; // Dark sooty gray for testing (Idle = 45, Throttle = 20)
+                        let baseColor = 100 - throttleFactor * 45; // Dirty grey (Idle = 100, Throttle = 55)
                         let colorNoise = (Math.random() - 0.5) * 8;
                         let r = Math.floor(baseColor - 3 + colorNoise);
                         let g = Math.floor(baseColor + colorNoise);

@@ -397,7 +397,7 @@ function render() {
     }
     
     // Update player flashlight spotlight
-    if (isFlashlightOn) {
+    if (isFlashlightOn && !player.inVehicle) {
         flashlight.intensity = 1.5;
         flashlight.position.copy(camera.position);
         camera.updateMatrixWorld();
@@ -975,8 +975,48 @@ function render() {
                             }
                         }
                         
+                        // Daytime running lights (DRLs) - visible glow sprites
+                        let drlMat = new THREE.SpriteMaterial({
+                            map: GlowTextureCache.get(),
+                            transparent: true,
+                            depthWrite: false
+                        });
+                        const drlLeft = new THREE.Sprite(drlMat);
+                        drlLeft.position.set(1.700, 0.033, -0.500);
+                        drlLeft.scale.set(0.18, 0.18, 1.0);
+                        group.add(drlLeft);
+
+                        const drlRight = new THREE.Sprite(drlMat.clone());
+                        drlRight.position.set(1.700, 0.033, 0.500);
+                        drlRight.scale.set(0.18, 0.18, 1.0);
+                        group.add(drlRight);
+
+                        // Spotlight beams
+                        const lightLeft = new THREE.SpotLight(0xffffff, 0.0, 60, Math.PI / 6, 0.3, 1.0);
+                        lightLeft.position.set(1.700, 0.033, -0.500);
+                        lightLeft.map = FlashlightTextureCache.get();
+                        group.add(lightLeft);
+                        group.add(lightLeft.target);
+                        lightLeft.target.position.set(3.700, 0.033, -0.500); // 2 meters forward along X
+
+                        const lightRight = new THREE.SpotLight(0xffffff, 0.0, 60, Math.PI / 6, 0.3, 1.0);
+                        lightRight.position.set(1.700, 0.033, 0.500);
+                        lightRight.map = FlashlightTextureCache.get();
+                        group.add(lightRight);
+                        group.add(lightRight.target);
+                        lightRight.target.position.set(3.700, 0.033, 0.500); // 2 meters forward along X
+
                         scene.add(group);
-                        vehicleObj = { group, bodyMesh, wheelMeshes, type: 'truck' };
+                        vehicleObj = {
+                            group,
+                            bodyMesh,
+                            wheelMeshes,
+                            type: 'truck',
+                            drlLeft,
+                            drlRight,
+                            lightLeft,
+                            lightRight
+                        };
                         threeVehicles.set(v, vehicleObj);
                     }
                     
@@ -984,6 +1024,48 @@ function render() {
                     vehicleObj.group.position.set(v.x, v.z, v.y);
                     vehicleObj.group.quaternion.set(v.qx, v.qz, v.qy, -v.qw);
                     vehicleObj.group.visible = true;
+
+                    // Update headlights and DRLs
+                    const isRunning = (player.inVehicle === v);
+                    if (isRunning) {
+                        const showHighBeams = isFlashlightOn;
+                        
+                        if (vehicleObj.drlLeft) {
+                            vehicleObj.drlLeft.visible = true;
+                            vehicleObj.drlRight.visible = true;
+                            if (showHighBeams) {
+                                vehicleObj.drlLeft.scale.set(0.35, 0.35, 1.0);
+                                vehicleObj.drlRight.scale.set(0.35, 0.35, 1.0);
+                                vehicleObj.drlLeft.material.opacity = 1.0;
+                                vehicleObj.drlRight.material.opacity = 1.0;
+                            } else {
+                                vehicleObj.drlLeft.scale.set(0.18, 0.18, 1.0);
+                                vehicleObj.drlRight.scale.set(0.18, 0.18, 1.0);
+                                vehicleObj.drlLeft.material.opacity = 0.45;
+                                vehicleObj.drlRight.material.opacity = 0.45;
+                            }
+                        }
+
+                        if (vehicleObj.lightLeft) {
+                            if (showHighBeams) {
+                                vehicleObj.lightLeft.intensity = 2.0;
+                                vehicleObj.lightRight.intensity = 2.0;
+                            } else {
+                                vehicleObj.lightLeft.intensity = 0.0;
+                                vehicleObj.lightRight.intensity = 0.0;
+                            }
+                        }
+                    } else {
+                        // Vehicle not running: turn off lights & DRLs completely
+                        if (vehicleObj.drlLeft) {
+                            vehicleObj.drlLeft.visible = false;
+                            vehicleObj.drlRight.visible = false;
+                        }
+                        if (vehicleObj.lightLeft) {
+                            vehicleObj.lightLeft.intensity = 0.0;
+                            vehicleObj.lightRight.intensity = 0.0;
+                        }
+                    }
                     
                     // Update individual wheels
                     if (v.wheels && vehicleObj.wheelMeshes.length === v.wheels.length) {
