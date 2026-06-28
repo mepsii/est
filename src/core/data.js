@@ -192,6 +192,7 @@ let godMode = false, noclip = false, speedMult = 1.0;
 let flightMode = false, jumpPower = 0.28;
 let infiniteStamina = false, sprintMult = 1.5;
 let spawnEnemiesToggle = true, showDebugInfo = false;
+let enableGrassTexture = false;
 let isFlashlightOn = false;
 let lockFps30 = false;
 let thickFogEnabled = true;

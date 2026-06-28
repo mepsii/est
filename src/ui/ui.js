@@ -1073,6 +1073,12 @@ document.getElementById('btn-stam').onclick = () => { player.stamina = parseInt(
 document.getElementById('btn-food').onclick = () => { player.food = parseInt(document.getElementById('dbg-food').value); foodEl.innerText = player.food; };
 document.getElementById('dbg-god').onchange = e => godMode = e.target.checked;
 document.getElementById('dbg-noclip').onchange = e => noclip = e.target.checked;
+document.getElementById('dbg-grass-texture').onchange = e => {
+    enableGrassTexture = e.target.checked;
+    if (typeof rebuildAllChunkMeshes === 'function') {
+        rebuildAllChunkMeshes();
+    }
+};
 document.getElementById('dbg-freecam').onchange = e => {
     freecam = e.target.checked;
     if (freecam) {

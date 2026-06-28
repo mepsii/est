@@ -302,7 +302,8 @@ const BlockTextureAtlas = {
         
         const texturesToLoad = [
             { id: 4, src: 'textures/blocks/woodplank.png', slot: 1 },
-            { id: 5, src: 'textures/blocks/cobble.png', slot: 2 }
+            { id: 5, src: 'textures/blocks/cobble.png', slot: 2 },
+            { id: 1, src: 'textures/blocks/grass.png', slot: 3 }
         ];
         
         let loadedCount = 0;
@@ -336,7 +337,7 @@ const BlockTextureAtlas = {
                     for (let y = 16; y < 128; y += 32) {
                         ctx.fillRect(col * 128, row * 128 + y, 128, 4);
                     }
-                } else {
+                } else if (t.id === 5) {
                     ctx.fillStyle = '#8c8c8c';
                     ctx.fillRect(col * 128, row * 128, 128, 128);
                     ctx.fillStyle = '#5c5c5c';
@@ -344,6 +345,15 @@ const BlockTextureAtlas = {
                         let rx = Math.floor(Math.random() * 100);
                         let ry = Math.floor(Math.random() * 100);
                         ctx.fillRect(col * 128 + rx, row * 128 + ry, 24, 16);
+                    }
+                } else if (t.id === 1) {
+                    ctx.fillStyle = '#55a02d';
+                    ctx.fillRect(col * 128, row * 128, 128, 128);
+                    ctx.fillStyle = '#3c781e';
+                    for (let i = 0; i < 40; i++) {
+                        let rx = Math.floor(Math.random() * 110);
+                        let ry = Math.floor(Math.random() * 110);
+                        ctx.fillRect(col * 128 + rx, row * 128 + ry, 8, 8);
                     }
                 }
                 checkDone();
@@ -669,6 +679,8 @@ function buildFacesMesh(faces, isWater) {
             // Map voxel type to slot index
             if (f.vType !== undefined && BlockTextureAtlas.mappings[f.vType] !== undefined) {
                 slotIndex = BlockTextureAtlas.mappings[f.vType];
+            } else if (enableGrassTexture && f.vType === 1 && f.col.g > 90) {
+                slotIndex = 3;
             }
             
             faceUVs = BlockTextureAtlas.getSlotUVs(slotIndex, faceIndex);
@@ -881,4 +893,12 @@ function buildThreeMeshFromModel(modelName, conf) {
     });
     
     return new THREE.Mesh(geom, mat);
+}
+
+function rebuildAllChunkMeshes() {
+    threeChunks.forEach((cached, key) => {
+        if (cached.solidMesh) scene.remove(cached.solidMesh);
+        if (cached.waterMesh) scene.remove(cached.waterMesh);
+    });
+    threeChunks.clear();
 }
