@@ -245,6 +245,121 @@ const DmgTextCache = {
     }
 };
 
+const BlockTextureAtlas = {
+    canvas: null,
+    texture: null,
+    initialized: false,
+    loaded: false,
+    uvCache: null,
+    
+    // Maps blockId to Slot index in our atlas
+    // blockId 4 = Wood Block (Slot 1)
+    // blockId 5 = Stone Cube (Slot 2)
+    mappings: {
+        4: 1, // Wood
+        5: 2  // Stone
+    },
+    
+    init() {
+        if (this.initialized) return;
+        this.initialized = true;
+        
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = 256;
+        this.canvas.height = 256;
+        const ctx = this.canvas.getContext('2d');
+        
+        // Fill entire atlas with white by default (so slot 0 is pure white fallback)
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 256, 256);
+        
+        this.texture = new THREE.CanvasTexture(this.canvas);
+        this.texture.minFilter = THREE.NearestFilter;
+        this.texture.magFilter = THREE.NearestFilter;
+        
+        // Pre-calculate and cache UV mappings to avoid object allocations in hot paths
+        this.uvCache = [];
+        const atlasW = 256;
+        const atlasH = 256;
+        const slotSize = 128;
+        
+        for (let slot = 0; slot < 4; slot++) {
+            this.uvCache[slot] = [];
+            let col = slot % 2;
+            let row = Math.floor(slot / 2);
+            let px = col * slotSize;
+            let py = row * slotSize;
+            
+            let uMin = px / atlasW;
+            let uMax = (px + slotSize) / atlasW;
+            let vMin = 1.0 - (py + slotSize) / atlasH;
+            let vMax = 1.0 - py / atlasH;
+            
+            for (let face = 0; face < 6; face++) {
+                this.uvCache[slot][face] = getFaceCornerUVs(face, uMin, vMin, uMax, vMax);
+            }
+        }
+        
+        const texturesToLoad = [
+            { id: 4, src: 'textures/blocks/woodplank.png', slot: 1 },
+            { id: 5, src: 'textures/blocks/cobble.png', slot: 2 }
+        ];
+        
+        let loadedCount = 0;
+        const checkDone = () => {
+            loadedCount++;
+            if (loadedCount === texturesToLoad.length) {
+                this.loaded = true;
+                this.texture.needsUpdate = true;
+            }
+        };
+        
+        texturesToLoad.forEach(t => {
+            const img = new Image();
+            img.onload = () => {
+                console.log(`BlockTextureAtlas: Successfully loaded texture: ${t.src}`);
+                let col = t.slot % 2;
+                let row = Math.floor(t.slot / 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(col * 128, row * 128, 128, 128);
+                ctx.drawImage(img, col * 128, row * 128, 128, 128);
+                checkDone();
+            };
+            img.onerror = () => {
+                console.warn(`BlockTextureAtlas: Failed to load texture: ${t.src}. Using procedural fallback.`);
+                let col = t.slot % 2;
+                let row = Math.floor(t.slot / 2);
+                if (t.id === 4) {
+                    ctx.fillStyle = '#a06e3c';
+                    ctx.fillRect(col * 128, row * 128, 128, 128);
+                    ctx.fillStyle = '#78461e';
+                    for (let y = 16; y < 128; y += 32) {
+                        ctx.fillRect(col * 128, row * 128 + y, 128, 4);
+                    }
+                } else {
+                    ctx.fillStyle = '#8c8c8c';
+                    ctx.fillRect(col * 128, row * 128, 128, 128);
+                    ctx.fillStyle = '#5c5c5c';
+                    for (let i = 0; i < 20; i++) {
+                        let rx = Math.floor(Math.random() * 100);
+                        let ry = Math.floor(Math.random() * 100);
+                        ctx.fillRect(col * 128 + rx, row * 128 + ry, 24, 16);
+                    }
+                }
+                checkDone();
+            };
+            img.src = t.src;
+        });
+    },
+    
+    getSlotUVs(slotIndex, faceIndex) {
+        if (!this.uvCache) return null;
+        let fIdx = Math.max(0, Math.min(5, faceIndex));
+        let sIdx = Math.max(0, Math.min(3, slotIndex));
+        return this.uvCache[sIdx][fIdx];
+    }
+};
+
 // Initialize Three.js scene, camera, lights, and mesh containers
 function initThree() {
     globalInstancedMeshes.clear();
@@ -448,7 +563,11 @@ function updateChunkMesh(key, faces) {
 
 function getSolidMaterial() {
     if (solidMaterial) return solidMaterial;
+    if (!BlockTextureAtlas.initialized) {
+        BlockTextureAtlas.init();
+    }
     solidMaterial = new THREE.MeshLambertMaterial({
+        map: BlockTextureAtlas.texture,
         vertexColors: true,
         side: THREE.FrontSide
     });
@@ -519,24 +638,69 @@ function buildFacesMesh(faces, isWater) {
     const positions = [];
     const colors = [];
     const normals = [];
+    const uvs = [];
     const indices = [];
     let vertCount = 0;
+    
+    if (!isWater && !BlockTextureAtlas.initialized) {
+        BlockTextureAtlas.init();
+    }
     
     for (let f of faces) {
         const pts = f.pts;
         if (pts.length < 3) continue;
         
-        for (let pt of pts) {
+        let faceUVs = null;
+        let slotIndex = 0;
+        
+        if (!isWater) {
+            // Determine faceIndex from normal vector (round to avoid float precision mismatches)
+            let faceIndex = 0;
+            const nx = Math.round(f.norm.x);
+            const ny = Math.round(f.norm.y);
+            const nz = Math.round(f.norm.z);
+            if (nx === 0 && ny === 0 && nz === 1) faceIndex = 4; // Top
+            else if (nx === 0 && ny === 0 && nz === -1) faceIndex = 5; // Bottom
+            else if (nx === 1 && ny === 0 && nz === 0) faceIndex = 3; // Right
+            else if (nx === -1 && ny === 0 && nz === 0) faceIndex = 2; // Left
+            else if (nx === 0 && ny === 1 && nz === 0) faceIndex = 0; // Front
+            else if (nx === 0 && ny === -1 && nz === 0) faceIndex = 1; // Back
+            
+            // Map voxel type to slot index
+            if (f.vType !== undefined && BlockTextureAtlas.mappings[f.vType] !== undefined) {
+                slotIndex = BlockTextureAtlas.mappings[f.vType];
+            }
+            
+            faceUVs = BlockTextureAtlas.getSlotUVs(slotIndex, faceIndex);
+        }
+        
+        for (let i = 0; i < pts.length; i++) {
+            const pt = pts[i];
             positions.push(pt.x, pt.z, pt.y);
             
-            // Apply AO / directional shading factor baked into vertex color
-            const r = (f.col.r / 255) * f.shade;
-            const g = (f.col.g / 255) * f.shade;
-            const b = (f.col.b / 255) * f.shade;
+            // Override base color to white for textured blocks to prevent color tinting, but keep ambient/shadow shading
+            let r, g, b;
+            if (!isWater && slotIndex > 0) {
+                r = f.shade;
+                g = f.shade;
+                b = f.shade;
+            } else {
+                r = (f.col.r / 255) * f.shade;
+                g = (f.col.g / 255) * f.shade;
+                b = (f.col.b / 255) * f.shade;
+            }
             const a = f.col.a !== undefined ? f.col.a : 1.0;
             colors.push(r, g, b, a);
             
             normals.push(f.norm.x, f.norm.z, f.norm.y);
+            
+            if (!isWater) {
+                if (faceUVs && faceUVs[i]) {
+                    uvs.push(faceUVs[i].u, faceUVs[i].v);
+                } else {
+                    uvs.push(0.0, 0.0);
+                }
+            }
         }
         
         // Split quads into triangles
@@ -553,6 +717,9 @@ function buildFacesMesh(faces, isWater) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    if (!isWater) {
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    }
     geometry.setIndex(indices);
     
     let material;

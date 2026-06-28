@@ -991,7 +991,7 @@ function addFace(
   flagsVal |= (shadeByte << 8);
   meshBuffer[base + 22] = reinterpret<f32>(flagsVal);
 
-  meshBuffer[base + 23] = 0.0;
+  meshBuffer[base + 23] = vType as f32;
 
   faceCount++;
 }

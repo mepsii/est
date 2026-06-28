@@ -21,10 +21,10 @@ const ITEM_DETAILS = {
     // Placeables
     '🔥': { name: 'Torch', desc: 'Provides light. Press Right-Click in inventory to place.', category: 'torch' },
     // Blocks
-    '🟫': { name: 'Dirt Block', desc: 'A block of compressed soil. Right-Click in inventory to place.', category: 'block' },
+    '🟫': { name: 'Dirt Pile', desc: 'A pile of compressed soil. Right-Click in inventory to place.', category: 'block' },
     '🧊': { name: 'Cube Block', desc: 'A solid building cube. Right-Click in inventory to place.', category: 'block' },
     'wood_block': { name: 'Wood Block', desc: 'A block of processed wood. Right-Click in inventory to place.', category: 'block', emoji: '🪵' },
-    'stone_block': { name: 'Stone Cube', desc: 'A cube crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
+    'stone_block': { name: 'Stone Block', desc: 'A block crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
     // Weapons/Tools
     'pistol': { name: 'Pistol', desc: 'Semiautomatic handgun. Shoots fast, decent damage.', category: 'weapon' },
     'smg': { name: 'SMG', desc: 'Fully automatic submachine gun. High fire rate, high spread.', category: 'weapon' },

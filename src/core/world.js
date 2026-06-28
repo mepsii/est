@@ -775,6 +775,7 @@ function buildChunkMesh(cx, cy) {
             let isWater = (packedFlags & 1) !== 0;
             let underground = (packedFlags & 2) !== 0;
             let shade = ((packedFlags >> 8) & 0xFF) / 255;
+            let vType = Math.round(f32[base + 23]);
             
             faces.push({
                 pts: [p1, p2, p3, p4],
@@ -784,7 +785,8 @@ function buildChunkMesh(cx, cy) {
                 norm: { x: nx, y: ny, z: nz },
                 col: col,
                 shade: shade,
-                isWater: isWater
+                isWater: isWater,
+                vType: vType
             });
         }
         return faces;
@@ -837,7 +839,8 @@ function buildChunkMeshJS(cx, cy) {
             cx: x + 0.5 + nx * 0.5, cy: y + 0.5 + ny * 0.5, cz: z + 0.5 + nz * 0.5, 
             bx: x, by: y, bz: z, underground: isUnderground,
             norm: { x: nx, y: ny, z: nz }, 
-            col: col, shade: shade, isWater: (type === 2) 
+            col: col, shade: shade, isWater: (type === 2),
+            vType: type
         });
     }
 

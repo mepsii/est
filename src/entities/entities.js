@@ -14,6 +14,37 @@ function isSolidAt(x, y, z_val) {
     return v === 1 || v >= 3;
 }
 
+function checkEntityCollision(nx, ny, nz, height = 1.8, r = 0.25) {
+    let xMin = Math.floor(nx - r);
+    let xMax = Math.floor(nx + r);
+    let yMin = Math.floor(ny - r);
+    let yMax = Math.floor(ny + r);
+    let zMin = Math.floor(nz);
+    let zMax = Math.floor(nz + height);
+    
+    for (let x = xMin; x <= xMax; x++) {
+        for (let y = yMin; y <= yMax; y++) {
+            for (let z = zMin; z <= zMax; z++) {
+                let v = getVoxel(x, y, z);
+                if (v === 1 || v === 6 || v === 7 || v === 8 || v >= 3) {
+                    let topHeight = 1.0;
+                    if (v === 6) {
+                        topHeight = 0.5;
+                    } else if (v === 7 || v === 8) {
+                        let tTerrain = getTerrainFast(x, y);
+                        let targetH = (tTerrain.roadH > tTerrain.baseH + 3.0) ? tTerrain.roadH : tTerrain.baseH;
+                        topHeight = Math.max(0.0, Math.min(1.0, targetH - z));
+                    }
+                    if (nz < z + topHeight && nz + height > z) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 function getDroppedItemFloorZ(x, y, startZ) {
     for (let z = Math.floor(startZ + 0.5); z >= 0; z--) {
         if (getSolid(Math.floor(x), Math.floor(y), z)) {
@@ -344,11 +375,13 @@ function updateEntities() {
                         ny = e.y + (player.y-e.y)/d * moveSpeed;
                     }
                     let prevX = e.x, prevY = e.y;
-                    if (!isSolidAt(Math.floor(nx), Math.floor(e.y), e.z)) {
+                    let zH = e.size || 1.8;
+                    let zR = 0.25;
+                    if (!checkEntityCollision(nx, e.y, e.z, zH, zR)) {
                         e.x = nx;
                     } else {
                         for (let s = 0.1; s <= 1.1; s += 0.1) {
-                            if (!isSolidAt(Math.floor(nx), Math.floor(e.y), e.z + s)) {
+                            if (!checkEntityCollision(nx, e.y, e.z + s, zH, zR)) {
                                 e.x = nx;
                                 e.z += s;
                                 break;
@@ -356,11 +389,11 @@ function updateEntities() {
                         }
                     }
 
-                    if (!isSolidAt(Math.floor(e.x), Math.floor(ny), e.z)) {
+                    if (!checkEntityCollision(e.x, ny, e.z, zH, zR)) {
                         e.y = ny;
                     } else {
                         for (let s = 0.1; s <= 1.1; s += 0.1) {
-                            if (!isSolidAt(Math.floor(e.x), Math.floor(ny), e.z + s)) {
+                            if (!checkEntityCollision(e.x, ny, e.z + s, zH, zR)) {
                                 e.y = ny;
                                 e.z += s;
                                 break;
@@ -439,14 +472,16 @@ function updateEntities() {
                 let anx = a.x + Math.cos(a.moveAngle) * a.speed, any = a.y + Math.sin(a.moveAngle) * a.speed; 
 
                 let prevX = a.x, prevY = a.y;
-                if (!getSolid(Math.floor(anx), Math.floor(a.y), Math.floor(a.z))) a.x = anx; 
-                else if (!getSolid(Math.floor(anx), Math.floor(a.y), Math.floor(a.z + 1.1))) { a.x = anx; a.z += 1.1; }
+                let aH = a.size || 1.0;
+                let aR = 0.25;
+                if (!checkEntityCollision(anx, a.y, a.z, aH, aR)) a.x = anx; 
+                else if (!checkEntityCollision(anx, a.y, a.z + 1.1, aH, aR)) { a.x = anx; a.z += 1.1; }
 
-                if (!getSolid(Math.floor(a.x), Math.floor(any), Math.floor(a.z))) a.y = any; 
-                else if (!getSolid(Math.floor(a.x), Math.floor(any), Math.floor(a.z + 1.1))) { a.y = any; a.z += 1.1; }
+                if (!checkEntityCollision(a.x, any, a.z, aH, aR)) a.y = any; 
+                else if (!checkEntityCollision(a.x, any, a.z + 1.1, aH, aR)) { a.y = any; a.z += 1.1; }
 
-                if (!getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z - 0.1))) a.z -= 0.1; 
-                else if (getSolid(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z))) a.z += 0.5; 
+                if (!isSolidAt(Math.floor(a.x), Math.floor(a.y), a.z - 0.1)) a.z -= 0.1; 
+                else if (isSolidAt(Math.floor(a.x), Math.floor(a.y), a.z)) a.z += 0.5; 
 
                 // Animal footsteps sound trigger
                 let actualDist = Math.hypot(a.x - prevX, a.y - prevY);
