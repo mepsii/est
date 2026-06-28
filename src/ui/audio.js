@@ -290,6 +290,9 @@ class RetroEngineSound {
         this.osc1 = null;
         this.osc2 = null;
         this.subOsc = null;
+        this.gainOsc1 = null;
+        this.gainOsc2 = null;
+        this.gainSub = null;
         this.filter = null;
         this.gainNode = null;
         this.distortion = null;
@@ -319,28 +322,46 @@ class RetroEngineSound {
         const ctx = this.audioCtx;
 
         this.osc1 = ctx.createOscillator();
-        this.osc1.type = 'sawtooth';
+        this.osc1.type = 'sawtooth'; // Rasp/growl
         
         this.osc2 = ctx.createOscillator();
-        this.osc2.type = 'sawtooth';
+        this.osc2.type = 'triangle'; // Warm mid-range body
         
         this.subOsc = ctx.createOscillator();
-        this.subOsc.type = 'triangle';
+        this.subOsc.type = 'triangle'; // Deep sub-bass thrum
+
+        // Individual mixing gains to balance throatiness and bass
+        this.gainOsc1 = ctx.createGain();
+        this.gainOsc1.gain.value = 0.4; // Mute the harsh buzzy sawtooth highs
+        
+        this.gainOsc2 = ctx.createGain();
+        this.gainOsc2.gain.value = 0.9; // Keep the warm triangle body high
+        
+        this.gainSub = ctx.createGain();
+        this.gainSub.gain.value = 2.2; // High sub-bass rumble for big-block weight
 
         this.distortion = ctx.createWaveShaper();
-        this.distortion.curve = this.makeDistortionCurve(30);
+        this.distortion.curve = this.makeDistortionCurve(40);
         this.distortion.oversample = '4x';
 
+        // Low-pass filter with resonant peak (Q) to simulate deep throaty exhaust chamber
         this.filter = ctx.createBiquadFilter();
-        this.filter.type = 'bandpass';
-        this.filter.Q.value = 1.0;
+        this.filter.type = 'lowpass';
+        this.filter.Q.value = 4.5; // Resonant cutoff peak creates that V8 throatiness
 
         this.gainNode = ctx.createGain();
         this.gainNode.gain.setValueAtTime(0.0, ctx.currentTime);
 
-        this.osc1.connect(this.distortion);
-        this.osc2.connect(this.distortion);
-        this.subOsc.connect(this.distortion);
+        // Connections: Oscillators -> Gains -> Distortion -> Filter -> Master Gain -> Destination
+        this.osc1.connect(this.gainOsc1);
+        this.gainOsc1.connect(this.distortion);
+
+        this.osc2.connect(this.gainOsc2);
+        this.gainOsc2.connect(this.distortion);
+
+        this.subOsc.connect(this.gainSub);
+        this.gainSub.connect(this.distortion);
+
         this.distortion.connect(this.filter);
         this.filter.connect(this.gainNode);
         this.gainNode.connect(ctx.destination);
@@ -369,17 +390,21 @@ class RetroEngineSound {
         const ctx = this.audioCtx;
         if (!ctx) return;
 
-        this.currentRPM += (rpm - this.currentRPM) * 0.15;
-        const firingFreq = (this.currentRPM / 60) * 4;
+        this.currentRPM += (rpm - this.currentRPM) * 0.12;
+
+        // Pitched down by a full octave (using 2.0x instead of 4.0x)
+        // Gives it a heavy big-block V8 exhaust thrum (e.g. 26Hz idle thumper)
+        const firingFreq = (this.currentRPM / 60) * 2.0;
 
         this.osc1.frequency.setTargetAtTime(firingFreq, ctx.currentTime, 0.05);
-        this.osc2.frequency.setTargetAtTime(firingFreq + 1.8, ctx.currentTime, 0.05);
+        this.osc2.frequency.setTargetAtTime(firingFreq + 1.2, ctx.currentTime, 0.05);
         this.subOsc.frequency.setTargetAtTime(firingFreq * 0.5, ctx.currentTime, 0.05);
 
-        const centerFreq = 120 + firingFreq * 1.3;
-        this.filter.frequency.setTargetAtTime(centerFreq, ctx.currentTime, 0.05);
+        // Low-pass filter sweeps low to swallow high-pitched whiny distortion harmonics
+        const cutoffFreq = 70 + (firingFreq * 0.95);
+        this.filter.frequency.setTargetAtTime(cutoffFreq, ctx.currentTime, 0.05);
 
-        const volumeScale = throttleInput ? 0.14 : 0.07;
+        const volumeScale = throttleInput ? 0.15 : 0.07;
         this.gainNode.gain.setTargetAtTime(volumeScale, ctx.currentTime, 0.1);
     }
 
@@ -398,10 +423,13 @@ class RetroEngineSound {
                     if (this.osc1) { this.osc1.stop(); this.osc1.disconnect(); }
                     if (this.osc2) { this.osc2.stop(); this.osc2.disconnect(); }
                     if (this.subOsc) { this.subOsc.stop(); this.subOsc.disconnect(); }
+                    if (this.gainOsc1) this.gainOsc1.disconnect();
+                    if (this.gainOsc2) this.gainOsc2.disconnect();
+                    if (this.gainSub) this.gainSub.disconnect();
                     if (this.distortion) this.distortion.disconnect();
                     if (this.filter) this.filter.disconnect();
                     if (this.gainNode) this.gainNode.disconnect();
-                    this.osc1 = this.osc2 = this.subOsc = this.distortion = this.filter = this.gainNode = null;
+                    this.osc1 = this.osc2 = this.subOsc = this.gainOsc1 = this.gainOsc2 = this.gainSub = this.distortion = this.filter = this.gainNode = null;
                 }
             }, 200);
         }
