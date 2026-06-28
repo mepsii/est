@@ -12,6 +12,7 @@ const ITEM_DETAILS = {
     '🪵': { name: 'Wood', desc: 'Freshly chopped timber. Used to craft torches.', category: 'resource' },
     '🪨': { name: 'Stone', desc: 'Heavy rock. Useful for building or crafting.', category: 'resource' },
     '🧶': { name: 'Wool', desc: 'Soft sheep wool. Soft and warm.', category: 'resource' },
+    '🥢': { name: 'Stick', desc: 'A wooden stick. Used as handles for crafting tools and fuel for torches.', category: 'resource' },
     // Consumables
     '🩹': { name: 'Bandage', desc: 'Heals minor wounds and restores health.', category: 'heal' },
     '🍔': { name: 'Burger', desc: 'Juicy burger. Greatly satisfies hunger.', category: 'food' },
@@ -579,7 +580,8 @@ function updateCraftingUI() {
         let btn = document.createElement('button');
         btn.className = 'craft-btn';
         btn.dataset.recipeIndex = index;
-        let hasSpace = inventory.some(i => i === null) || inventory.some(i => i && (i.id || recipe.result.id ? i.id === recipe.result.id : i.emoji === recipe.result.emoji));
+        let isStackable = recipe.result.type !== 'weapon' && recipe.result.type !== 'tool';
+        let hasSpace = inventory.some(i => i === null) || (isStackable && inventory.some(i => i && (i.id || recipe.result.id ? i.id === recipe.result.id : i.emoji === recipe.result.emoji)));
         if (!hasSpace) canMake = false;
         btn.disabled = !canMake;
         btn.innerHTML = `<div class="craft-title">${recipe.result.emoji} ${recipe.name}</div><div class="craft-reqs">${reqTextHtml.join(' &nbsp;|&nbsp; ')}</div>`;
@@ -744,11 +746,21 @@ invScreen.addEventListener('mousedown', (e) => {
         if (type === 'player') { 
             if (item.type === 'heal' && (player.hp < 100 || godMode)) { 
                 player.hp = godMode ? player.hp : Math.min(100, player.hp + item.amount); hpEl.innerText = player.hp; 
-                inventory[index] = null; healFlash.style.background = 'lime'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
+                if (item.count && item.count > 1) {
+                    item.count--;
+                } else {
+                    inventory[index] = null;
+                }
+                healFlash.style.background = 'lime'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             } 
             else if (item.type === 'food' && (player.food < 100 || godMode)) { 
                 player.food = godMode ? player.food : Math.min(100, player.food + item.amount); foodEl.innerText = player.food; 
-                inventory[index] = null; healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
+                if (item.count && item.count > 1) {
+                    item.count--;
+                } else {
+                    inventory[index] = null;
+                }
+                healFlash.style.background = 'orange'; healFlash.style.opacity = '0.5'; setTimeout(() => healFlash.style.opacity = '0', 100); updateInventories(); 
             }
             else if (item.type === 'building' || item.type === 'torch') {
                 placementItem = item;
@@ -1555,6 +1567,7 @@ const SPAWNABLE_ITEMS = [
     { label: '🪵 Wood (Resource)', data: { type: 'resource', emoji: '🪵' } },
     { label: '🪨 Stone (Resource)', data: { type: 'resource', emoji: '🪨' } },
     { label: '🧶 Wool (Resource)', data: { type: 'resource', emoji: '🧶' } },
+    { label: '🥢 Stick (Resource)', data: { type: 'resource', emoji: '🥢' } },
     // Consumables / Food / Heal
     { label: '🩹 Bandage', data: { type: 'heal', emoji: '🩹', amount: 25 } },
     { label: '🍔 Burger', data: { type: 'food', emoji: '🍔', amount: 30 } },

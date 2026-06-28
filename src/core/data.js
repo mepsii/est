@@ -134,9 +134,14 @@ const patternArmyGreenDark = createNoisePattern('#3B4A1C', 0.25, 0.05);
 
 // --- Game Data & Configs ---
 const RECIPES =[
-    { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 1 }, req: { '🪵': 2 } },
+    { name: "Sticks", result: { type: 'resource', emoji: '🥢', count: 6 }, req: { '🪵': 1 } },
+    { name: "Torch", result: { type: 'torch', emoji: '🔥', count: 4 }, req: { '🪵': 1, '🥢': 1 } },
     { name: "Wood Block", result: { id: 'wood_block', type: 'block', emoji: '🪵', count: 1 }, req: { '🪵': 3 } },
-    { name: "Stone Block", result: { id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, req: { '🪨': 4 } }
+    { name: "Stone Block", result: { id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, req: { '🪨': 4 } },
+    { name: "Axe", result: { id: 'axe', type: 'tool', emoji: '🪓', count: 1 }, req: { '🥢': 4, '🪨': 8 } },
+    { name: "Pickaxe", result: { id: 'pickaxe', type: 'tool', emoji: '⛏️', count: 1 }, req: { '🥢': 4, '🪨': 8 } },
+    { name: "Shovel", result: { id: 'shovel', type: 'tool', emoji: '🥄', count: 1 }, req: { '🥢': 4, '🪨': 4 } },
+    { name: "Bandage", result: { type: 'heal', emoji: '🩹', amount: 25, count: 1 }, req: { '🧶': 4 } }
 ];
 
 const ITEMS = { 
