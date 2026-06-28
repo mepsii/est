@@ -1030,6 +1030,13 @@ function render() {
                     vehicleObj.group.quaternion.set(v.qx, v.qz, v.qy, -v.qw);
                     vehicleObj.group.visible = true;
 
+                    // Dynamic rainbow color cycle
+                    if (v.isRainbow && vehicleObj.bodyMesh) {
+                        const time = performance.now() * 0.001;
+                        const hue = (time * 0.15) % 1.0;
+                        vehicleObj.bodyMesh.material.color.setHSL(hue, 0.95, 0.5);
+                    }
+
                     // Update headlights and DRLs
                     const isRunning = (player.inVehicle === v);
                     if (isRunning) {
