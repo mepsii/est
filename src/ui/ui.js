@@ -589,7 +589,7 @@ function craftRecipe(index) {
 }
 
 function giveItem(itemData) {
-    if (itemData.type === 'resource' || itemData.type === 'building' || itemData.type === 'torch' || itemData.type === 'block') {
+    if (itemData.type !== 'weapon' && itemData.type !== 'tool') {
         let existing = inventory.find(i => i && (i.id || itemData.id ? i.id === itemData.id : i.emoji === itemData.emoji));
         if (existing) { 
             existing.count = (existing.count || 1) + (itemData.count || 1); 
@@ -1513,3 +1513,154 @@ function updateMiningProgressUI() {
     }
 }
 window.updateMiningProgressUI = updateMiningProgressUI;
+
+// --- OVERHAULED DEBUG MENU SPAWNER SYSTEM ---
+const SPAWNABLE_ITEMS = [
+    // Weapons
+    { label: '🔫 Pistol', data: { id: 'pistol', type: 'weapon', emoji: '🔫' } },
+    { label: '📠 SMG', data: { id: 'smg', type: 'weapon', emoji: '📠' } },
+    { label: '🪈 Shotgun', data: { id: 'shotgun', type: 'weapon', emoji: '🪈' } },
+    // Tools
+    { label: '🪓 Axe', data: { id: 'axe', type: 'tool', emoji: '🪓' } },
+    { label: '⛏️ Pickaxe', data: { id: 'pickaxe', type: 'tool', emoji: '⛏️' } },
+    { label: '🥄 Shovel', data: { id: 'shovel', type: 'tool', emoji: '🥄' } },
+    { label: '📐 Coord Picker', data: { id: 'coord_picker', type: 'tool', emoji: '📐' } },
+    // Ammo
+    { label: '⚙️ .45 ACP', data: { id: '.45acp', type: 'ammo', emoji: '⚙️' } },
+    // Resources
+    { label: '🪵 Wood (Resource)', data: { type: 'resource', emoji: '🪵' } },
+    { label: '🪨 Stone (Resource)', data: { type: 'resource', emoji: '🪨' } },
+    { label: '🧶 Wool (Resource)', data: { type: 'resource', emoji: '🧶' } },
+    // Consumables / Food / Heal
+    { label: '🩹 Bandage', data: { type: 'heal', emoji: '🩹', amount: 25 } },
+    { label: '🍔 Burger', data: { type: 'food', emoji: '🍔', amount: 30 } },
+    { label: '🥓 Bacon', data: { type: 'food', emoji: '🥓', amount: 20 } },
+    { label: '🍗 Chicken Leg', data: { type: 'food', emoji: '🍗', amount: 15 } },
+    { label: '🍖 Raw Meat', data: { type: 'food', emoji: '🍖', amount: 10 } },
+    // Placeables / Blocks
+    { label: '🔥 Torch', data: { type: 'torch', emoji: '🔥' } },
+    { label: '🟫 Dirt Pile', data: { id: 'dirt', type: 'block', emoji: '🟫' } },
+    { label: '🧊 Cube Block', data: { id: 'cube', type: 'block', emoji: '🧊' } },
+    { label: '🪵 Wood Block', data: { id: 'wood_block', type: 'block', emoji: '🪵' } },
+    { label: '🪨 Stone Block', data: { id: 'stone_block', type: 'block', emoji: '🪨' } },
+    // Unused / Buildings
+    { label: '⛺ Tent', data: { type: 'building', emoji: '⛺', rooms: 1, floors: 1 } },
+    { label: '🏚️ Cabin', data: { type: 'building', emoji: '🏚️', rooms: 2, floors: 2 } }
+];
+
+// Initialize Spawn Items dropdown options
+const itemSelect = document.getElementById('dbg-spawn-item-select');
+if (itemSelect) {
+    SPAWNABLE_ITEMS.forEach((item, index) => {
+        const opt = document.createElement('option');
+        opt.value = index;
+        opt.innerText = item.label;
+        itemSelect.appendChild(opt);
+    });
+}
+
+// Adjust Spawn Item Count
+window.adjustSpawnItemCount = (amt) => {
+    const countInput = document.getElementById('dbg-spawn-item-count');
+    if (!countInput) return;
+    let val = parseInt(countInput.value) || 1;
+    val = Math.max(1, val + amt);
+    countInput.value = val;
+};
+
+// Wire Spawn Item Adjust Buttons
+const sub10Btn = document.getElementById('btn-count-sub10');
+const add10Btn = document.getElementById('btn-count-add10');
+const add64Btn = document.getElementById('btn-count-add64');
+if (sub10Btn) sub10Btn.onclick = () => adjustSpawnItemCount(-10);
+if (add10Btn) add10Btn.onclick = () => adjustSpawnItemCount(10);
+if (add64Btn) add64Btn.onclick = () => adjustSpawnItemCount(64);
+
+// Wire Spawn Item Action Button
+const spawnItemActionBtn = document.getElementById('btn-spawn-item-action');
+if (spawnItemActionBtn) {
+    spawnItemActionBtn.onclick = () => {
+        const itemSelectEl = document.getElementById('dbg-spawn-item-select');
+        const countInputEl = document.getElementById('dbg-spawn-item-count');
+        if (!itemSelectEl || !countInputEl) return;
+        
+        const selectedIndex = parseInt(itemSelectEl.value);
+        const count = parseInt(countInputEl.value) || 1;
+        if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= SPAWNABLE_ITEMS.length) return;
+        
+        const itemTemplate = SPAWNABLE_ITEMS[selectedIndex].data;
+        const itemToGive = { ...itemTemplate, count: count };
+        
+        // Give weapon initial bullets
+        if (itemToGive.id === 'pistol') {
+            itemToGive.bullets = 10;
+        }
+        
+        giveItem(itemToGive);
+    };
+}
+
+// Implement Mob Spawning function
+window.spawnMobOverhaul = (type, count) => {
+    count = parseInt(count) || 1;
+    for (let i = 0; i < count; i++) {
+        let offsetAngle = player.angle + (Math.random() - 0.5) * 1.2;
+        let dist = 4 + Math.random() * 3;
+        let mx = player.x + Math.cos(offsetAngle) * dist;
+        let my = player.y + Math.sin(offsetAngle) * dist;
+        let mz = getSafeFloorZ(mx, my, player.z);
+
+        if (getSolid(Math.floor(mx), Math.floor(my), Math.floor(mz + 0.5))) {
+            mz += 1.0;
+        }
+
+        if (type === 'alien') {
+            enemies.push({ type: 'alien', x: mx, y: my, z: mz, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
+        } else if (type === 'experimental') {
+            enemies.push({ type: 'experimental', x: mx, y: my, z: mz, hp: 10, cooldown: 60, size: 1.4, flash: 0 });
+        } else if (type === 'zombie') {
+            enemies.push({ type: 'zombie', x: mx, y: my, z: mz, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
+        } else if (type === 'zombie3d') {
+            enemies.push({ type: 'zombie3d', x: mx, y: my, z: mz, hp: 15, cooldown: 60, size: 1.8, flash: 0 });
+        } else {
+            let emoji = '🐄';
+            let hp = 4;
+            let speed = 0.02;
+            let size = 1.2;
+            let drop = { type: 'food', emoji: '🍖', amount: 10 };
+
+            if (type === 'cow') { emoji = '🐄'; hp = 6; drop = { type: 'food', emoji: '🍔', amount: 30 }; size = 1.5; speed = 0.015; }
+            else if (type === 'pig') { emoji = '🐖'; hp = 4; drop = { type: 'food', emoji: '🥓', amount: 20 }; size = 1.2; speed = 0.025; }
+            else if (type === 'chicken') { emoji = '🐓'; hp = 2; drop = { type: 'food', emoji: '🍗', amount: 15 }; size = 0.8; speed = 0.035; }
+            else if (type === 'sheep') { emoji = '🐑'; hp = 4; drop = { type: 'resource', emoji: '🧶', count: 1 }; size = 1.1; speed = 0.018; }
+
+            animals.push({ 
+                x: mx, 
+                y: my, 
+                z: mz, 
+                emoji: emoji, 
+                size: size, 
+                hp: hp, 
+                speed: speed, 
+                dead: false, 
+                drop: drop, 
+                moveAngle: Math.random() * Math.PI * 2, 
+                moveTimer: 0 
+            });
+        }
+    }
+};
+
+// Wire Spawn Mob Action Button
+const spawnMobActionBtn = document.getElementById('btn-spawn-mob-action');
+if (spawnMobActionBtn) {
+    spawnMobActionBtn.onclick = () => {
+        const mobSelectEl = document.getElementById('dbg-spawn-mob-select');
+        const mobCountInputEl = document.getElementById('dbg-spawn-mob-count');
+        if (!mobSelectEl || !mobCountInputEl) return;
+        
+        const type = mobSelectEl.value;
+        const count = parseInt(mobCountInputEl.value) || 1;
+        spawnMobOverhaul(type, count);
+    };
+}

@@ -57,7 +57,7 @@
 
     <div
         style="position: fixed; bottom: 15px; right: 20px; font-size: 12px; color: rgba(255, 255, 255, 0.4); text-align: right; z-index: 100000; pointer-events: none; user-select: none; font-family: 'Departure Mono', monospace;">
-        <div>est-0.00.92d</div>
+        <div>est-0.00.92e</div>
         <div class="prototype-build">prototype</div>
     </div>
 
@@ -98,94 +98,155 @@
 
     <div id="debug-menu" class="panel">
         <h2>Debug Settings</h2>
-        <div class="dbg-row">
-            <label>Time (0-24):</label>
-            <input type="range" id="dbg-time" value="12" min="0" max="24" step="0.1" style="width: 70px;">
-            <span id="dbg-time-val" style="width: 30px; text-align: right;">12.0</span>
-        </div>
-        <div class="dbg-row">
-            <label>Time Spd x:</label>
-            <input type="number" id="dbg-time-speed" value="1" min="0" max="1000">
-        </div>
-        <div class="dbg-row">
-            <label>Set HP:</label>
-            <input type="number" id="dbg-hp" value="100">
-            <button id="btn-hp">Apply</button>
-        </div>
-        <div class="dbg-row">
-            <label>Set Stam:</label>
-            <input type="number" id="dbg-stam" value="100">
-            <button id="btn-stam">Apply</button>
-        </div>
-        <div class="dbg-row">
-            <label>Set Food:</label>
-            <input type="number" id="dbg-food" value="100">
-            <button id="btn-food">Apply</button>
-        </div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-god"> God Mode</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-noclip"> Noclip</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-grass-texture"> Grass Texture</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-instant-break"> Instant Break</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-freecam"> Freecam</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-infstam"> Inf Stamina</label></div>
-        <div class="dbg-row"><label>Speed %:</label><input type="number" id="dbg-speed" value="100"></div>
-        <div class="dbg-row"><label>Sprint Spd:</label><input type="number" id="dbg-sprint" value="1.5" step="0.1">
-        </div>
-        <div class="dbg-row"><label>Jump Power:</label><input type="number" id="dbg-jump" value="0.28" step="0.05">
-        </div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-flight"> Flight Mode</label></div>
 
-        <div class="dbg-row">
-            <label>FOV:</label>
-            <input type="range" id="dbg-fov" value="80" min="40" max="120" style="width: 70px;">
-            <span id="dbg-fov-val" style="width: 30px; text-align: right;">80</span>
-        </div>
-        <div class="dbg-row">
-            <label>Render Dist:</label>
-            <input type="range" id="dbg-viewdist" value="180" min="20" max="600" style="width: 70px;">
-            <span id="dbg-viewdist-val" style="width: 30px; text-align: right;">180</span>
-        </div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-thick-fog" checked> Thick Fog (Alpha)</label></div>
+        <details open>
+            <summary>Player Stats & Modes</summary>
+            <div class="details-content">
+                <div class="dbg-row">
+                    <label>Set HP:</label>
+                    <input type="number" id="dbg-hp" value="100">
+                    <button id="btn-hp">Apply</button>
+                </div>
+                <div class="dbg-row">
+                    <label>Set Stam:</label>
+                    <input type="number" id="dbg-stam" value="100">
+                    <button id="btn-stam">Apply</button>
+                </div>
+                <div class="dbg-row">
+                    <label>Set Food:</label>
+                    <input type="number" id="dbg-food" value="100">
+                    <button id="btn-food">Apply</button>
+                </div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-god"> God Mode</label></div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-noclip"> Noclip</label></div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-instant-break"> Instant Break</label></div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-infstam"> Inf Stamina</label></div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-flight"> Flight Mode</label></div>
+                <div class="dbg-row"><label>Speed %:</label><input type="number" id="dbg-speed" value="100"></div>
+                <div class="dbg-row"><label>Sprint Spd:</label><input type="number" id="dbg-sprint" value="1.5"
+                        step="0.1"></div>
+                <div class="dbg-row"><label>Jump Power:</label><input type="number" id="dbg-jump" value="0.28"
+                        step="0.05"></div>
+            </div>
+        </details>
 
-        <hr style="border-color:#555; margin:10px 0;">
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-info"> Show Debug Info</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-lock-fps"> Lock FPS to 30</label></div>
-        <div class="dbg-row"><label><input type="checkbox" id="dbg-spawnenemies" checked> Spawn Enemies</label></div>
-        <div class="dbg-row"><button onclick="killAll()" style="width:100%; background:#833;">Kill All Enemies</button>
-        </div>
-        <div style="text-align:center; margin-bottom: 5px; margin-top:5px;">Spawn Enemy Type</div>
-        <div class="dbg-row spawn-btns" style="justify-content: center;">
-            <button onclick="spawnEnemy('alien')" title="Original Alien">👽</button>
-            <button onclick="spawnEnemy('experimental')" title="Experimental Alien">👽2</button>
-            <button onclick="spawnEnemy('zombie')" title="Zombie">🧟</button>
-            <button onclick="spawnEnemy('zombie3d')" title="3D Zombie">🧟‍♂️</button>
-        </div>
-        <hr style="border-color:#555; margin:10px 0;">
-        <div style="text-align:center; margin-bottom: 5px;">Spawn Entity</div>
-        <div class="dbg-row spawn-btns" style="justify-content: center;">
-            <button onclick="spawnDebug('🐄')">🐄</button>
-            <button onclick="spawnDebug('🐖')">🐖</button>
-            <button onclick="spawnDebug('🐓')">🐓</button>
-            <button onclick="spawnDebug('🐑')">🐑</button>
-            <button onclick="spawnDebug('📦')">📦</button>
-            <button onclick="spawnDebug('🔥')">🔥</button>
-        </div>
-        <div style="text-align:center; margin-bottom: 5px;">Spawn Items</div>
-        <div class="dbg-row spawn-btns" style="justify-content: center;">
-            <button onclick="giveItem({ id: '.45acp', type: 'ammo', emoji: '⚙️', count: 100 })"
-                title="Spawn 100x .45 ACP" style="font-size: 13px; padding: 4px 8px;">⚙️ 100x .45</button>
-        </div>
-        <div style="text-align:center; margin-bottom: 5px;">Spawn Vehicle</div>
-        <div class="dbg-row spawn-btns" style="justify-content: center;">
-            <button onclick="spawnVehicle('truck')" title="Spawn Truck">🚚</button>
-        </div>
-        <hr style="border-color:#555; margin:10px 0;">
-        <div style="text-align:center; margin-bottom: 5px;">Spawn Building</div>
-        <div class="dbg-row">
-            <input type="number" id="dbg-b-rooms" value="2" min="1" max="5" style="width: 35px;" title="Rooms"> Rms
-            <input type="number" id="dbg-b-floors" value="3" min="1" max="5" style="width: 35px;" title="Floors"> Flrs
-            <button onclick="spawnBuilding()">Spawn</button>
-        </div>
+        <details>
+            <summary>Environment & Visuals</summary>
+            <div class="details-content">
+                <div class="dbg-row">
+                    <label>Time (0-24):</label>
+                    <input type="range" id="dbg-time" value="12" min="0" max="24" step="0.1" style="width: 70px;">
+                    <span id="dbg-time-val" style="width: 30px; text-align: right;">12.0</span>
+                </div>
+                <div class="dbg-row">
+                    <label>Time Spd x:</label>
+                    <input type="number" id="dbg-time-speed" value="1" min="0" max="1000">
+                </div>
+                <div class="dbg-row">
+                    <label>FOV:</label>
+                    <input type="range" id="dbg-fov" value="80" min="40" max="120" style="width: 70px;">
+                    <span id="dbg-fov-val" style="width: 30px; text-align: right;">80</span>
+                </div>
+                <div class="dbg-row">
+                    <label>Render Dist:</label>
+                    <input type="range" id="dbg-viewdist" value="180" min="20" max="600" style="width: 70px;">
+                    <span id="dbg-viewdist-val" style="width: 30px; text-align: right;">180</span>
+                </div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-thick-fog" checked> Thick Fog (Alpha)</label>
+                </div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-grass-texture"> Grass Texture</label></div>
+            </div>
+        </details>
+
+        <details>
+            <summary>Debug Controls</summary>
+            <div class="details-content">
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-info"> Show Debug Info</label></div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-lock-fps"> Lock FPS to 30</label></div>
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-freecam"> Freecam</label></div>
+            </div>
+        </details>
+
+        <details>
+            <summary>Spawn Items</summary>
+            <div class="details-content">
+                <div class="dbg-row">
+                    <label for="dbg-spawn-item-select">Item:</label>
+                    <select id="dbg-spawn-item-select"></select>
+                </div>
+                <div class="dbg-row">
+                    <label for="dbg-spawn-item-count">Count:</label>
+                    <input type="number" id="dbg-spawn-item-count" value="1" min="1" max="999">
+                </div>
+                <div class="dbg-row" style="justify-content: flex-end; gap: 4px; margin-bottom: 8px;">
+                    <button id="btn-count-sub10" class="dbg-btn" style="padding: 2px 6px; font-size: 11px;">-10</button>
+                    <button id="btn-count-add10" class="dbg-btn" style="padding: 2px 6px; font-size: 11px;">+10</button>
+                    <button id="btn-count-add64" class="dbg-btn" style="padding: 2px 6px; font-size: 11px;">+64</button>
+                </div>
+                <button id="btn-spawn-item-action" class="dbg-btn"
+                    style="width: 100%; font-weight: bold; background: #2c6e49; border-color: #3b885b;">Give
+                    Item</button>
+            </div>
+        </details>
+
+        <details>
+            <summary>Spawn Mobs</summary>
+            <div class="details-content">
+                <div class="dbg-row">
+                    <label for="dbg-spawn-mob-select">Mob Type:</label>
+                    <select id="dbg-spawn-mob-select">
+                        <option value="alien">👽 Alien</option>
+                        <option value="experimental">👽2 Experimental</option>
+                        <option value="zombie">🧟 Zombie</option>
+                        <option value="zombie3d">🧟‍♂️ 3D Zombie</option>
+                        <option value="cow">🐄 Cow</option>
+                        <option value="pig">🐖 Pig</option>
+                        <option value="chicken">🐓 Chicken</option>
+                        <option value="sheep">🐑 Sheep</option>
+                    </select>
+                </div>
+                <div class="dbg-row">
+                    <label for="dbg-spawn-mob-count">Count:</label>
+                    <input type="number" id="dbg-spawn-mob-count" value="1" min="1" max="100">
+                </div>
+                <button id="btn-spawn-mob-action" class="dbg-btn"
+                    style="width: 100%; font-weight: bold; background: #1a4d6c; border-color: #276991; margin-bottom: 8px;">Spawn
+                    Mob(s)</button>
+                <hr style="border-color:#555; margin:10px 0;">
+                <div class="dbg-row"><label><input type="checkbox" id="dbg-spawnenemies" checked> Spawn Enemies</label>
+                </div>
+                <button onclick="killAll()" class="dbg-btn"
+                    style="width:100%; background:#833; border-color: #a44;">Kill All Enemies</button>
+            </div>
+        </details>
+
+        <details>
+            <summary>Spawn Other</summary>
+            <div class="details-content">
+                <div style="text-align:center; font-weight: bold; margin-bottom: 8px;">Spawn Building</div>
+                <div class="dbg-row">
+                    <label>Rooms (1-5):</label>
+                    <input type="number" id="dbg-b-rooms" value="2" min="1" max="5">
+                </div>
+                <div class="dbg-row">
+                    <label>Floors (1-5):</label>
+                    <input type="number" id="dbg-b-floors" value="3" min="1" max="5">
+                </div>
+                <button onclick="spawnBuilding()" class="dbg-btn" style="width: 100%; margin-bottom: 12px;">Spawn
+                    Building</button>
+
+                <hr style="border-color:#555; margin:10px 0;">
+                <div style="text-align:center; font-weight: bold; margin-bottom: 8px;">Entities & Vehicles</div>
+                <div class="dbg-row" style="justify-content: center; gap: 6px;">
+                    <button onclick="spawnDebug('📦')" class="dbg-btn" style="font-size: 14px; padding: 6px 10px;"
+                        title="Spawn Container">📦 Box</button>
+                    <button onclick="spawnDebug('🔥')" class="dbg-btn" style="font-size: 14px; padding: 6px 10px;"
+                        title="Spawn Torch">🔥 Torch</button>
+                    <button onclick="spawnVehicle('truck')" class="dbg-btn" style="font-size: 14px; padding: 6px 10px;"
+                        title="Spawn Truck">🚚 Truck</button>
+                </div>
+            </div>
+        </details>
     </div>
 
     <canvas id="gameCanvas"></canvas>
