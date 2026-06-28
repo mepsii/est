@@ -1390,20 +1390,29 @@ function render() {
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         
-        if (document.pointerLockElement === canvas) {
-            mouse.x = 0;
-            mouse.y = 0;
-        } else {
-            let rect = canvas.getBoundingClientRect();
-            mouse.x = ((pickX_screen - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((pickY_screen - rect.top) / rect.height) * 2 + 1;
-        }
+        let rect = canvas.getBoundingClientRect();
+        mouse.x = ((pickX_screen - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((pickY_screen - rect.top) / rect.height) * 2 + 1;
         
         raycaster.setFromCamera(mouse, camera);
         
         const targets = [];
+        // Add chunk meshes
         for (let chunk of threeChunks.values()) {
             if (chunk.solidMesh) targets.push(chunk.solidMesh);
+        }
+        // Add vehicles (chassis and wheel meshes)
+        for (let vehicleObj of threeVehicles.values()) {
+            if (vehicleObj.group) targets.push(vehicleObj.group);
+            if (vehicleObj.wheelMeshes) {
+                for (let wMesh of vehicleObj.wheelMeshes) {
+                    targets.push(wMesh);
+                }
+            }
+        }
+        // Add dropped items
+        for (let itemObj of threeDroppedItems.values()) {
+            if (itemObj.group) targets.push(itemObj.group);
         }
         
         const intersects = raycaster.intersectObjects(targets, true);
@@ -1415,11 +1424,32 @@ function render() {
             bestPickDepth = hit.distance;
             
             bestPickVehicle = null;
-            for (let v of vehicles) {
-                let dist = Math.hypot(v.x - bestPickPoint.x, v.y - bestPickPoint.y, v.z - bestPickPoint.z);
-                if (dist < 4.0) {
+            let hitObject = hit.object;
+            for (let [v, vehicleObj] of threeVehicles.entries()) {
+                let parent = hitObject;
+                let isChildOfGroup = false;
+                while (parent) {
+                    if (parent === vehicleObj.group) {
+                        isChildOfGroup = true;
+                        break;
+                    }
+                    parent = parent.parent;
+                }
+                let isWheel = vehicleObj.wheelMeshes && vehicleObj.wheelMeshes.includes(hitObject);
+                if (isChildOfGroup || isWheel) {
                     bestPickVehicle = v;
                     break;
+                }
+            }
+            
+            // Proximity fallback if no direct mesh hit
+            if (!bestPickVehicle) {
+                for (let v of vehicles) {
+                    let dist = Math.hypot(v.x - bestPickPoint.x, v.y - bestPickPoint.y, v.z - bestPickPoint.z);
+                    if (dist < 4.0) {
+                        bestPickVehicle = v;
+                        break;
+                    }
                 }
             }
             
@@ -1428,12 +1458,22 @@ function render() {
             if (bestPickVehicle) {
                 let v = bestPickVehicle;
                 vType = v.type;
-                let cosA = Math.cos(v.angle);
-                let sinA = Math.sin(v.angle);
-                let dx = (bestPickPoint.x - v.x) * cosA + (bestPickPoint.y - v.y) * sinA;
-                let dy = -(bestPickPoint.x - v.x) * sinA + (bestPickPoint.y - v.y) * cosA;
-                let dz = bestPickPoint.z - v.z;
-                localCoords = { dx, dy, dz };
+                let vehicleObj = threeVehicles.get(v);
+                if (vehicleObj && vehicleObj.group) {
+                    let localPos = vehicleObj.group.worldToLocal(hit.point.clone());
+                    localCoords = {
+                        dx: localPos.x,
+                        dy: localPos.z,
+                        dz: localPos.y
+                    };
+                } else {
+                    let cosA = Math.cos(v.angle);
+                    let sinA = Math.sin(v.angle);
+                    let dx = (bestPickPoint.x - v.x) * cosA + (bestPickPoint.y - v.y) * sinA;
+                    let dy = -(bestPickPoint.x - v.x) * sinA + (bestPickPoint.y - v.y) * cosA;
+                    let dz = bestPickPoint.z - v.z;
+                    localCoords = { dx, dy, dz };
+                }
             }
             
             lastPickedCoord = {

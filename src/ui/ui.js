@@ -291,6 +291,24 @@ function updateHotbarUI() {
             else slot.classList.remove('active');
         }
     }
+
+    // Coord picker activation and UI panel visibility
+    let activeItem = inventory[hotbarSelection];
+    let isCoordPickerEquipped = activeItem && activeItem.id === 'coord_picker';
+    
+    let pickerPanel = document.getElementById('picker-panel');
+    if (pickerPanel) {
+        if (isCoordPickerEquipped) {
+            pickerPanel.style.display = 'block';
+            coordPickerActive = true;
+            if (typeof updatePickerPanelUI === 'function') {
+                updatePickerPanelUI();
+            }
+        } else {
+            pickerPanel.style.display = 'none';
+            coordPickerActive = false;
+        }
+    }
 }
 
 function renderModelToCanvas(modelName, canvas) {
@@ -1022,8 +1040,9 @@ window.addEventListener('keydown', e => {
 
     if (e.key.toLowerCase() === 'p') {
         if (coordPickerActive) {
-            pickX_screen = canvas.width / 2;
-            pickY_screen = canvas.height / 2;
+            let rect = canvas.getBoundingClientRect();
+            pickX_screen = rect.left + rect.width / 2;
+            pickY_screen = rect.top + rect.height / 2;
             triggerCoordPick = true;
             if (typeof render === 'function') {
                 render();
@@ -1465,15 +1484,15 @@ window.addEventListener('mousedown', (e) => {
     }
 
     let px_screen, py_screen;
+    let rect = canvas.getBoundingClientRect();
     if (document.pointerLockElement === canvas) {
         // Pointer locked: pick at the center of the screen
-        px_screen = canvas.width / 2;
-        py_screen = canvas.height / 2;
+        px_screen = rect.left + rect.width / 2;
+        py_screen = rect.top + rect.height / 2;
     } else {
         // Pointer free: pick at cursor click position
-        let rect = canvas.getBoundingClientRect();
-        px_screen = (e.clientX - rect.left) * (canvas.width / rect.width);
-        py_screen = (e.clientY - rect.top) * (canvas.height / rect.height);
+        px_screen = e.clientX;
+        py_screen = e.clientY;
     }
 
     pickX_screen = px_screen;
