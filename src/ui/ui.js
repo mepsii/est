@@ -1664,3 +1664,9 @@ if (spawnMobActionBtn) {
         spawnMobOverhaul(type, count);
     };
 }
+
+// Clear Player Inventory
+window.clearPlayerInventory = () => {
+    inventory.fill(null);
+    updateInventories();
+};
