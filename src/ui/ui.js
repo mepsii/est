@@ -873,6 +873,12 @@ overlay.addEventListener('click', () => { if(!isInventoryOpen && !isDebugOpen &&
 document.addEventListener('pointerlockchange', () => {
     hideTooltip();
     isPaused = document.pointerLockElement !== canvas; 
+    
+    const clickToStartEl = document.getElementById('click-to-start');
+    if (clickToStartEl) {
+        clickToStartEl.style.display = hasLoaded ? 'none' : 'block';
+    }
+
     if (isPaused) { 
         placementItem = null; 
         miningProgress = 0;

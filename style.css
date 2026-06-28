@@ -76,9 +76,52 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
     100% { transform: rotate(-15deg) scale(1.15); } 
 }
 #instructions { 
-    margin-top: 25vh; 
+    margin-top: 12vh; 
     text-align: center; 
     pointer-events: none; 
+}
+
+#click-to-start {
+    margin-top: 22vh;
+    font-size: 1.25rem;
+    font-weight: bold;
+    letter-spacing: 0.2em;
+    color: #00ff88; /* clean minty retro green */
+    text-shadow: 2px 2px 0px #000; /* crisp retro shadow, no generic glow */
+    user-select: none;
+    pointer-events: none;
+    animation: retro-pulse 3.0s infinite steps(12);
+    font-family: 'Departure Mono', monospace;
+}
+
+@keyframes retro-pulse {
+    0% {
+        opacity: 0.35;
+        transform: scale(0.97);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.03);
+    }
+    100% {
+        opacity: 0.35;
+        transform: scale(0.97);
+    }
+}
+
+.terminal-cursor {
+    display: inline-block;
+    animation: terminal-blink 0.8s infinite steps(2);
+    margin-left: 2px;
+}
+
+@keyframes terminal-blink {
+    0%, 49% {
+        opacity: 1;
+    }
+    50%, 100% {
+        opacity: 0;
+    }
 }
 
 .prototype-build {
