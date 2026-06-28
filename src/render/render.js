@@ -454,6 +454,7 @@ function render() {
                 }
                 if (cached && cached.entities) {
                     for (let obj of cached.entities) {
+                        if (obj === interactTarget) continue;
                         let instData = getOrCreateInstancedMesh(obj.emoji);
                         if (instData.count >= instData.capacity) {
                             scene.remove(instData.mesh);
@@ -639,6 +640,11 @@ function render() {
         for (let e of interiorEnts) {
             drawBillboardEmoji(e, e.emoji, e.size, e.x, e.y, e.z, e === interactTarget);
         }
+    }
+    
+    // Draw targeted static entities with highlights in overworld
+    if (gameState === 'overworld' && interactTarget && (interactTarget.isPebble || interactTarget.isTree)) {
+        drawBillboardEmoji(interactTarget, interactTarget.emoji, interactTarget.size, interactTarget.wx, interactTarget.wy, interactTarget.h, true);
     }
     
     // Draw dynamic containers

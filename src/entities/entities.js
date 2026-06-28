@@ -518,6 +518,45 @@ function updateEntities() {
         for (let a of animals) if (a.dead) checkTarget(a, 3.0); 
         for (let b of buildings) checkTarget(b, 4.0); 
         for (let v of vehicles) checkTarget(v, 4.0); 
+
+        // Check for static entities (pebbles and trees) in nearby chunks
+        let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
+        for (let cx = pCx - 1; cx <= pCx + 1; cx++) {
+            for (let cy = pCy - 1; cy <= pCy + 1; cy++) {
+                let chunk = getMapChunk(cx, cy);
+                for (let i = 0; i < chunk.length; i++) {
+                    let cObj = chunk[i];
+                    let isPebble = cObj.emoji === '🪨' && cObj.size === 0.25;
+                    let isTree = TREE_EMOJIS.has(cObj.emoji);
+                    
+                    if (isPebble || isTree) {
+                        let dist = Math.hypot(player.x - cObj.wx, player.y - cObj.wy);
+                        if (dist < 3.0) {
+                            let angleTo = Math.atan2(cObj.wy - player.y, cObj.wx - player.x);
+                            let angleDiff = Math.abs(Math.atan2(Math.sin(player.angle - angleTo), Math.cos(player.angle - angleTo)));
+                            if (angleDiff < 0.4 && dist < closestDist) {
+                                closestDist = dist;
+                                if (isPebble) {
+                                    cObj.isPebble = true;
+                                    cObj.x = cObj.wx; 
+                                    cObj.y = cObj.wy;
+                                    cObj.z = cObj.h;
+                                    cObj.chunkArray = chunk;
+                                    cObj.label = 'Pick up Pebble';
+                                } else {
+                                    cObj.isTree = true;
+                                    cObj.x = cObj.wx; 
+                                    cObj.y = cObj.wy;
+                                    cObj.z = cObj.h;
+                                    cObj.label = 'Shake Tree';
+                                }
+                                interactTarget = cObj;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     } 
     else { for (let e of getInteriorEntities()) checkTarget(e, 3.0); }
 

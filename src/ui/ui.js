@@ -1008,7 +1008,61 @@ window.addEventListener('keydown', e => {
             player.z = getSafeFloorZ(player.x, player.y, v.z + 2) + 1.0;
             player.vz = 0;
         } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) { 
-            if (vehicles.includes(interactTarget)) {
+            if (interactTarget.isPebble) {
+                let success = giveItem({ type: 'resource', emoji: '🪨', count: 1 });
+                if (success) {
+                    destroyedEntities.add(interactTarget.entKey);
+                    let idx = interactTarget.chunkArray.indexOf(interactTarget);
+                    if (idx !== -1) {
+                        interactTarget.chunkArray.splice(idx, 1);
+                    }
+                    
+                    let [ex, ey] = interactTarget.entKey.split(',').map(Number);
+                    let ecx = Math.floor(ex / CHUNK_SIZE);
+                    let ecy = Math.floor(ey / CHUNK_SIZE);
+                    let chunkKey = `${ecx},${ecy}`;
+                    if (typeof chunkMeshes !== 'undefined') {
+                        chunkMeshes.delete(chunkKey);
+                    }
+                    
+                    interactTarget = null;
+                    updateInventories();
+                }
+            } else if (interactTarget.isTree) {
+                let entKey = interactTarget.entKey;
+                if (!window.treeShakes) {
+                    window.treeShakes = new Map();
+                }
+                if (!window.treeShakes.has(entKey)) {
+                    window.treeShakes.set(entKey, {
+                        shakes: 0,
+                        target: Math.floor(Math.random() * 4) + 3 // 3, 4, 5, or 6
+                    });
+                }
+                
+                let state = window.treeShakes.get(entKey);
+                state.shakes++;
+                
+                // Spawn green/yellow leaf particles to indicate shaking
+                let pCol = { r: 50, g: 140, b: 40 };
+                if (typeof spawnBlockParticles === 'function') {
+                    spawnBlockParticles(interactTarget.wx, interactTarget.wy, interactTarget.h + interactTarget.size * 0.5, pCol, 5);
+                }
+                
+                // If target shakes reached, drop sticks!
+                if (state.shakes >= state.target) {
+                    state.shakes = 0;
+                    state.target = Math.floor(Math.random() * 4) + 3;
+                    
+                    // Drop 1-3 sticks
+                    let dropCount = Math.floor(Math.random() * 3) + 1; // 1 to 3
+                    for (let j = 0; j < dropCount; j++) {
+                        if (typeof spawnDroppedItemAt === 'function') {
+                            spawnDroppedItemAt({ type: 'resource', emoji: '🥢', count: 1 }, interactTarget.wx, interactTarget.wy, interactTarget.h + interactTarget.size * 0.3);
+                        }
+                    }
+                }
+            } else if (vehicles.includes(interactTarget)) {
                 let v = interactTarget;
                 // Auto-flip upright if flipped when entering on foot
                 let isFlipped = Math.abs(v.roll) > Math.PI / 3 || Math.abs(v.pitch) > Math.PI / 3;
