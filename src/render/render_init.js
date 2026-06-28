@@ -679,7 +679,7 @@ function buildFacesMesh(faces, isWater) {
             // Map voxel type to slot index
             if (f.vType !== undefined && BlockTextureAtlas.mappings[f.vType] !== undefined) {
                 slotIndex = BlockTextureAtlas.mappings[f.vType];
-            } else if (enableGrassTexture && (f.vType === 1 || f.vType === 6) && f.col.g > f.col.r) {
+            } else if (enableGrassTexture && (f.vType === 1 || f.vType === 6) && f.col.g > f.col.r && f.col.b < 100) {
                 slotIndex = 3;
             }
             
