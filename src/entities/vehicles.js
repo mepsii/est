@@ -762,6 +762,126 @@ function postUpdateVehicles() {
                 }
             }
             v.isGrounded = isGrounded;
+
+            // Exhaust smoke puff system for trucks
+            if (v.type === 'truck' && player.inVehicle === v) {
+                const speedKmH = Math.abs(v.currentVehicleSpeedKmHour || 0);
+                const isThrottling = keys['KeyW'] || keys['KeyS'];
+
+                // Simulated RPM calculation matching audio.js
+                let rpm = 520; // Idle
+                if (isThrottling) {
+                    if (v.gear === 'P') {
+                        if (!v.freeRevRPM) v.freeRevRPM = 520;
+                        v.freeRevRPM += 200;
+                        if (v.freeRevRPM > 4800) v.freeRevRPM = 4800;
+                        rpm = v.freeRevRPM;
+                    } else if (v.gear === 'L') {
+                        rpm = 1800 + (speedKmH / 42) * 3800;
+                    } else {
+                        let speedMph = speedKmH * 0.621371;
+                        if (speedMph < 18) {
+                            rpm = 1000 + (speedMph / 18) * 3600;
+                        } else if (speedMph < 38) {
+                            let t = (speedMph - 18) / (38 - 18);
+                            rpm = 2200 + t * 2400;
+                        } else if (speedMph < 60) {
+                            let t = (speedMph - 38) / (60 - 38);
+                            rpm = 2400 + t * 2200;
+                        } else {
+                            let t = Math.min(1.0, (speedMph - 60) / 40);
+                            rpm = 2500 + t * 2300;
+                        }
+                    }
+                } else {
+                    const time = performance.now();
+                    const lope = Math.sin(time * 0.006) * 30;
+                    rpm = 520 + lope + (speedKmH / 120) * 1400;
+                    rpm = Math.max(450, rpm);
+                }
+
+                // Phase logic: 2 revolutions (one 4-stroke cycle) = 8.0 units of phase.
+                // deltaPhase per frame at 60Hz is: (rpm / 60 / 2) * 8 / 60 = rpm / 900
+                let deltaPhase = rpm / 900;
+                v.exhaustPhase = v.exhaustPhase || 0;
+                let oldPhase = v.exhaustPhase;
+                let newPhase = oldPhase + deltaPhase;
+
+                // Chevy V8 Left bank exhaust cadence: 1 - gap - gap - 3 - gap - 5 - 7 - gap
+                // Corresponds to steps: 0, 3, 5, 6 are firings
+                const V8_FIRING_STEPS = [true, false, false, true, false, true, true, false];
+
+                let startStep = Math.ceil(oldPhase);
+                let endStep = Math.floor(newPhase);
+
+                for (let step = startStep; step <= endStep; step++) {
+                    if (V8_FIRING_STEPS[step % 8]) {
+                        // Spawn exhaust smoke puff!
+                        let localExhaust = new CANNON.Vec3(-1.813, 0.567, -0.344);
+                        let worldPos = new CANNON.Vec3();
+                        v.chassisBody.pointToWorldFrame(localExhaust, worldPos);
+
+                        // Calculate a point slightly further back along the local exhaust vector to get the exact world direction
+                        let localExhaustBack = new CANNON.Vec3(-2.813, 0.567, -0.344);
+                        let worldPosBack = new CANNON.Vec3();
+                        v.chassisBody.pointToWorldFrame(localExhaustBack, worldPosBack);
+
+                        let worldDir = new CANNON.Vec3(
+                            worldPosBack.x - worldPos.x,
+                            worldPosBack.y - worldPos.y,
+                            worldPosBack.z - worldPos.z
+                        );
+                        worldDir.normalize();
+
+                        // Position scatter to prevent perfect lines
+                        let scatter = 0.02;
+                        let px = worldPos.x + (Math.random() - 0.5) * scatter;
+                        let py = worldPos.y + (Math.random() - 0.5) * scatter;
+                        let pz = worldPos.z + (Math.random() - 0.5) * scatter;
+
+                        // Speeds & sizes scale with throttle
+                        let throttleFactor = isThrottling ? 1.0 : 0.0;
+                        let exitSpeed = 0.02 + throttleFactor * 0.04 + Math.random() * 0.01;
+
+                        // Do not inherit the truck's velocity, so the particles immediately linger stationary in world space
+                        let vx = worldDir.x * exitSpeed + (Math.random() - 0.5) * 0.005;
+                        let vy = worldDir.y * exitSpeed + (Math.random() - 0.5) * 0.005;
+                        let vz = worldDir.z * exitSpeed + 0.002 + Math.random() * 0.005;
+
+                        let startSize = 0.015 + throttleFactor * 0.015 + Math.random() * 0.008;
+                        let maxLife = 70 + Math.floor(throttleFactor * 50) + Math.floor(Math.random() * 30);
+                        let maxOpacity = 0.18 + throttleFactor * 0.17;
+
+                        let baseColor = 45 - throttleFactor * 25; // Dark sooty gray for testing (Idle = 45, Throttle = 20)
+                        let colorNoise = (Math.random() - 0.5) * 8;
+                        let r = Math.floor(baseColor - 3 + colorNoise);
+                        let g = Math.floor(baseColor + colorNoise);
+                        let b = Math.floor(baseColor + 3 + colorNoise);
+
+                        r = Math.max(0, Math.min(255, r));
+                        g = Math.max(0, Math.min(255, g));
+                        b = Math.max(0, Math.min(255, b));
+
+                        bloodParticles.push({
+                            x: px,
+                            y: py,
+                            z: pz,
+                            vx: vx,
+                            vy: vy,
+                            vz: vz,
+                            color: { r, g, b },
+                            life: maxLife,
+                            maxLife: maxLife,
+                            startSize: startSize,
+                            size: startSize,
+                            isSmoke: true,
+                            isExhaust: true,
+                            maxOpacity: maxOpacity
+                        });
+                    }
+                }
+                v.exhaustPhase = newPhase % 8;
+            }
         }
     }
 }

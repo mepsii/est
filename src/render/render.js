@@ -831,6 +831,8 @@ function render() {
             }
             sprite.position.set(b.x, b.z, b.y);
             sprite.scale.set(b.size * 25, b.size * 25, 1.0);
+            let maxOp = typeof b.maxOpacity !== 'undefined' ? b.maxOpacity : 0.6;
+            sprite.material.opacity = Math.max(0, Math.min(maxOp, (b.life / (b.maxLife || 60)) * maxOp));
         } else {
             let size = b.size;
             let pts;

@@ -5,10 +5,19 @@ function updateParticles() {
         let b = bloodParticles[i];
         if (b.isSmoke) {
             b.x += b.vx; b.y += b.vy; b.z += b.vz;
-            b.vx *= 0.90; b.vy *= 0.90; b.vz *= 0.94;
-            b.vz += 0.0012; 
+            if (b.isExhaust) {
+                b.vx *= 0.82; b.vy *= 0.82; b.vz *= 0.90;
+                b.vz += 0.0006;
+            } else {
+                b.vx *= 0.90; b.vy *= 0.90; b.vz *= 0.94;
+                b.vz += 0.0012;
+            } 
             let lifeRatio = b.life / b.maxLife;
-            b.size = b.startSize * lifeRatio;
+            if (b.isExhaust) {
+                b.size = b.startSize * (1.0 + (1.0 - lifeRatio) * 1.8);
+            } else {
+                b.size = b.startSize * lifeRatio;
+            }
             if (gameState === 'overworld' && getSolid(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z))) {
                 b.life = 0;
             }
