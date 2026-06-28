@@ -1197,7 +1197,7 @@ window.spawnDebug = (em) => {
     else if (em === '🔥') torches.push({ x: cx, y: cy, z: z, emoji: '🔥', size: 0.4, flicker: 1.0 }); 
     else animals.push({ x: cx, y: cy, z: z, emoji: em, size: 1.2, hp: 4, speed: 0.02, dead: false, drop: { type: 'food', emoji: '🍖', amount: 10 }, moveAngle: Math.random() * Math.PI * 2, moveTimer: 0 }); 
 };
-window.spawnVehicle = (type) => { 
+window.spawnVehicle = (type, color) => { 
     let cx = player.x + Math.cos(player.angle) * 5, cy = player.y + Math.sin(player.angle) * 5;
     // Scan a 3x3 footprint around the target coordinate to find the highest voxel elevation.
     // This ensures that neither the chassis nor the wheels overlap uneven voxel blocks on spawn, preventing physics explosions.
@@ -1244,6 +1244,7 @@ window.spawnVehicle = (type) => {
     }
 
     let v = { type: type, x: cx, y: cy, z: z, angle: player.angle, pitch: 0, roll: 0, speed: 0, currentVehicleSpeedKmHour: 0 };
+    if (color) v.color = color;
     if (typeof initCannonVehicle === 'function') {
         initCannonVehicle(v);
     }

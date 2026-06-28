@@ -962,7 +962,12 @@ function render() {
                         // Body Mesh
                         let bodyConf = VEHICLE_MODEL_CONFIG['truck_body'] || { scale: 1.25, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetX: 0.0, offsetY: 0, offsetZ: -0.65 };
                         const bodyMesh = buildThreeMeshFromModel('truck_body', bodyConf);
-                        if (bodyMesh) group.add(bodyMesh);
+                        if (bodyMesh) {
+                            if (v.color) {
+                                bodyMesh.material.color.set(v.color);
+                            }
+                            group.add(bodyMesh);
+                        }
                         
                         // Wheel Meshes: 4 wheels
                         const wheelMeshes = [];
