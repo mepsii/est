@@ -188,6 +188,9 @@ function processPreload() {
             loadingScreen.style.display = 'none';
             isLoading = false;
             hasLoaded = true;
+            if (typeof updateInGameUIVisibility === 'function') {
+                updateInGameUIVisibility(true);
+            }
         }, 500);
     }
 }

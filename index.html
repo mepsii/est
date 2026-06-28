@@ -21,14 +21,10 @@
     <div id="damage-flash"></div>
     <div id="heal-flash"></div>
     <div id="ui">
-        <div class="hud-item">HP: <span id="hp">100</span></div>
-        <div class="hud-item">O2: <span id="oxygen">100</span></div>
-        <div class="hud-item">Stam: <span id="stamina">100</span></div>
-        <div class="hud-item">Food: <span id="food">100</span></div>
         <div class="hud-item">Score: <span id="score">0</span></div>
         <div class="hud-item">XYZ: <span id="coords">0, 0, 0</span></div>
         <div class="hud-item">Equipped: <span id="weapon-name">Pistol</span></div>
-        <div class="hud-item">ADS: <span id="ads-status">OFF</span></div>
+        <div class="hud-item" id="ads-item" style="display: none;">ADS: <span id="ads-status">OFF</span></div>
         <div class="hud-item" id="speedometer-item" style="display: none;">Speed: <span id="speedometer">0 mph</span>
         </div>
         <div class="hud-item" id="gear-item" style="display: none;">Gear: <span id="gear-status">D</span></div>
@@ -60,13 +56,19 @@
 
     <div
         style="position: fixed; bottom: 15px; right: 20px; font-size: 12px; color: rgba(255, 255, 255, 0.4); text-align: right; z-index: 100000; pointer-events: none; user-select: none; font-family: 'Departure Mono', monospace;">
-        <div>est-0.00.94c</div>
+        <div>est-0.00.94d</div>
         <div class="prototype-build">prototype</div>
     </div>
 
     <div id="hotbar-container">
         <div id="bullet-counter-wrapper">
             <div id="bullet-counter"></div>
+        </div>
+        <div id="survival-stats">
+            <div class="hud-item">HP: <span id="hp">100</span></div>
+            <div class="hud-item" id="oxygen-item" style="display: none;">O2: <span id="oxygen">100</span></div>
+            <div class="hud-item">Stam: <span id="stamina">100</span></div>
+            <div class="hud-item">Food: <span id="food">100</span></div>
         </div>
         <div id="hotbar-wrapper">
             <div id="hotbar-grid"></div>
@@ -168,6 +170,12 @@
                 <div class="dbg-row"><label><input type="checkbox" id="dbg-info"> Show Debug Info</label></div>
                 <div class="dbg-row"><label><input type="checkbox" id="dbg-lock-fps"> Lock FPS to 30</label></div>
                 <div class="dbg-row"><label><input type="checkbox" id="dbg-freecam"> Freecam</label></div>
+                <div class="dbg-row">
+                    <label>UI Scale:</label>
+                    <input type="range" id="dbg-uiscale" min="0.5" max="2.0" step="0.1" value="1.0"
+                        style="width: 70px;">
+                    <span id="dbg-uiscale-val" style="width: 30px; text-align: right;">1.0</span>
+                </div>
             </div>
         </details>
 

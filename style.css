@@ -22,11 +22,13 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
     position: absolute; top: 20px; left: 20px;
     color: white; font-family: 'Departure Mono', monospace;
     text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10;
+    display: none;
+    font-size: calc(12px * var(--ui-font-scale, 1));
 }
 #fps-counter, #time-counter {
     position: absolute; right: 20px;
     color: #00ff00; font-family: 'Departure Mono', monospace;
-    font-size: 24px; font-weight: bold;
+    font-size: calc(18px * var(--ui-font-scale, 1)); font-weight: bold;
     text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10;
     transition: right 0.2s ease-in-out;
 }
@@ -35,6 +37,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 }
 #time-counter {
     top: 55px;
+    display: none;
 }
 #fps-counter.debug-open, #time-counter.debug-open {
     right: 280px;
@@ -144,7 +147,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 }
 #damage-flash { background: red; }
 #heal-flash { background: lime; } 
-.hud-item { font-size: 24px; margin-bottom: 5px; font-weight: bold; }
+.hud-item { font-size: calc(18px * var(--ui-font-scale, 1)); margin-bottom: 5px; font-weight: bold; }
 #weapon-name { color: #ffff00; }
 #hp { color: #ff3333; }
 #oxygen { color: #00ffff; }
@@ -157,12 +160,13 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
     background: rgba(20, 20, 20, 0.95); border: 2px solid #555; 
     border-radius: 8px; padding: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.8);
     font-family: 'Departure Mono', monospace; color: white;
+    font-size: calc(12px * var(--ui-font-scale, 1));
 }
-.panel h2 { margin: 0 0 10px 0; font-size: 20px; text-align: center; }
+.panel h2 { margin: 0 0 10px 0; font-size: calc(15px * var(--ui-font-scale, 1)); text-align: center; }
 
 #interact-tooltip {
     position: absolute; top: 55%; left: 50%; transform: translate(-50%, -50%);
-    color: white; font-family: 'Departure Mono', monospace; font-size: 18px; font-weight: bold;
+    color: white; font-family: 'Departure Mono', monospace; font-size: calc(14px * var(--ui-font-scale, 1)); font-weight: bold;
     text-shadow: 1px 1px 2px #000; display: none; pointer-events: none; z-index: 12;
 }
 
@@ -172,7 +176,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 }
 #stair-menu button {
     background: #444; color: white; border: 1px solid #666; 
-    cursor: pointer; padding: 12px; font-size: 16px; 
+    cursor: pointer; padding: 12px; font-size: calc(12px * var(--ui-font-scale, 1)); 
     border-radius: 4px; width: 100%; margin-bottom: 8px;
     font-family: 'Departure Mono', monospace; font-weight: bold;
 }
@@ -205,7 +209,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
     padding: 6px 16px;
     color: #ffb703;
     font-family: 'Departure Mono', monospace;
-    font-size: 16px;
+    font-size: calc(16px * var(--ui-font-scale, 1));
     font-weight: 700;
     text-align: center;
     letter-spacing: 0.5px;
@@ -228,6 +232,16 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 #hotbar-container {
     position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
     z-index: 10; pointer-events: none;
+    display: none;
+}
+#survival-stats {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 8px;
+    color: white;
+    font-family: 'Departure Mono', monospace;
+    text-shadow: 2px 2px 4px #000;
 }
 #hotbar-wrapper {
     position: relative;
@@ -247,7 +261,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 .hotbar-slot {
     width: 45px; height: 45px; background: rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; display: flex;
-    align-items: center; justify-content: center; font-size: 28px; position: relative;
+    align-items: center; justify-content: center; font-size: calc(21px * var(--ui-font-scale, 1)); position: relative;
     transition: all 0.1s;
 }
 .hotbar-slot.active {
@@ -269,7 +283,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 .inv-slot {
     aspect-ratio: 1; background: rgba(0, 0, 0, 0.6);
     border: 1px solid #444; border-radius: 4px; display: flex;
-    align-items: center; justify-content: center; font-size: 30px;
+    align-items: center; justify-content: center; font-size: calc(22px * var(--ui-font-scale, 1));
     cursor: pointer; transition: background 0.1s, border-color 0.1s; position: relative;
 }
 .inv-slot:hover { background: rgba(100, 100, 100, 0.5); }
@@ -279,7 +293,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
     position: fixed;
     pointer-events: none; /* Let events pass through to UI underneath */
     z-index: 9999;
-    font-size: 38px;
+    font-size: calc(28px * var(--ui-font-scale, 1));
     transform: translate(-50%, -50%);
     text-shadow: 2px 2px 5px rgba(0,0,0,0.8);
     display: flex;
@@ -291,7 +305,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
     position: absolute; 
     bottom: -5px; 
     right: -5px; 
-    font-size: 16px; 
+    font-size: calc(12px * var(--ui-font-scale, 1)); 
     color: #fff; 
     text-shadow: 1px 1px 3px #000;
     font-family: 'Departure Mono', monospace;
@@ -299,7 +313,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Depart
 }
 
 #inv-hints {
-    position: absolute; bottom: 30px; color: #ccc; font-size: 18px;
+    position: absolute; bottom: 30px; color: #ccc; font-size: calc(14px * var(--ui-font-scale, 1));
     text-shadow: 1px 1px 2px #000; text-align: center; width: 100%;
 }
 

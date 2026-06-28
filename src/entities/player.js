@@ -81,6 +81,10 @@ function updatePlayer() {
         player.oxygen = Math.min(100, player.oxygen + 1.0);
     }
     oxygenEl.innerText = Math.floor(player.oxygen);
+    const oxygenItemEl = document.getElementById('oxygen-item');
+    if (oxygenItemEl) {
+        oxygenItemEl.style.display = (player.isSubmerged || player.oxygen < 100) ? 'block' : 'none';
+    }
 
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
     if (player.wetTimer > 0) {

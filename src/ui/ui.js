@@ -867,6 +867,17 @@ if (craftingExpandBtn) {
     });
 }
 
+function updateInGameUIVisibility(forceState) {
+    const show = (typeof forceState !== 'undefined') ? forceState : hasLoaded;
+    const ui = document.getElementById('ui');
+    const timeCounter = document.getElementById('time-counter');
+    const hotbarContainer = document.getElementById('hotbar-container');
+    if (ui) ui.style.display = show ? 'block' : 'none';
+    if (timeCounter) timeCounter.style.display = show ? 'block' : 'none';
+    if (hotbarContainer) hotbarContainer.style.display = show ? 'block' : 'none';
+}
+updateInGameUIVisibility();
+
 // --- Input Bindings ---
 overlay.addEventListener('click', () => { if(!isInventoryOpen && !isDebugOpen && !isStairMenuOpen) canvas.requestPointerLock(); });
 
@@ -878,6 +889,7 @@ document.addEventListener('pointerlockchange', () => {
     if (clickToStartEl) {
         clickToStartEl.style.display = hasLoaded ? 'none' : 'block';
     }
+    updateInGameUIVisibility();
 
     if (isPaused) { 
         placementItem = null; 
@@ -966,10 +978,20 @@ window.addEventListener('mousedown', e => {
         } else {
             isZooming = true; 
             adsEl.innerText = "ON"; 
+            const adsItemEl = document.getElementById('ads-item');
+            if (adsItemEl) adsItemEl.style.display = 'block';
         }
     } 
 });
-window.addEventListener('mouseup', e => { if (e.button === 0) isMouseDown = false; if (e.button === 2) { isZooming = false; adsEl.innerText = "OFF"; } });
+window.addEventListener('mouseup', e => { 
+    if (e.button === 0) isMouseDown = false; 
+    if (e.button === 2) { 
+        isZooming = false; 
+        adsEl.innerText = "OFF"; 
+        const adsItemEl = document.getElementById('ads-item');
+        if (adsItemEl) adsItemEl.style.display = 'none';
+    } 
+});
 
 window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
@@ -1237,6 +1259,15 @@ document.getElementById('dbg-viewdist').oninput = e => {
     VIEW_DIST = parseInt(e.target.value);
     document.getElementById('dbg-viewdist-val').innerText = VIEW_DIST;
 };
+const dbgUiscale = document.getElementById('dbg-uiscale');
+if (dbgUiscale) {
+    dbgUiscale.oninput = e => {
+        let scale = parseFloat(e.target.value) || 1.0;
+        const valEl = document.getElementById('dbg-uiscale-val');
+        if (valEl) valEl.innerText = scale.toFixed(1);
+        document.documentElement.style.setProperty('--ui-font-scale', scale);
+    };
+}
 document.getElementById('dbg-thick-fog').onchange = e => {
     thickFogEnabled = e.target.checked;
 };
