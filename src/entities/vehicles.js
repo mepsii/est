@@ -763,10 +763,34 @@ function postUpdateVehicles() {
             }
             v.isGrounded = isGrounded;
 
-            // Exhaust smoke puff system for trucks
+// Exhaust smoke puff system for trucks
             if (v.type === 'truck' && player.inVehicle === v) {
                 const speedKmH = Math.abs(v.currentVehicleSpeedKmHour || 0);
                 const isThrottling = keys['KeyW'] || keys['KeyS'];
+
+                // Detect gear shifts
+                let currentGear = 1;
+                if (v.gear === 'L') {
+                    currentGear = 'L';
+                } else if (v.gear === 'P') {
+                    currentGear = 'P';
+                } else {
+                    let speedMph = speedKmH * 0.621371;
+                    if (speedMph < 18) currentGear = 1;
+                    else if (speedMph < 38) currentGear = 2;
+                    else if (speedMph < 60) currentGear = 3;
+                    else currentGear = 4;
+                }
+                
+                v.shiftBurstTimer = v.shiftBurstTimer || 0;
+                if (v.lastGear !== undefined && v.lastGear !== currentGear && v.gear !== 'P' && v.gear !== 'L') {
+                    v.shiftBurstTimer = 25; // 25 frames of puffier, darker smoke on shift!
+                }
+                v.lastGear = currentGear;
+                
+                if (v.shiftBurstTimer > 0) {
+                    v.shiftBurstTimer--;
+                }
 
                 // Simulated RPM calculation matching audio.js
                 let rpm = 520; // Idle
@@ -848,11 +872,18 @@ function postUpdateVehicles() {
                         let vy = worldDir.y * exitSpeed + (Math.random() - 0.5) * 0.005;
                         let vz = worldDir.z * exitSpeed + 0.002 + Math.random() * 0.005;
 
-                        let startSize = 0.015 + throttleFactor * 0.015 + Math.random() * 0.008;
-                        let maxLife = 70 + Math.floor(throttleFactor * 50) + Math.floor(Math.random() * 30);
-                        let maxOpacity = 0.18 + throttleFactor * 0.17;
+                        // Power-law size noise: larger puffs are exponentially rarer
+                        let sizeNoise = Math.pow(Math.random(), 3.0) * 0.014;
 
-                        let baseColor = 100 - throttleFactor * 45; // Dirty grey (Idle = 100, Throttle = 55)
+                        // Shift factor: active during a gear shift
+                        let shiftFactor = (v.shiftBurstTimer > 0 && isThrottling) ? (v.shiftBurstTimer / 25) : 0.0;
+
+                        // Idle base is 0.010, full throttle base is 0.014 (approx 40% larger), with shift & noise scale
+                        let startSize = (0.010 + throttleFactor * 0.004) * (1.0 + shiftFactor * 0.5) + sizeNoise;
+                        let maxLife = 70 + Math.floor(throttleFactor * 50) + Math.floor(shiftFactor * 30) + Math.floor(Math.random() * 30);
+                        let maxOpacity = (0.18 + throttleFactor * 0.17) * (1.0 + shiftFactor * 0.6);
+
+                        let baseColor = (100 - throttleFactor * 45) - shiftFactor * 25; // Dirty grey, darker/sooty on shift
                         let colorNoise = (Math.random() - 0.5) * 8;
                         let r = Math.floor(baseColor - 3 + colorNoise);
                         let g = Math.floor(baseColor + colorNoise);
