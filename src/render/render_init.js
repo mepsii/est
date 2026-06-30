@@ -1069,23 +1069,23 @@ function createDoorMesh(x, y, z, v, chunkKey) {
     if (facing === 0) { // East
         hingeX = x;
         hingeY = y + 1;
-        baseRotation = -Math.PI / 2;
-        swingDir = 1;
+        baseRotation = Math.PI / 2;
+        swingDir = -1;
     } else if (facing === 1) { // South
-        hingeX = x + 1;
+        hingeX = x;
         hingeY = y;
-        baseRotation = Math.PI;
-        swingDir = 1;
+        baseRotation = 0;
+        swingDir = -1;
     } else if (facing === 2) { // West
         hingeX = x + 1;
         hingeY = y;
-        baseRotation = Math.PI / 2;
-        swingDir = 1;
+        baseRotation = -Math.PI / 2;
+        swingDir = -1;
     } else { // North (facing === 3)
-        hingeX = x;
+        hingeX = x + 1;
         hingeY = y + 1;
-        baseRotation = 0;
-        swingDir = 1;
+        baseRotation = Math.PI;
+        swingDir = -1;
     }
     
     doorGroup.rotation.y = baseRotation + (open ? (swingDir * Math.PI / 2) : 0);
