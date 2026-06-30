@@ -27,6 +27,7 @@ const ITEM_DETAILS = {
     'wood_block': { name: 'Wood Block', desc: 'A block of processed wood. Right-Click in inventory to place.', category: 'block', emoji: '🪵' },
     'stone_block': { name: 'Stone Block', desc: 'A block crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
     'glass': { name: 'Glass Block', desc: 'A transparent glass block. Right-Click in inventory to place.', category: 'block', emoji: '🪟' },
+    'door': { name: 'Door Block', desc: 'A wooden door. Two blocks high. Right-Click or press E to open/close.', category: 'block', emoji: '🚪' },
     // Weapons/Tools
     'pistol': { name: 'Pistol', desc: 'Semiautomatic handgun. Shoots fast, decent damage.', category: 'weapon' },
     'smg': { name: 'SMG', desc: 'Fully automatic submachine gun. High fire rate, high spread.', category: 'weapon' },
@@ -977,6 +978,20 @@ window.addEventListener('mousedown', e => {
             placementItem = null; 
             updateInventories();
         } else {
+            // Check if aiming at a door to toggle it
+            let activeItem = inventory[hotbarSelection];
+            let range = (activeItem && activeItem.id && ITEMS[activeItem.id]) ? ITEMS[activeItem.id].range : 4.5;
+            let aim = getAimVoxel(range);
+            if (aim) {
+                let hitV = getVoxel(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
+                if (hitV >= 10 && hitV <= 17) {
+                    if (typeof window.toggleDoor === 'function') {
+                        window.toggleDoor(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
+                        return; // Prevent zoom/ADS toggle on right-click!
+                    }
+                }
+            }
+            
             isZooming = true; 
             adsEl.innerText = "ON"; 
             const adsItemEl = document.getElementById('ads-item');
@@ -1118,6 +1133,17 @@ window.addEventListener('keydown', e => {
             else if (interactTarget.action === 'exit') exitBuilding();
             else if (interactTarget.action === 'stairs') { if (activeBuilding.floors > 1) { if (activeFloor === 0) changeFloor(1); else if (activeFloor === activeBuilding.floors - 1) changeFloor(-1); else { isStairMenuOpen = true; stairMenuTitle.innerText = `Stairwell (Floor ${activeFloor + 1})`; document.exitPointerLock(); } } }
             else { isInventoryOpen = true; activeContainer = interactTarget; updateInventories(); document.exitPointerLock(); }
+        } else if (!isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused && !player.inVehicle) {
+            // Check if aiming at a door block to open/close
+            let aim = getAimVoxel(3.5);
+            if (aim) {
+                let hitV = getVoxel(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
+                if (hitV >= 10 && hitV <= 17) {
+                    if (typeof window.toggleDoor === 'function') {
+                        window.toggleDoor(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
+                    }
+                }
+            }
         }
     }
     
@@ -1681,6 +1707,7 @@ const SPAWNABLE_ITEMS = [
     { label: '🪵 Wood Block', data: { id: 'wood_block', type: 'block', emoji: '🪵' } },
     { label: '🪨 Stone Block', data: { id: 'stone_block', type: 'block', emoji: '🪨' } },
     { label: '🪟 Glass Block', data: { id: 'glass', type: 'block', emoji: '🪟' } },
+    { label: '🚪 Door Block', data: { id: 'door', type: 'block', emoji: '🚪' } },
     // Unused / Buildings
     { label: '⛺ Tent', data: { type: 'building', emoji: '⛺', rooms: 1, floors: 1 } },
     { label: '🏚️ Cabin', data: { type: 'building', emoji: '🏚️', rooms: 2, floors: 2 } }

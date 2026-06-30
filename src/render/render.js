@@ -485,6 +485,15 @@ function render() {
             if (cached.glassMesh) cached.glassMesh.geometry.dispose();
             scene.remove(cached.waterMesh);
             if (cached.waterMesh) cached.waterMesh.geometry.dispose();
+            
+            // Clean up door meshes in this evicted chunk
+            for (let [dKey, dObj] of threeDoors.entries()) {
+                if (dObj.chunkKey === key) {
+                    scene.remove(dObj.group);
+                    threeDoors.delete(dKey);
+                }
+            }
+            
             if (cached.entities) {
                 for (let sprite of cached.entities) {
                     if (sprite instanceof THREE.Object3D) {
@@ -905,7 +914,7 @@ function render() {
                 mx = miningTarget.mx;
                 my = miningTarget.my;
                 mz = miningTarget.mz;
-                isFine = (miningTarget.w.type === 'block' && isVoxelCube(miningTarget.w.blockId)) || miningTarget.w.toolType === 'pickaxe';
+                isFine = (miningTarget.w.type === 'block' && (isVoxelCube(miningTarget.w.blockId) || (miningTarget.w.blockId >= 10 && miningTarget.w.blockId <= 17))) || miningTarget.w.toolType === 'pickaxe' || miningTarget.w.toolType === 'axe';
                 if (isFine) {
                     aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
                     aimBox.scale.set(1, 1, 1);
@@ -917,28 +926,35 @@ function render() {
             }
         } else {
             let aim = getAimVoxel(curW.range);
+            let showOutline = false;
             if (aim) {
                 let isPlace = (curW.type === 'block');
-                let targetX = isPlace ? aim.placeX : aim.hitX;
-                let targetY = isPlace ? aim.placeY : aim.hitY;
-                let targetZ = isPlace ? aim.placeZ : aim.hitZ;
-                isFine = (curW.type === 'block' && isVoxelCube(curW.blockId)) || curW.toolType === 'pickaxe';
+                let hitV = getVoxel(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
+                let canAxeMine = (hitV >= 10 && hitV <= 17);
                 
-                mx = isFine ? Math.floor(targetX) : targetX;
-                my = isFine ? Math.floor(targetY) : targetY;
-                mz = isFine ? Math.floor(targetZ) : targetZ;
-                
-                if (isFine) {
-                    aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
-                    aimBox.scale.set(1, 1, 1);
+                if (curW.toolType === 'axe' && !isPlace && !canAxeMine) {
+                    showOutline = false;
                 } else {
-                    aimBox.position.set(mx, mz, my);
-                    aimBox.scale.set(1.4, 1.4, 1.4);
+                    showOutline = true;
+                    let targetX = isPlace ? aim.placeX : aim.hitX;
+                    let targetY = isPlace ? aim.placeY : aim.hitY;
+                    let targetZ = isPlace ? aim.placeZ : aim.hitZ;
+                    isFine = (curW.type === 'block' && (isVoxelCube(curW.blockId) || (curW.blockId >= 10 && curW.blockId <= 17))) || curW.toolType === 'pickaxe' || curW.toolType === 'axe';
+                    
+                    mx = isFine ? Math.floor(targetX) : targetX;
+                    my = isFine ? Math.floor(targetY) : targetY;
+                    mz = isFine ? Math.floor(targetZ) : targetZ;
+                    
+                    if (isFine) {
+                        aimBox.position.set(mx + 0.5, mz + 0.5, my + 0.5);
+                        aimBox.scale.set(1, 1, 1);
+                    } else {
+                        aimBox.position.set(mx, mz, my);
+                        aimBox.scale.set(1.4, 1.4, 1.4);
+                    }
                 }
-                aimBox.visible = true;
-            } else {
-                aimBox.visible = false;
             }
+            aimBox.visible = showOutline;
         }
     } else {
         aimBox.visible = false;

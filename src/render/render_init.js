@@ -29,6 +29,8 @@ let activeBillboardMeshes = new Set();
 let waterMaterial = null;
 let solidMaterial = null;
 let glassMaterial = null;
+let threeDoors = new Map();
+let doorTexture = null;
 
 let globalInstancedMeshes = new Map();
 const instPos = new THREE.Vector3();
@@ -589,6 +591,14 @@ function updateChunkMesh(key, faces) {
     const glassMesh = buildFacesMesh(glassFaces, false, true);
     const waterMesh = buildFacesMesh(waterFaces, true, false);
     
+    // Clean up doors of this chunk
+    for (let [dKey, dObj] of threeDoors.entries()) {
+        if (dObj.chunkKey === key) {
+            scene.remove(dObj.group);
+            threeDoors.delete(dKey);
+        }
+    }
+    
     if (solidMesh) scene.add(solidMesh);
     if (glassMesh) scene.add(glassMesh);
     if (waterMesh) scene.add(waterMesh);
@@ -596,6 +606,23 @@ function updateChunkMesh(key, faces) {
     // Build static billboards inside chunk (trees, rocks, flowers, cactuses, skulls)
     let [cx, cy] = key.split(',').map(Number);
     let chunkEntities = getMapChunk(cx, cy);
+    
+    // Scan chunk voxels for door bases and spawn door meshes
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        let gx = cx * CHUNK_SIZE + lx;
+        for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+            let gy = cy * CHUNK_SIZE + ly;
+            for (let lz = 0; lz < 96; lz++) {
+                let v = getVoxel(gx, gy, lz);
+                if (v >= 10 && v <= 17) {
+                    let vBelow = lz > 0 ? getVoxel(gx, gy, lz - 1) : 0;
+                    if (vBelow < 10 || vBelow > 17) {
+                        createDoorMesh(gx, gy, lz, v, key);
+                    }
+                }
+            }
+        }
+    }
     
     // Store the raw chunkEntities directly so they can be rendered via instancing in render.js
     threeChunks.set(key, { solidMesh, glassMesh, waterMesh, facesRef: faces, entities: chunkEntities });
@@ -948,6 +975,167 @@ function buildThreeMeshFromModel(modelName, conf) {
     return new THREE.Mesh(geom, mat);
 }
 
+function getDoorTexture() {
+    if (doorTexture) return doorTexture;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    
+    // Procedural wooden door with window fallback
+    ctx.fillStyle = '#a06e3c';
+    ctx.fillRect(0, 0, 128, 256);
+    
+    ctx.fillStyle = '#78461e';
+    ctx.fillRect(0, 0, 128, 12); // top border
+    ctx.fillRect(0, 244, 128, 12); // bottom border
+    ctx.fillRect(0, 0, 12, 256); // left border
+    ctx.fillRect(116, 0, 12, 256); // right border
+    ctx.fillRect(58, 0, 12, 256); // middle vertical divider
+    ctx.fillRect(0, 122, 128, 12); // middle horizontal divider
+    
+    ctx.fillStyle = '#5a3214';
+    ctx.fillRect(20, 140, 32, 90);
+    ctx.fillRect(76, 140, 32, 90);
+    
+    // Clear transparent glass panes in upper half
+    ctx.clearRect(20, 20, 32, 90);
+    ctx.clearRect(76, 20, 32, 90);
+    
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(25, 40); ctx.lineTo(45, 60);
+    ctx.moveTo(81, 40); ctx.lineTo(101, 60);
+    ctx.stroke();
+    
+    ctx.fillStyle = '#e5c158';
+    ctx.fillRect(100, 115, 10, 15); // brass handle
+    
+    doorTexture = new THREE.CanvasTexture(canvas);
+    doorTexture.minFilter = THREE.NearestFilter;
+    doorTexture.magFilter = THREE.NearestFilter;
+    
+    const loader = new THREE.TextureLoader();
+    loader.load('textures/blocks/door.png', (tex) => {
+        console.log("Successfully loaded textures/blocks/door.png");
+        tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter;
+        doorTexture.image = tex.image;
+        doorTexture.needsUpdate = true;
+    }, undefined, (err) => {
+        console.warn("textures/blocks/door.png not found or failed to load. Using procedural door fallback.");
+    });
+    
+    return doorTexture;
+}
+
+function createDoorMesh(x, y, z, v, chunkKey) {
+    const doorKey = `${x},${y},${z}`;
+    if (threeDoors.has(doorKey)) return;
+    
+    const facing = Math.floor((v - 10) / 2);
+    const open = (v % 2 === 1);
+    
+    const doorGeo = new THREE.BoxGeometry(1.0, 2.0, 0.08);
+    const doorTex = getDoorTexture();
+    const woodMat = new THREE.MeshLambertMaterial({ color: 0x5a3214 });
+    const texMat = new THREE.MeshLambertMaterial({
+        map: doorTex,
+        transparent: true,
+        alphaTest: 0.05,
+        side: THREE.DoubleSide
+    });
+    
+    const materials = [
+        woodMat, // Right
+        woodMat, // Left
+        woodMat, // Top
+        woodMat, // Bottom
+        texMat,  // Front
+        texMat   // Back
+    ];
+    
+    const doorGroup = new THREE.Group();
+    const doorMesh = new THREE.Mesh(doorGeo, materials);
+    doorMesh.position.set(0.5, 1.0, 0); // hinge pivot is local X = 0
+    doorGroup.add(doorMesh);
+    
+    let hingeX, hingeY;
+    let baseRotation;
+    
+    if (facing === 0) { // East
+        hingeX = x;
+        hingeY = y;
+        baseRotation = Math.PI / 2;
+    } else if (facing === 1) { // South
+        hingeX = x + 1;
+        hingeY = y;
+        baseRotation = Math.PI;
+    } else if (facing === 2) { // West
+        hingeX = x + 1;
+        hingeY = y + 1;
+        baseRotation = -Math.PI / 2;
+    } else { // North (facing === 3)
+        hingeX = x;
+        hingeY = y + 1;
+        baseRotation = 0;
+    }
+    
+    doorGroup.rotation.y = baseRotation + (open ? Math.PI / 2 : 0);
+    // map voxel (x, y, z) to Three.js (x, z, y)
+    doorGroup.position.set(hingeX, z, hingeY);
+    
+    scene.add(doorGroup);
+    
+    threeDoors.set(doorKey, {
+        group: doorGroup,
+        x: x,
+        y: y,
+        z: z,
+        facing: facing,
+        open: open,
+        baseRotation: baseRotation,
+        chunkKey: chunkKey
+    });
+}
+
+function toggleDoor(x, y, z) {
+    let baseZ = z;
+    let v = getVoxel(x, y, z);
+    let vBelow = z > 0 ? getVoxel(x, y, z - 1) : 0;
+    if (vBelow >= 10 && vBelow <= 17) {
+        baseZ = z - 1;
+    }
+    
+    let curV = getVoxel(x, y, baseZ);
+    if (curV < 10 || curV > 17) return;
+    
+    let nextV = (curV % 2 === 1) ? (curV - 1) : (curV + 1);
+    
+    if (wasmLoaded) {
+        wasmExports.modifyTerrainWasm(x, y, baseZ, 0.1, nextV);
+        wasmExports.modifyTerrainWasm(x, y, baseZ + 1, 0.1, nextV);
+        let mcx = Math.floor(x / CHUNK_SIZE);
+        let mcy = Math.floor(y / CHUNK_SIZE);
+        chunkMeshes.delete(`${mcx},${mcy}`);
+    } else {
+        modifyTerrainJS(x, y, baseZ, 0.1, nextV);
+        modifyTerrainJS(x, y, baseZ + 1, 0.1, nextV);
+    }
+    
+    console.log(`Door at ${x},${y},${baseZ} is now ${nextV % 2 === 1 ? 'Open' : 'Closed'}`);
+    
+    let doorKey = `${x},${y},${baseZ}`;
+    let doorObj = threeDoors.get(doorKey);
+    if (doorObj) {
+        doorObj.open = (nextV % 2 === 1);
+        doorObj.group.rotation.y = doorObj.baseRotation + (doorObj.open ? Math.PI / 2 : 0);
+    }
+}
+window.toggleDoor = toggleDoor;
+
 function rebuildAllChunkMeshes() {
     threeChunks.forEach((cached, key) => {
         if (cached.solidMesh) scene.remove(cached.solidMesh);
@@ -955,4 +1143,9 @@ function rebuildAllChunkMeshes() {
         if (cached.waterMesh) scene.remove(cached.waterMesh);
     });
     threeChunks.clear();
+    
+    for (let dObj of threeDoors.values()) {
+        scene.remove(dObj.group);
+    }
+    threeDoors.clear();
 }

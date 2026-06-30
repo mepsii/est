@@ -592,6 +592,19 @@ function updateEntities() {
         }
         else interactTooltip.innerText = "[E] Loot";
         interactTooltip.style.display = 'block';
-    } else interactTooltip.style.display = 'none';
+    } else {
+        // If no entity is targeted, check if looking at a door block to show Open/Close Door tooltip
+        let aim = getAimVoxel(3.5);
+        if (aim) {
+            let hitV = getVoxel(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
+            if (hitV >= 10 && hitV <= 17) {
+                let isOpen = (hitV % 2 === 1);
+                interactTooltip.innerText = `[E or RMB] ${isOpen ? 'Close' : 'Open'} Door`;
+                interactTooltip.style.display = 'block';
+                return;
+            }
+        }
+        interactTooltip.style.display = 'none';
+    }
 
 }

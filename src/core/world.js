@@ -560,16 +560,21 @@ function getVoxelJS(x, y, z, t = null) {
 }
 
 function isVoxelSolid(v) {
+    if (v >= 10 && v <= 17) {
+        return v % 2 === 0;
+    }
     return v === 1 || v === 6 || v >= 3;
 }
 
 function isVoxelCube(v) {
-    return v >= 3 && v !== 6 && v !== 7 && v !== 8;
+    return v >= 3 && v !== 6 && v !== 7 && v !== 8 && (v < 10 || v > 17);
 }
 
 function shouldRenderFace(v, neighbor) {
+    if (v >= 10 && v <= 17) return false;
     if (!isVoxelSolid(neighbor)) return true;
     if (neighbor === 9 && v !== 9) return true;
+    if (neighbor >= 10 && neighbor <= 17) return true;
     if (isVoxelCube(v) !== isVoxelCube(neighbor)) return true;
     return false;
 }
@@ -605,6 +610,7 @@ function getVoxelColorJS(x, y, z, vType = null) {
     if (v === 4) return { r: 160, g: 110, b: 60 };
     if (v === 5) return { r: 140, g: 140, b: 140 };
     if (v === 9) return { r: 255, g: 255, b: 255 };
+    if (v >= 10 && v <= 17) return { r: 120, g: 80, b: 40 };
     if (v === 7 || v === 17) {
         let noise = hash(x, y, z) * 12;
         return {
@@ -906,6 +912,33 @@ function getChunkMesh(cx, cy) {
 }
 
 function modifyTerrain(cx, cy, cz, radius, amount) {
+    if (amount === 10) {
+        // Placement check: check base and block above
+        let vBase = getVoxel(cx, cy, cz);
+        let vAbove = getVoxel(cx, cy, cz + 1);
+        if (isVoxelSolid(vBase) || isVoxelSolid(vAbove) || cz + 1 >= MAX_Z) {
+            console.warn("Cannot place door: space is blocked or out of bounds.");
+            return false;
+        }
+        
+        let angleDeg = ((player.angle * 180) / Math.PI) % 360;
+        if (angleDeg < 0) angleDeg += 360;
+        let facing = Math.round(angleDeg / 90) % 4;
+        let doorBlockId = 10 + facing * 2;
+        
+        if (wasmLoaded) {
+            wasmExports.modifyTerrainWasm(cx, cy, cz, radius, doorBlockId);
+            wasmExports.modifyTerrainWasm(cx, cy, cz + 1, radius, doorBlockId);
+            let mcx = Math.floor(cx / CHUNK_SIZE);
+            let mcy = Math.floor(cy / CHUNK_SIZE);
+            chunkMeshes.delete(`${mcx},${mcy}`);
+        } else {
+            modifyTerrainJS(cx, cy, cz, radius, doorBlockId);
+            modifyTerrainJS(cx, cy, cz + 1, radius, doorBlockId);
+        }
+        return true;
+    }
+
     if (amount <= 0) {
         for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
             for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
@@ -914,6 +947,20 @@ function modifyTerrain(cx, cy, cz, radius, amount) {
                         let v = getVoxel(x, y, z);
                         if (isVoxelSolid(v)) {
                             dropMinedItem(x, y, z, v);
+                        }
+                        
+                        // Clear the other half of the door
+                        if (v >= 10 && v <= 17) {
+                            let upV = getVoxel(x, y, z + 1);
+                            if (upV >= 10 && upV <= 17) {
+                                if (wasmLoaded) wasmExports.modifyTerrainWasm(x, y, z + 1, 0.1, -1);
+                                else voxelMods.set(`${x},${y},${z+1}`, -1);
+                            }
+                            let dnV = z > 0 ? getVoxel(x, y, z - 1) : 0;
+                            if (dnV >= 10 && dnV <= 17) {
+                                if (wasmLoaded) wasmExports.modifyTerrainWasm(x, y, z - 1, 0.1, -1);
+                                else voxelMods.set(`${x},${y},${z-1}`, -1);
+                            }
                         }
                     }
                 }
@@ -970,7 +1017,8 @@ function getAimVoxel(range) {
         let ry = player.y + Math.sin(player.angle) * Math.cos(pitchAngle) * (i * step);
         let rz = camZ + Math.sin(pitchAngle) * (i * step); 
         
-        if (getSolid(Math.floor(rx), Math.floor(ry), Math.floor(rz))) {
+        let v = getVoxel(Math.floor(rx), Math.floor(ry), Math.floor(rz));
+        if (isVoxelSolid(v) || (v >= 10 && v <= 17)) {
             return {
                 hitX: rx, hitY: ry, hitZ: rz,
                 placeX: rx - Math.cos(player.angle)*Math.cos(pitchAngle)*step,
@@ -1224,6 +1272,13 @@ function dropMinedItem(x, y, z, v) {
         spawnDroppedItemAt({ id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
     } else if (v === 9) {
         spawnDroppedItemAt({ id: 'glass', type: 'block', emoji: '🪟', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+    } else if (v >= 10 && v <= 17) {
+        if (typeof window.lastDoorDropTime === 'undefined') window.lastDoorDropTime = 0;
+        let now = Date.now();
+        if (now - window.lastDoorDropTime < 50) return;
+        window.lastDoorDropTime = now;
+        spawnDroppedItemAt({ id: 'door', type: 'block', emoji: '🚪', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+        return;
     } else if (v === 1 || v === 6) {
         let t = getTerrainFast(x, y);
         let depthFromMacro = t.baseH - z;

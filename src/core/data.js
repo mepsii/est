@@ -156,6 +156,7 @@ const ITEMS = {
     'wood_block': { name: "Wood Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 4 },
     'stone_block': { name: "Stone Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 5 },
     'glass': { name: "Glass Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 9 },
+    'door': { name: "Door Block", fireRate: 15, isMelee: true, range: 4.5, dmg: 0, type: 'block', blockId: 10 },
     'coord_picker': { name: "Coord Picker", fireRate: 15, isMelee: true, range: 100.0, dmg: 0, type: 'tool' }
 };
 
@@ -192,6 +193,7 @@ inventory[7] = { id: 'cube', type: 'block', emoji: '🧊', count: 64 };
 inventory[8] = { id: 'coord_picker', type: 'tool', emoji: '📐', count: 1 };
 inventory[9] = { id: '.45acp', type: 'ammo', emoji: '⚙️', count: 100 };
 inventory[10] = { id: 'glass', type: 'block', emoji: '🪟', count: 64 };
+inventory[11] = { id: 'door', type: 'block', emoji: '🚪', count: 64 };
 
 let hotbarSelection = 0;
 

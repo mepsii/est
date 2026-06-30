@@ -246,16 +246,22 @@ function updateProjectiles() {
                             }
                         }
                     }
-                } else if ((w.toolType === 'shovel' || w.type === 'block' || w.toolType === 'pickaxe') && gameState === 'overworld') {
+                } else if ((w.toolType === 'shovel' || w.type === 'block' || w.toolType === 'pickaxe' || w.toolType === 'axe') && gameState === 'overworld') {
                     let aim = getAimVoxel(w.range);
                     if (aim) {
+                        let hitV = getVoxel(Math.floor(aim.hitX), Math.floor(aim.hitY), Math.floor(aim.hitZ));
                         let isPlace = (w.type === 'block');
+                        let canAxeMine = (hitV >= 10 && hitV <= 17);
+                        if (w.toolType === 'axe' && !isPlace && !canAxeMine) {
+                            return;
+                        }
+                        
                         let targetX = isPlace ? aim.placeX : aim.hitX;
                         let targetY = isPlace ? aim.placeY : aim.hitY;
                         let targetZ = isPlace ? aim.placeZ : aim.hitZ;
 
-                        let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe') ? -1 : w.blockId; 
-                        let isFine = (w.type === 'block' && isVoxelCube(w.blockId)) || w.toolType === 'pickaxe';
+                        let amt = (w.toolType === 'shovel' || w.toolType === 'pickaxe' || w.toolType === 'axe') ? -1 : w.blockId; 
+                        let isFine = (w.type === 'block' && (isVoxelCube(w.blockId) || (w.blockId >= 10 && w.blockId <= 17))) || w.toolType === 'pickaxe' || w.toolType === 'axe';
                         let rad = isFine ? 0.1 : 1.4;
                         
                         let mx = isFine ? Math.floor(targetX) : targetX;
@@ -263,12 +269,12 @@ function updateProjectiles() {
                         let mz = isFine ? Math.floor(targetZ) : targetZ;
 
                         if (isPlace || instantBreak) {
-                            modifyTerrain(mx, my, mz, rad, amt);
+                            let success = modifyTerrain(mx, my, mz, rad, amt);
                             
                             let pCol = getVoxelColor(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
                             spawnBlood(targetX, targetY, targetZ, pCol, 8); 
 
-                            if (isPlace) {
+                            if (isPlace && success !== false) {
                                 activeItem.count--;
                                 if (activeItem.count <= 0) {
                                     inventory[hotbarSelection] = null;

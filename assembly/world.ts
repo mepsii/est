@@ -486,18 +486,23 @@ export function getTerrainRoadSegLen(x: i32, y: i32): f64 { return getTerrainFas
 
 @inline
 function isVoxelSolid(v: i32): bool {
+  if (v >= 10 && v <= 17) {
+    return v % 2 == 0;
+  }
   return v == 1 || v == 6 || v >= 3;
 }
 
 @inline
 function isVoxelCube(v: i32): bool {
-  return v >= 3 && v != 6 && v != 7 && v != 8;
+  return v >= 3 && v != 6 && v != 7 && v != 8 && (v < 10 || v > 17);
 }
 
 @inline
 function shouldRenderFace(v: i32, neighbor: i32): bool {
+  if (v >= 10 && v <= 17) return false;
   if (!isVoxelSolid(neighbor)) return true;
   if (neighbor == 9 && v != 9) return true;
+  if (neighbor >= 10 && neighbor <= 17) return true;
   if (isVoxelCube(v) != isVoxelCube(neighbor)) return true;
   return false;
 }
@@ -666,6 +671,11 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
   if (v == 9) {
     let col = new ColorData();
     col.r = 255; col.g = 255; col.b = 255;
+    return col;
+  }
+  if (v >= 10 && v <= 17) {
+    let col = new ColorData();
+    col.r = 120; col.g = 80; col.b = 40;
     return col;
   }
   if (v == 7 || v == 17) {
