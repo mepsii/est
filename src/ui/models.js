@@ -5,15 +5,15 @@
 window.NATIVE_GLTF_MODELS = {};
 const WEAPON_MODELS = {};
 const WEAPON_MODEL_CONFIG = {
-    'pistol':  { scale: 0.2, rotX: Math.PI / 2, rotY: Math.PI / 2 + 0.011, rotZ: Math.PI / 2, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2, zoomOffsetX: 0.0, zoomOffsetY: 0.4, zoomOffsetZ: -0.145 },
-    'smg':     { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 },
+    'pistol': { scale: 0.2, rotX: Math.PI / 2, rotY: Math.PI / 2 + 0.011, rotZ: Math.PI / 2, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2, zoomOffsetX: 0.0, zoomOffsetY: 0.4, zoomOffsetZ: -0.145 },
+    'smg': { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 },
     'shotgun': { scale: 8.0, rotX: 0, rotY: Math.PI, rotZ: 0, offsetX: 0.2, offsetY: 0.5, offsetZ: -0.2 },
     '45shell1': { scale: 35.0, rotX: 0, rotY: 0, rotZ: 0 }
 };
 
 const VEHICLE_MODEL_CONFIG = {
-    'truck': { scale: 1.4, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetZ: -0.8 },
-    'truck_body': { scale: 1.25, rotX: Math.PI/2, rotY: 0, rotZ: Math.PI/2, offsetX: 0.0, offsetY: 0, offsetZ: -0.65 },
+    'truck': { scale: 1.4, rotX: Math.PI / 2, rotY: 0, rotZ: Math.PI / 2, offsetZ: -0.8 },
+    'truck_body': { scale: 1.25, rotX: Math.PI / 2, rotY: 0, rotZ: Math.PI / 2, offsetX: 0.0, offsetY: 0, offsetZ: -0.65 },
     'truck_wheel': { scale: 1.0, rotX: 0, rotY: 0, rotZ: 0, offsetZ: 0 }
 };
 
@@ -25,7 +25,7 @@ async function loadObjModel(name) {
             return;
         }
         const objText = await objRes.text();
-        
+
         let mtlText = '';
         try {
             const mtlRes = await fetch(`models/${name}.mtl`);
@@ -34,23 +34,23 @@ async function loadObjModel(name) {
             } else {
                 console.warn(`Failed to load MTL file: models/${name}.mtl (Status: ${mtlRes.status})`);
             }
-        } catch(e) {
+        } catch (e) {
             console.error(`Error fetching MTL file for ${name}:`, e);
         }
-        
+
         const materials = {};
         let currentMtl = null;
         if (mtlText) {
             const lines = mtlText.split('\n');
             let maxKdVal = 0;
             const parsedMtls = [];
-            
+
             for (let line of lines) {
                 line = line.trim();
                 if (!line || line.startsWith('#')) continue;
                 const parts = line.split(/\s+/);
                 const cmd = parts[0].toLowerCase();
-                
+
                 if (cmd === 'newmtl') {
                     currentMtl = parts.slice(1).join(' ').trim();
                     parsedMtls.push({ name: currentMtl, kd: [0.78, 0.78, 0.78] });
@@ -64,11 +64,11 @@ async function loadObjModel(name) {
                     }
                 }
             }
-            
+
             // If all Kd values are extremely dark (max < 0.25), it's likely a linear export from Blender.
             // Apply gamma correction (v ^ (1/2.2)) to convert it to sRGB.
             const applyGamma = maxKdVal > 0 && maxKdVal < 0.25;
-            
+
             for (const mtl of parsedMtls) {
                 let r = mtl.kd[0];
                 let g = mtl.kd[1];
@@ -96,7 +96,7 @@ async function loadObjModel(name) {
             if (!line || line.startsWith('#')) continue;
             const parts = line.split(/\s+/);
             const cmd = parts[0].toLowerCase();
-            
+
             if (cmd === 'v') {
                 vertices.push({ x: parseFloat(parts[1]), y: parseFloat(parts[2]), z: parseFloat(parts[3]) });
             } else if (cmd === 'usemtl') {
@@ -111,7 +111,7 @@ async function loadObjModel(name) {
                 }
                 for (let i = 1; i < faceVerts.length - 1; i++) {
                     faces.push({
-                        pts: [ vertices[faceVerts[0]], vertices[faceVerts[i]], vertices[faceVerts[i+1]] ],
+                        pts: [vertices[faceVerts[0]], vertices[faceVerts[i]], vertices[faceVerts[i + 1]]],
                         color: materials[currentMtl] || { r: 150, g: 150, b: 150 }
                     });
                 }
@@ -230,7 +230,6 @@ function loadGlbModel(name) {
 loadGlbModel('pistol');
 loadObjModel('shotgun');
 loadObjModel('smg');
-loadObjModel('truck');
 loadObjModel('truck_body');
 loadObjModel('truck_wheel');
 loadObjModel('45shell1');
@@ -252,7 +251,7 @@ function renderWeaponModel() {
     let activeItem = inventory[hotbarSelection];
     let wData = activeItem && activeItem.id ? ITEMS[activeItem.id] : null;
     if (!wData) return;
-    
+
     let wName = wData.name.toLowerCase();
     let model = WEAPON_MODELS[wName];
     if (!model || wData.isMelee) return;
@@ -262,7 +261,7 @@ function renderWeaponModel() {
     let isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
     let bobX = isMoving && !flightMode ? Math.cos(gameTime * 200) * 0.01 : 0;
     let bobY = isMoving && !flightMode ? Math.abs(Math.sin(gameTime * 200)) * 0.02 : 0;
-    
+
     let recoilOffset = fireCooldown > 0 ? (fireCooldown / wData.fireRate) * 0.1 : 0;
 
     let targetOffsetX = isZooming ? (conf.zoomOffsetX !== undefined ? conf.zoomOffsetX : 0) : conf.offsetX;
@@ -270,68 +269,68 @@ function renderWeaponModel() {
     let targetOffsetZ = isZooming ? (conf.zoomOffsetZ !== undefined ? conf.zoomOffsetZ : conf.offsetZ + 0.05) : conf.offsetZ;
 
     let ox = targetOffsetX + bobX;
-    let oy = targetOffsetY - recoilOffset; 
-    let oz = targetOffsetZ - bobY + (recoilOffset * 0.2); 
-    
+    let oy = targetOffsetY - recoilOffset;
+    let oz = targetOffsetZ - bobY + (recoilOffset * 0.2);
+
     const fov = canvas.width * currentZoom;
     const screenCenterY = canvas.height / 2;
 
     let facesToRender = [];
-    
+
     for (let f of model.faces) {
         let poly = [];
         let valid = true;
         for (let v of f.pts) {
             let r = rotate3D(v.x, v.y, v.z, conf.rotX, conf.rotY, conf.rotZ);
-            
+
             let mx = r.x * conf.scale;
             let my = -r.z * conf.scale;
             let mz = r.y * conf.scale;
-            
+
             let lx = mx + ox;
             let ly = my + oy;
             let lz = mz + oz;
-            
+
             if (ly < 0.01) { valid = false; break; }
-            
-            let sy = screenCenterY - (lz / ly) * fov; 
-            let sx = canvas.width/2 + (lx / ly) * fov;
-            
-            poly.push({sx, sy, ly, lx, ly_val: ly, lz});
+
+            let sy = screenCenterY - (lz / ly) * fov;
+            let sx = canvas.width / 2 + (lx / ly) * fov;
+
+            poly.push({ sx, sy, ly, lx, ly_val: ly, lz });
         }
-        
+
         if (valid && poly.length === 3) {
             let ux = poly[1].sx - poly[0].sx;
             let uy = poly[1].sy - poly[0].sy;
             let vx = poly[2].sx - poly[0].sx;
             let vy = poly[2].sy - poly[0].sy;
             let cross = ux * vy - uy * vx;
-            if (cross > 0) continue; 
-            
+            if (cross > 0) continue;
+
             let depth = (poly[0].ly_val + poly[1].ly_val + poly[2].ly_val) / 3;
-            
+
             let dx1 = poly[1].lx - poly[0].lx;
             let dy1 = poly[1].ly_val - poly[0].ly_val;
             let dz1 = poly[1].lz - poly[0].lz;
             let dx2 = poly[2].lx - poly[0].lx;
             let dy2 = poly[2].ly_val - poly[0].ly_val;
             let dz2 = poly[2].lz - poly[0].lz;
-            
-            let nx = dy1*dz2 - dz1*dy2;
-            let ny = dz1*dx2 - dx1*dz2;
-            let nz = dx1*dy2 - dy1*dx2;
+
+            let nx = dy1 * dz2 - dz1 * dy2;
+            let ny = dz1 * dx2 - dx1 * dz2;
+            let nz = dx1 * dy2 - dy1 * dx2;
             let len = Math.hypot(nx, ny, nz);
-            if (len > 0) { nx/=len; ny/=len; nz/=len; }
-            
+            if (len > 0) { nx /= len; ny /= len; nz /= len; }
+
             let dot = nx * 0.3 + ny * 0.5 + nz * 0.8;
             let shade = 0.4 + Math.max(0, dot) * 0.6;
-            
+
             facesToRender.push({ poly, depth, color: f.color, shade });
         }
     }
-    
-    facesToRender.sort((a,b) => b.depth - a.depth);
-    
+
+    facesToRender.sort((a, b) => b.depth - a.depth);
+
     for (let f of facesToRender) {
         ctx.fillStyle = `rgb(${f.color.r * f.shade | 0}, ${f.color.g * f.shade | 0}, ${f.color.b * f.shade | 0})`;
         ctx.strokeStyle = ctx.fillStyle;

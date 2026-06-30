@@ -5,12 +5,12 @@ class ZombiePartCache {
         this.trimPadding = trimPadding;
         this.sprites = new Map();
     }
-    
+
     get(flash, ambient) {
         let ambStep = ambient >= 1.0 ? 1.0 : Math.max(0.1, Math.round(ambient * 20) / 20);
         const key = `${flash}_${ambStep}`;
         if (this.sprites.has(key)) return this.sprites.get(key);
-        
+
         if (!this.img.complete || this.img.naturalWidth === 0) {
             if (this.fallbackEmoji) {
                 const c = document.createElement('canvas');
@@ -21,7 +21,7 @@ class ZombiePartCache {
                 cx.textAlign = 'center';
                 cx.textBaseline = 'middle';
                 cx.fillText(this.fallbackEmoji, 64, 64);
-                
+
                 if (flash) {
                     cx.globalCompositeOperation = 'source-atop';
                     cx.fillStyle = 'white';
@@ -37,31 +37,31 @@ class ZombiePartCache {
             }
             return null;
         }
-        
+
         const c = document.createElement('canvas');
         c.width = 128;
         c.height = 128;
         const cx = c.getContext('2d');
         cx.drawImage(this.img, 0, 0, 128, 128);
-        
+
         // Remove checkerboard background (flood-fill from borders/corners)
         const imgData = cx.getImageData(0, 0, 128, 128);
         const data = imgData.data;
         const visited = new Uint8Array(128 * 128);
         const queue = [];
-        
+
         function isBg(r, g, b, a) {
             if (a === 0) return true;
             let isWhite = (r > 230 && g > 230 && b > 230);
             let isGrey = (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && Math.abs(r - b) < 8 && r > 180 && r < 220);
             return isWhite || isGrey;
         }
-        
+
         // Push borders to queue
         for (let x = 0; x < 128; x++) {
             for (let y of [0, 127]) {
                 let idx = (y * 128 + x) * 4;
-                if (isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
+                if (isBg(data[idx], data[idx + 1], data[idx + 2], data[idx + 3])) {
                     queue.push(x, y);
                     visited[y * 128 + x] = 1;
                 }
@@ -70,29 +70,29 @@ class ZombiePartCache {
         for (let y = 0; y < 128; y++) {
             for (let x of [0, 127]) {
                 let idx = (y * 128 + x) * 4;
-                if (!visited[y * 128 + x] && isBg(data[idx], data[idx+1], data[idx+2], data[idx+3])) {
+                if (!visited[y * 128 + x] && isBg(data[idx], data[idx + 1], data[idx + 2], data[idx + 3])) {
                     queue.push(x, y);
                     visited[y * 128 + x] = 1;
                 }
             }
         }
-        
+
         let head = 0;
         const dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
         while (head < queue.length) {
             let qx = queue[head++];
             let qy = queue[head++];
             let idx = (qy * 128 + qx) * 4;
-            data[idx+3] = 0; // Transparent
-            
+            data[idx + 3] = 0; // Transparent
+
             for (let d = 0; d < 8; d += 2) {
                 let nx = qx + dirs[d];
-                let ny = qy + dirs[d+1];
+                let ny = qy + dirs[d + 1];
                 if (nx >= 0 && nx < 128 && ny >= 0 && ny < 128) {
                     let nidx = ny * 128 + nx;
                     if (!visited[nidx]) {
                         let pidx = nidx * 4;
-                        if (isBg(data[pidx], data[pidx+1], data[pidx+2], data[pidx+3])) {
+                        if (isBg(data[pidx], data[pidx + 1], data[pidx + 2], data[pidx + 3])) {
                             queue.push(nx, ny);
                             visited[nidx] = 1;
                         }
@@ -101,7 +101,7 @@ class ZombiePartCache {
             }
         }
         cx.putImageData(imgData, 0, 0);
-        
+
         if (flash) {
             cx.globalCompositeOperation = 'source-atop';
             cx.fillStyle = 'white';
@@ -113,7 +113,7 @@ class ZombiePartCache {
             cx.fillRect(0, 0, 128, 128);
             cx.globalCompositeOperation = 'source-over';
         }
-        
+
         let finalCanvas = c;
         if (this.trimPadding) {
             let minX = 128, maxX = 0, minY = 128, maxY = 0;
@@ -123,7 +123,7 @@ class ZombiePartCache {
             for (let y = 0; y < 128; y++) {
                 for (let x = 0; x < 128; x++) {
                     let idx = (y * 128 + x) * 4;
-                    if (cleanData[idx+3] > 0) {
+                    if (cleanData[idx + 3] > 0) {
                         foundContent = true;
                         if (x < minX) minX = x;
                         if (x > maxX) maxX = x;
@@ -143,7 +143,7 @@ class ZombiePartCache {
                 finalCanvas = croppedCanvas;
             }
         }
-        
+
         if (this.img.complete && this.img.naturalWidth !== 0) {
             this.sprites.set(key, finalCanvas);
         }
@@ -151,6 +151,8 @@ class ZombiePartCache {
     }
 }
 
+// Unused legacy zombie part caches (commented out to avoid console 404 GET errors on missing assets)
+/*
 const zombieHeadImg = new Image();
 zombieHeadImg.src = 'textures/zombiehead.png';
 const ZombieHeadCache = new ZombiePartCache(zombieHeadImg, '🧟', false);
@@ -174,6 +176,7 @@ const ZombieLegUpperCache = new ZombiePartCache(zombieLegUpperImg, null, true);
 const zombieLegLowerImg = new Image();
 zombieLegLowerImg.src = 'textures/zombieleglower.png';
 const ZombieLegLowerCache = new ZombiePartCache(zombieLegLowerImg, null, true);
+*/
 
 function generateDefaultZombieSkin() {
     const canvas = document.createElement('canvas');
@@ -195,14 +198,14 @@ function generateDefaultZombieSkin() {
     fill(8, 8, 8, 8, '#5a8c5a'); // Front head
     fill(16, 8, 8, 8, '#507d50'); // Left head
     fill(24, 8, 8, 8, '#466e46'); // Back head
-    
+
     // Face features
     fill(9, 12, 2, 1, '#ffffff'); // Left eye white
     fill(13, 12, 2, 1, '#ffffff'); // Right eye white
     fill(10, 12, 1, 1, '#3c3c78'); // Left pupil
     fill(13, 12, 1, 1, '#3c3c78'); // Right pupil
     fill(10, 14, 4, 1, '#2c402c'); // Mouth
-    
+
     // Torso (16,16 to 40,32)
     fill(20, 16, 8, 4, '#2e8b9a'); // Torso top
     fill(28, 16, 8, 4, '#2e8b9a'); // Torso bottom
@@ -210,7 +213,7 @@ function generateDefaultZombieSkin() {
     fill(20, 20, 8, 12, '#2e8b9a'); // Torso front
     fill(28, 20, 4, 12, '#287a87'); // Torso left
     fill(32, 20, 8, 12, '#246b76'); // Torso back
-    
+
     // Right Arm (40,16 to 56,32)
     fill(44, 16, 4, 4, '#2e8b9a'); // Shoulder top
     fill(48, 16, 4, 4, '#5a8c5a'); // Hand bottom
@@ -219,7 +222,7 @@ function generateDefaultZombieSkin() {
     fill(48, 20, 4, 12, '#287a87'); // Right arm left
     fill(52, 20, 4, 12, '#246b76'); // Right arm back
     fill(40, 26, 16, 6, '#5a8c5a'); // Sleeve skin bottom
-    
+
     // Right Leg (0,16 to 16,32)
     fill(4, 16, 4, 4, '#3c3c78'); // Leg top
     fill(8, 16, 4, 4, '#3c3c78'); // Leg bottom
@@ -227,7 +230,7 @@ function generateDefaultZombieSkin() {
     fill(4, 20, 4, 12, '#3c3c78'); // Leg front
     fill(8, 20, 4, 12, '#323264'); // Leg left
     fill(12, 20, 4, 12, '#282850'); // Leg back
-    
+
     // Left Arm (32,48 to 48,64)
     fill(36, 48, 4, 4, '#2e8b9a'); // Shoulder top
     fill(40, 48, 4, 4, '#5a8c5a'); // Hand bottom
@@ -236,7 +239,7 @@ function generateDefaultZombieSkin() {
     fill(40, 52, 4, 12, '#287a87'); // Left arm left
     fill(44, 52, 4, 12, '#246b76'); // Left arm back
     fill(32, 58, 16, 6, '#5a8c5a'); // Hand skin
-    
+
     // Left Leg (16,48 to 32,64)
     fill(20, 48, 4, 4, '#3c3c78'); // Leg top
     fill(24, 48, 4, 4, '#3c3c78'); // Leg bottom
@@ -244,7 +247,7 @@ function generateDefaultZombieSkin() {
     fill(20, 52, 4, 12, '#3c3c78'); // Leg front
     fill(24, 52, 4, 12, '#323264'); // Leg left
     fill(28, 52, 4, 12, '#282850'); // Leg back
-    
+
     return canvas;
 }
 
@@ -255,7 +258,7 @@ function checkSkinTransparency() {
     if (checkedSkinLimbs) return;
     let img = minecraftZombieSkinImg;
     if (!img.complete || img.naturalWidth === 0) return;
-    
+
     checkedSkinLimbs = true;
     try {
         const tempCanvas = document.createElement('canvas');
@@ -263,7 +266,7 @@ function checkSkinTransparency() {
         tempCanvas.height = img.naturalHeight;
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.drawImage(img, 0, 0);
-        
+
         if (tempCanvas.width === 64 && tempCanvas.height === 64) {
             const imgData = tempCtx.getImageData(16, 48, 32, 16);
             let allTransparent = true;
@@ -529,7 +532,7 @@ function drawTexturedTriangle(ctx, img, x0, y0, x1, y1, x2, y2, u0, v0, u1, v1, 
         ctx.lineTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.closePath();
-        
+
         if (light < 1.0) {
             ctx.fillStyle = `rgba(0, 0, 0, ${1.0 - light})`;
             ctx.fill();
@@ -571,13 +574,13 @@ function generateDefaultSteveSkin() {
     fill(8, 8, 8, 2, '#2b190e'); // Front head hair
     fill(8, 10, 1, 1, '#2b190e'); // Front head hair left side
     fill(15, 10, 1, 1, '#2b190e'); // Front head hair right side
-    
+
     // Steve Eyes
     fill(10, 12, 1, 1, '#ffffff'); // Left eye white
     fill(11, 12, 1, 1, '#2f5697'); // Left eye pupil (blue)
     fill(14, 12, 1, 1, '#ffffff'); // Right eye white
     fill(13, 12, 1, 1, '#2f5697'); // Right eye pupil (blue)
-    
+
     // Steve Nose and Mouth
     fill(11, 13, 2, 1, '#bd6e4a'); // Nose
     fill(11, 14, 2, 1, '#7a462d'); // Mouth
@@ -677,6 +680,6 @@ minecraftPlayerSkinImg.onload = () => {
                 playerLeftLimbsTransparent = true;
             }
         }
-    } catch(e) {}
+    } catch (e) { }
 };
 minecraftPlayerSkinImg.src = 'textures/skin.png';

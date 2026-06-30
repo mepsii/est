@@ -1,8 +1,7 @@
-#a total experiment. just a basic voxel based survival-fps game.\
+#a total experiment. just a basic voxel based survival-fps game with physics vehicles.\
 #just wanted to see how far it could be taken with nothing but ai models writing code.\
 #done w essentially all gemini
 
-![https://img.shields.io/badge/vibe-coded-blue?style=flat-square](https://img.shields.io/badge/vibe-coded-blue?style=flat-square)
 
 ----
 
@@ -12,9 +11,9 @@
 
 ----
 
-<h3>potential features:</h3>
+<h3>ideas and todo list:</h3>
 
-- tbd
+- to be filled out
 
 ----
 
