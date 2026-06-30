@@ -1064,26 +1064,31 @@ function createDoorMesh(x, y, z, v, chunkKey) {
     
     let hingeX, hingeY;
     let baseRotation;
+    let swingDir;
     
     if (facing === 0) { // East
         hingeX = x;
-        hingeY = y;
-        baseRotation = Math.PI / 2;
+        hingeY = y + 1;
+        baseRotation = -Math.PI / 2;
+        swingDir = 1;
     } else if (facing === 1) { // South
         hingeX = x + 1;
         hingeY = y;
         baseRotation = Math.PI;
+        swingDir = -1;
     } else if (facing === 2) { // West
         hingeX = x + 1;
-        hingeY = y + 1;
-        baseRotation = -Math.PI / 2;
+        hingeY = y;
+        baseRotation = Math.PI / 2;
+        swingDir = 1;
     } else { // North (facing === 3)
         hingeX = x;
         hingeY = y + 1;
         baseRotation = 0;
+        swingDir = -1;
     }
     
-    doorGroup.rotation.y = baseRotation + (open ? Math.PI / 2 : 0);
+    doorGroup.rotation.y = baseRotation + (open ? (swingDir * Math.PI / 2) : 0);
     // map voxel (x, y, z) to Three.js (x, z, y)
     doorGroup.position.set(hingeX, z, hingeY);
     
@@ -1097,6 +1102,7 @@ function createDoorMesh(x, y, z, v, chunkKey) {
         facing: facing,
         open: open,
         baseRotation: baseRotation,
+        swingDir: swingDir,
         chunkKey: chunkKey
     });
 }
@@ -1131,7 +1137,7 @@ function toggleDoor(x, y, z) {
     let doorObj = threeDoors.get(doorKey);
     if (doorObj) {
         doorObj.open = (nextV % 2 === 1);
-        doorObj.group.rotation.y = doorObj.baseRotation + (doorObj.open ? Math.PI / 2 : 0);
+        doorObj.group.rotation.y = doorObj.baseRotation + (doorObj.open ? (doorObj.swingDir * Math.PI / 2) : 0);
     }
 }
 window.toggleDoor = toggleDoor;

@@ -115,10 +115,16 @@ function updatePlayer() {
     }
 
     if (coordsEl) {
+        let deg = (player.angle * 180 / Math.PI) % 360;
+        if (deg < 0) deg += 360;
+        const index = Math.round(deg / 45) % 8;
+        const directions = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
+        const comp = directions[index];
+        
         if (freecam) {
-            coordsEl.innerText = `Freecam: ${Math.floor(freecamX)}, ${Math.floor(freecamY)}, ${Math.floor(freecamZ)}`;
+            coordsEl.innerText = `Freecam: ${Math.floor(freecamX)}, ${Math.floor(freecamY)}, ${Math.floor(freecamZ)} (${comp})`;
         } else {
-            coordsEl.innerText = `${Math.floor(player.x)}, ${Math.floor(player.y)}, ${Math.floor(player.z)}`;
+            coordsEl.innerText = `${Math.floor(player.x)}, ${Math.floor(player.y)}, ${Math.floor(player.z)} (${comp})`;
         }
     }
     
