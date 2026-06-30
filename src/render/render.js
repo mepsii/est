@@ -481,6 +481,8 @@ function render() {
             const cached = threeChunks.get(key);
             scene.remove(cached.solidMesh);
             if (cached.solidMesh) cached.solidMesh.geometry.dispose();
+            scene.remove(cached.glassMesh);
+            if (cached.glassMesh) cached.glassMesh.geometry.dispose();
             scene.remove(cached.waterMesh);
             if (cached.waterMesh) cached.waterMesh.geometry.dispose();
             if (cached.entities) {
@@ -1502,6 +1504,7 @@ function render() {
         // Add chunk meshes
         for (let chunk of threeChunks.values()) {
             if (chunk.solidMesh) targets.push(chunk.solidMesh);
+            if (chunk.glassMesh) targets.push(chunk.glassMesh);
         }
         // Add vehicles (chassis and wheel meshes)
         for (let vehicleObj of threeVehicles.values()) {

@@ -569,6 +569,7 @@ function isVoxelCube(v) {
 
 function shouldRenderFace(v, neighbor) {
     if (!isVoxelSolid(neighbor)) return true;
+    if (neighbor === 9 && v !== 9) return true;
     if (isVoxelCube(v) !== isVoxelCube(neighbor)) return true;
     return false;
 }
@@ -603,6 +604,7 @@ function getVoxelColorJS(x, y, z, vType = null) {
     if (v === 3) return { r: 150, g: 150, b: 150 };
     if (v === 4) return { r: 160, g: 110, b: 60 };
     if (v === 5) return { r: 140, g: 140, b: 140 };
+    if (v === 9) return { r: 255, g: 255, b: 255 };
     if (v === 7 || v === 17) {
         let noise = hash(x, y, z) * 12;
         return {
@@ -1220,6 +1222,8 @@ function dropMinedItem(x, y, z, v) {
         spawnDroppedItemAt({ id: 'wood_block', type: 'block', emoji: '🪵', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
     } else if (v === 5) {
         spawnDroppedItemAt({ id: 'stone_block', type: 'block', emoji: '🪨', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
+    } else if (v === 9) {
+        spawnDroppedItemAt({ id: 'glass', type: 'block', emoji: '🪟', count: 1 }, x + 0.5, y + 0.5, z + 0.5);
     } else if (v === 1 || v === 6) {
         let t = getTerrainFast(x, y);
         let depthFromMacro = t.baseH - z;

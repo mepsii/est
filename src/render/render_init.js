@@ -28,6 +28,7 @@ let billboardGeo;
 let activeBillboardMeshes = new Set();
 let waterMaterial = null;
 let solidMaterial = null;
+let glassMaterial = null;
 
 let globalInstancedMeshes = new Map();
 const instPos = new THREE.Vector3();
@@ -265,13 +266,13 @@ const BlockTextureAtlas = {
         this.initialized = true;
         
         this.canvas = document.createElement('canvas');
-        this.canvas.width = 256;
+        this.canvas.width = 512;
         this.canvas.height = 256;
         const ctx = this.canvas.getContext('2d');
         
         // Fill entire atlas with white by default (so slot 0 is pure white fallback)
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, 256, 256);
+        ctx.fillRect(0, 0, 512, 256);
         
         this.texture = new THREE.CanvasTexture(this.canvas);
         this.texture.minFilter = THREE.NearestFilter;
@@ -279,14 +280,14 @@ const BlockTextureAtlas = {
         
         // Pre-calculate and cache UV mappings to avoid object allocations in hot paths
         this.uvCache = [];
-        const atlasW = 256;
+        const atlasW = 512;
         const atlasH = 256;
         const slotSize = 128;
         
-        for (let slot = 0; slot < 4; slot++) {
+        for (let slot = 0; slot < 8; slot++) {
             this.uvCache[slot] = [];
-            let col = slot % 2;
-            let row = Math.floor(slot / 2);
+            let col = slot % 4;
+            let row = Math.floor(slot / 4);
             let px = col * slotSize;
             let py = row * slotSize;
             
@@ -303,7 +304,8 @@ const BlockTextureAtlas = {
         const texturesToLoad = [
             { id: 4, src: 'textures/blocks/woodplank.png', slot: 1 },
             { id: 5, src: 'textures/blocks/cobble.png', slot: 2 },
-            { id: 1, src: 'textures/blocks/grass.png', slot: 3 }
+            { id: 1, src: 'textures/blocks/grass.png', slot: 3 },
+            { id: 9, src: 'textures/blocks/window.png', slot: 4 }
         ];
         
         let loadedCount = 0;
@@ -319,17 +321,27 @@ const BlockTextureAtlas = {
             const img = new Image();
             img.onload = () => {
                 console.log(`BlockTextureAtlas: Successfully loaded texture: ${t.src}`);
-                let col = t.slot % 2;
-                let row = Math.floor(t.slot / 2);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(col * 128, row * 128, 128, 128);
-                ctx.drawImage(img, col * 128, row * 128, 128, 128);
+                let col = t.slot % 4;
+                let row = Math.floor(t.slot / 4);
+                ctx.clearRect(col * 128, row * 128, 128, 128);
+                if (t.id !== 9) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(col * 128, row * 128, 128, 128);
+                    ctx.drawImage(img, col * 128, row * 128, 128, 128);
+                } else {
+                    // For glass block, flip Y to invert vertically
+                    ctx.save();
+                    ctx.translate(col * 128 + 64, row * 128 + 64);
+                    ctx.scale(1, -1);
+                    ctx.drawImage(img, -64, -64, 128, 128);
+                    ctx.restore();
+                }
                 checkDone();
             };
             img.onerror = () => {
                 console.warn(`BlockTextureAtlas: Failed to load texture: ${t.src}. Using procedural fallback.`);
-                let col = t.slot % 2;
-                let row = Math.floor(t.slot / 2);
+                let col = t.slot % 4;
+                let row = Math.floor(t.slot / 4);
                 if (t.id === 4) {
                     ctx.fillStyle = '#a06e3c';
                     ctx.fillRect(col * 128, row * 128, 128, 128);
@@ -355,6 +367,18 @@ const BlockTextureAtlas = {
                         let ry = Math.floor(Math.random() * 110);
                         ctx.fillRect(col * 128 + rx, row * 128 + ry, 8, 8);
                     }
+                } else if (t.id === 9) {
+                    ctx.fillStyle = 'rgba(200, 240, 255, 0.4)';
+                    ctx.fillRect(col * 128, row * 128, 128, 128);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 8;
+                    ctx.strokeRect(col * 128 + 4, row * 128 + 4, 120, 120);
+                    ctx.beginPath();
+                    ctx.moveTo(col * 128 + 30, row * 128 + 30);
+                    ctx.lineTo(col * 128 + 50, row * 128 + 50);
+                    ctx.moveTo(col * 128 + 70, row * 128 + 70);
+                    ctx.lineTo(col * 128 + 90, row * 128 + 90);
+                    ctx.stroke();
                 }
                 checkDone();
             };
@@ -365,7 +389,7 @@ const BlockTextureAtlas = {
     getSlotUVs(slotIndex, faceIndex) {
         if (!this.uvCache) return null;
         let fIdx = Math.max(0, Math.min(5, faceIndex));
-        let sIdx = Math.max(0, Math.min(3, slotIndex));
+        let sIdx = Math.max(0, Math.min(7, slotIndex));
         return this.uvCache[sIdx][fIdx];
     }
 };
@@ -536,6 +560,8 @@ function updateChunkMesh(key, faces) {
         const cached = threeChunks.get(key);
         scene.remove(cached.solidMesh);
         if (cached.solidMesh) cached.solidMesh.geometry.dispose();
+        scene.remove(cached.glassMesh);
+        if (cached.glassMesh) cached.glassMesh.geometry.dispose();
         scene.remove(cached.waterMesh);
         if (cached.waterMesh) cached.waterMesh.geometry.dispose();
         if (cached.entities) {
@@ -551,16 +577,20 @@ function updateChunkMesh(key, faces) {
     if (!faces || faces.length === 0) return;
     
     const solidFaces = [];
+    const glassFaces = [];
     const waterFaces = [];
     for (let f of faces) {
         if (f.isWater) waterFaces.push(f);
+        else if (f.vType === 9) glassFaces.push(f);
         else solidFaces.push(f);
     }
     
-    const solidMesh = buildFacesMesh(solidFaces, false);
-    const waterMesh = buildFacesMesh(waterFaces, true);
+    const solidMesh = buildFacesMesh(solidFaces, false, false);
+    const glassMesh = buildFacesMesh(glassFaces, false, true);
+    const waterMesh = buildFacesMesh(waterFaces, true, false);
     
     if (solidMesh) scene.add(solidMesh);
+    if (glassMesh) scene.add(glassMesh);
     if (waterMesh) scene.add(waterMesh);
     
     // Build static billboards inside chunk (trees, rocks, flowers, cactuses, skulls)
@@ -568,7 +598,7 @@ function updateChunkMesh(key, faces) {
     let chunkEntities = getMapChunk(cx, cy);
     
     // Store the raw chunkEntities directly so they can be rendered via instancing in render.js
-    threeChunks.set(key, { solidMesh, waterMesh, facesRef: faces, entities: chunkEntities });
+    threeChunks.set(key, { solidMesh, glassMesh, waterMesh, facesRef: faces, entities: chunkEntities });
 }
 
 function getSolidMaterial() {
@@ -582,6 +612,21 @@ function getSolidMaterial() {
         side: THREE.FrontSide
     });
     return solidMaterial;
+}
+
+function getGlassMaterial() {
+    if (glassMaterial) return glassMaterial;
+    if (!BlockTextureAtlas.initialized) {
+        BlockTextureAtlas.init();
+    }
+    glassMaterial = new THREE.MeshLambertMaterial({
+        map: BlockTextureAtlas.texture,
+        vertexColors: true,
+        transparent: true,
+        alphaTest: 0.05,
+        side: THREE.FrontSide
+    });
+    return glassMaterial;
 }
 
 function getWaterMaterial() {
@@ -642,7 +687,7 @@ function getWaterMaterial() {
 }
 
 // Helper to batch faces to single BufferGeometry mesh
-function buildFacesMesh(faces, isWater) {
+function buildFacesMesh(faces, isWater, isGlass = false) {
     if (faces.length === 0) return null;
     
     const positions = [];
@@ -677,7 +722,13 @@ function buildFacesMesh(faces, isWater) {
             else if (nx === 0 && ny === -1 && nz === 0) faceIndex = 1; // Back
             
             // Map voxel type to slot index
-            if (f.vType !== undefined && BlockTextureAtlas.mappings[f.vType] !== undefined) {
+            if (f.vType === 9) {
+                if (faceIndex === 4 || faceIndex === 5) {
+                    slotIndex = 1; // woodplank
+                } else {
+                    slotIndex = 4; // window
+                }
+            } else if (f.vType !== undefined && BlockTextureAtlas.mappings[f.vType] !== undefined) {
                 slotIndex = BlockTextureAtlas.mappings[f.vType];
             } else if (enableGrassTexture && (f.vType === 1 || f.vType === 6) && f.col.g > f.col.r && f.col.b < 100) {
                 slotIndex = 3;
@@ -737,6 +788,8 @@ function buildFacesMesh(faces, isWater) {
     let material;
     if (isWater) {
         material = getWaterMaterial();
+    } else if (isGlass) {
+        material = getGlassMaterial();
     } else {
         material = getSolidMaterial();
     }
@@ -898,6 +951,7 @@ function buildThreeMeshFromModel(modelName, conf) {
 function rebuildAllChunkMeshes() {
     threeChunks.forEach((cached, key) => {
         if (cached.solidMesh) scene.remove(cached.solidMesh);
+        if (cached.glassMesh) scene.remove(cached.glassMesh);
         if (cached.waterMesh) scene.remove(cached.waterMesh);
     });
     threeChunks.clear();

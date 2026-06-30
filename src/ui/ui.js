@@ -26,6 +26,7 @@ const ITEM_DETAILS = {
     '🧊': { name: 'Cube Block', desc: 'A solid building cube. Right-Click in inventory to place.', category: 'block' },
     'wood_block': { name: 'Wood Block', desc: 'A block of processed wood. Right-Click in inventory to place.', category: 'block', emoji: '🪵' },
     'stone_block': { name: 'Stone Block', desc: 'A block crafted from stone. Right-Click in inventory to place.', category: 'block', emoji: '🪨' },
+    'glass': { name: 'Glass Block', desc: 'A transparent glass block. Right-Click in inventory to place.', category: 'block', emoji: '🪟' },
     // Weapons/Tools
     'pistol': { name: 'Pistol', desc: 'Semiautomatic handgun. Shoots fast, decent damage.', category: 'weapon' },
     'smg': { name: 'SMG', desc: 'Fully automatic submachine gun. High fire rate, high spread.', category: 'weapon' },
@@ -1679,6 +1680,7 @@ const SPAWNABLE_ITEMS = [
     { label: '🧊 Cube Block', data: { id: 'cube', type: 'block', emoji: '🧊' } },
     { label: '🪵 Wood Block', data: { id: 'wood_block', type: 'block', emoji: '🪵' } },
     { label: '🪨 Stone Block', data: { id: 'stone_block', type: 'block', emoji: '🪨' } },
+    { label: '🪟 Glass Block', data: { id: 'glass', type: 'block', emoji: '🪟' } },
     // Unused / Buildings
     { label: '⛺ Tent', data: { type: 'building', emoji: '⛺', rooms: 1, floors: 1 } },
     { label: '🏚️ Cabin', data: { type: 'building', emoji: '🏚️', rooms: 2, floors: 2 } }

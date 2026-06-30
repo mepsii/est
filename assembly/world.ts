@@ -497,6 +497,7 @@ function isVoxelCube(v: i32): bool {
 @inline
 function shouldRenderFace(v: i32, neighbor: i32): bool {
   if (!isVoxelSolid(neighbor)) return true;
+  if (neighbor == 9 && v != 9) return true;
   if (isVoxelCube(v) != isVoxelCube(neighbor)) return true;
   return false;
 }
@@ -660,6 +661,11 @@ function getVoxelColor(x: i32, y: i32, z: i32, vType: i32, t: TerrainData): Colo
   if (v == 5) {
     let col = new ColorData();
     col.r = 140; col.g = 140; col.b = 140;
+    return col;
+  }
+  if (v == 9) {
+    let col = new ColorData();
+    col.r = 255; col.g = 255; col.b = 255;
     return col;
   }
   if (v == 7 || v == 17) {
