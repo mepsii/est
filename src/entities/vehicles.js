@@ -592,6 +592,8 @@ function preUpdateVehicles() {
                 // Apply engine force or braking
                 let appliedEngineForce = 0;
                 let brakeForce = 0;
+                let frontBrakeRatio = 0.65;
+                let rearBrakeRatio = 0.35;
                 
                 if (keys['Space']) {
                     brakeForce = maxBrake;
@@ -602,7 +604,7 @@ function preUpdateVehicles() {
                     // Scales with speed, and adjusts based on vertical velocity and gear:
                     // - Low Gear (L): holds back strongly downhill to prevent runaways, rolls freely uphill.
                     // - Drive Gear (D): decelerates really hard uphill, but coasts/rolls very freely downhill under gravity.
-                    let baseEngineBrake = speedKmH * 1.5; // Smoother coasting to prevent abrupt deceleration flips
+                    let baseEngineBrake = speedKmH * 0.6; // Further reduced for ultra-smooth coasting
                     let zVel = v.chassisBody.velocity.z;
                     let slopeScale = 1.0;
                     
@@ -615,6 +617,8 @@ function preUpdateVehicles() {
                     }
                     
                     brakeForce = baseEngineBrake * slopeScale;
+                    frontBrakeRatio = 0.50; // Balanced 50/50 during engine braking to keep the ride perfectly flat
+                    rearBrakeRatio = 0.50;
                 } else {
                     appliedEngineForce = gas * engineForce;
                 }
@@ -625,11 +629,11 @@ function preUpdateVehicles() {
                 v.raycastVehicle.applyEngineForce(appliedEngineForce, 2);
                 v.raycastVehicle.applyEngineForce(appliedEngineForce, 3);
                 
-                // Front-biased braking to stabilize pitch and prevent nose-up flips (classic 65/35 front/rear split)
-                v.raycastVehicle.setBrake(brakeForce * 0.65, 0); // Front Left
-                v.raycastVehicle.setBrake(brakeForce * 0.65, 1); // Front Right
-                v.raycastVehicle.setBrake(brakeForce * 0.35, 2); // Rear Left
-                v.raycastVehicle.setBrake(brakeForce * 0.35, 3); // Rear Right
+                // Set brakes with active ratio (front-biased for active braking, balanced 50/50 for engine braking)
+                v.raycastVehicle.setBrake(brakeForce * frontBrakeRatio, 0); // Front Left
+                v.raycastVehicle.setBrake(brakeForce * frontBrakeRatio, 1); // Front Right
+                v.raycastVehicle.setBrake(brakeForce * rearBrakeRatio, 2);  // Rear Left
+                v.raycastVehicle.setBrake(brakeForce * rearBrakeRatio, 3);  // Rear Right
 
                 // If the player is in the vehicle, but idling (no throttle/steering input and very low speed),
                 // apply extra damping to eliminate physics solver micro-jitter and visual shaking.
