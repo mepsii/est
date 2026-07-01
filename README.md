@@ -1,5 +1,5 @@
 #a total experiment. just a basic voxel based survival-fps game with physics vehicles.\
-#just wanted to see how far it could be taken with nothing but ai models writing code.\
+#just wanted to see how far it could be taken with nothing but ai models writing the code.\
 #done w essentially all gemini
 
 

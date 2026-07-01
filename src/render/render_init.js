@@ -519,13 +519,16 @@ function initThree() {
     threeInitialized = true;
 }
 
+let lastWidth = 0;
+let lastHeight = 0;
+
 // Check if viewport size changed and update renderer
 function checkResize() {
     const width = window.innerWidth;
     const height = window.innerHeight;
-    if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
+    if (width !== lastWidth || height !== lastHeight) {
+        lastWidth = width;
+        lastHeight = height;
         if (threeInitialized) {
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
@@ -533,6 +536,7 @@ function checkResize() {
         }
     }
 }
+
 
 function getOrCreateInstancedMesh(emoji) {
     let instData = globalInstancedMeshes.get(emoji);
