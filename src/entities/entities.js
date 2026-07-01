@@ -169,7 +169,7 @@ function updateEntities() {
             }
 
             // Initialize zombie limbs dynamically if undefined
-            if ((e.type === 'zombie' || e.type === 'zombie3d') && e.hasHead === undefined) {
+            if ((e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') && e.hasHead === undefined) {
                 e.hasHead = true;
                 e.hasLeftUpperArm = true;
                 e.hasLeftLowerArm = true;
@@ -196,21 +196,25 @@ function updateEntities() {
             }
 
             // Handle decapitation bleed-out timer
-            if ((e.type === 'zombie' || e.type === 'zombie3d') && e.bleedOutTimer !== undefined) {
+            if ((e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') && e.bleedOutTimer !== undefined) {
                 e.bleedOutTimer--;
                 if (e.bleedOutTimer <= 0) {
                     e.hp = 0;
                     spawnBlood(e.x, e.y, e.z + e.size * 0.5, getBloodColor(e.type) || {r: 92, g: 64, b: 51}, 30);
-                    let is3D = e.type === 'zombie3d';
-                    if (e.hasHead) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head', is3D, e.size);
-                    if (e.hasLeftUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'leftUpperArm', is3D, e.size);
-                    if (e.hasLeftLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'leftLowerArm', is3D, e.size);
-                    if (e.hasRightUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'rightUpperArm', is3D, e.size);
-                    if (e.hasRightLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'rightLowerArm', is3D, e.size);
-                    if (e.hasLeftUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'leftUpperLeg', is3D, e.size);
-                    if (e.hasLeftLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'leftLowerLeg', is3D, e.size);
-                    if (e.hasRightUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'rightUpperLeg', is3D, e.size);
-                    if (e.hasRightLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'rightLowerLeg', is3D, e.size);
+                    let is3D = e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll';
+                    if (e.type === 'zombie3d_ragdoll') {
+                        spawnCannonRagdoll(e, 0, 0, 0);
+                    } else {
+                        if (e.hasHead) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head', is3D, e.size);
+                        if (e.hasLeftUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'leftUpperArm', is3D, e.size);
+                        if (e.hasLeftLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'leftLowerArm', is3D, e.size);
+                        if (e.hasRightUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'rightUpperArm', is3D, e.size);
+                        if (e.hasRightLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'rightLowerArm', is3D, e.size);
+                        if (e.hasLeftUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'leftUpperLeg', is3D, e.size);
+                        if (e.hasLeftLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'leftLowerLeg', is3D, e.size);
+                        if (e.hasRightUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'rightUpperLeg', is3D, e.size);
+                        if (e.hasRightLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'rightLowerLeg', is3D, e.size);
+                    }
                     enemies.splice(ei, 1);
                     score += 150;
                     scoreEl.innerText = score;
@@ -219,7 +223,7 @@ function updateEntities() {
             }
 
             // Handle stump sprays (if alive and has missing limbs)
-            if ((e.type === 'zombie' || e.type === 'zombie3d') && e.hasHead !== undefined && e.hp > 0) {
+            if ((e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') && e.hasHead !== undefined && e.hp > 0) {
                 let zBlood = getBloodColor('zombie') || {r: 92, g: 64, b: 51};
                 // Neck spray
                 if (!e.hasHead) {
@@ -365,7 +369,7 @@ function updateEntities() {
 
             if (d < 40) { 
                 if (d > 0.8) { 
-                    let moveSpeed = ((e.type === 'zombie' || e.type === 'zombie3d') && e.isCrawling) ? 0.006 : 0.02;
+                    let moveSpeed = ((e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') && e.isCrawling) ? 0.006 : 0.02;
                     let nx, ny;
                     if (e.bleedOutTimer !== undefined) {
                         nx = e.x + Math.cos(e.angle) * moveSpeed;
@@ -401,7 +405,7 @@ function updateEntities() {
                         }
                     }
                     
-                    if (e.bleedOutTimer === undefined && (e.type === 'zombie3d' || e.type === 'zombie')) {
+                    if (e.bleedOutTimer === undefined && (e.type === 'zombie3d' || e.type === 'zombie' || e.type === 'zombie3d_ragdoll')) {
                         e.angle = Math.atan2(player.y - e.y, player.x - e.x);
                     }
                     
@@ -423,7 +427,7 @@ function updateEntities() {
                         e.lastAnimTime = e.animTime;
                     }
                 } else {
-                    if (e.type === 'zombie3d' || e.type === 'zombie') {
+                    if (e.type === 'zombie3d' || e.type === 'zombie' || e.type === 'zombie3d_ragdoll') {
                         e.animTime = (e.animTime || 0) + 0.02;
                     }
                 }
@@ -435,7 +439,7 @@ function updateEntities() {
                     e.z += 0.5;
                 } 
                 
-                if (e.type === 'zombie' || e.type === 'zombie3d') {
+                if (e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') {
                     let attackCooldown = 60;
                     if (!e.hasLeftUpperArm && !e.hasRightUpperArm) attackCooldown = 100;
                     if (e.bleedOutTimer === undefined) {

@@ -1157,10 +1157,26 @@ function render() {
     for (let e of enemies) {
         let dist = Math.hypot(e.x - player.x, e.y - player.y);
         if (dist < VIEW_DIST) {
-            if (e.type === 'zombie3d' || e.type === 'zombie' || e.type === 'experimental') {
+            if (e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll' || e.type === 'zombie' || e.type === 'experimental') {
                 add3DZombieFaces(e, ambientVal);
             } else {
                 drawBillboardEmoji(e, e.emoji || '👽', e.size, e.x, e.y, e.z, e === interactTarget, false, e.dead);
+            }
+        }
+    }
+
+    // Draw dynamic ragdolls
+    for (let r of activeRagdolls) {
+        const torso = r.parts.torso;
+        if (torso) {
+            let dist = Math.hypot(torso.position.x - player.x, torso.position.y - player.y);
+            if (dist < VIEW_DIST) {
+                for (let name in r.parts) {
+                    let body = r.parts[name];
+                    if (body) {
+                        drawRagdollPartFaces(body, name, r.scale, ambientVal);
+                    }
+                }
             }
         }
     }

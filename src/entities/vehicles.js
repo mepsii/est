@@ -18,7 +18,7 @@ cannonWorld.addContactMaterial(chassisDefaultContactMaterial);
 const activeVoxelBodies = new Map(); // Key: "x,y,z" -> CANNON.Body
 
 function syncVoxelCollidersAroundVehicles() {
-    if (vehicles.length === 0) {
+    if (vehicles.length === 0 && activeRagdolls.length === 0) {
         if (activeVoxelBodies.size > 0) {
             for (let body of activeVoxelBodies.values()) {
                 cannonWorld.removeBody(body);
@@ -29,9 +29,8 @@ function syncVoxelCollidersAroundVehicles() {
     }
 
     // Coarse-grid threshold check: only run the expensive voxel scanning and body update
-    // when at least one vehicle has moved at least 2 blocks from its last synchronized position.
-    // This reduces redundant CPU checks by 95% when sitting still or crawling, maintaining high FPS.
-    let anyVehicleMovedSignificant = false;
+    // when at least one vehicle or ragdoll has moved at least 2 blocks from its last synchronized position.
+    let anyMoved = false;
     for (let v of vehicles) {
         const cx = Math.floor(v.x);
         const cy = Math.floor(v.y);
@@ -40,12 +39,30 @@ function syncVoxelCollidersAroundVehicles() {
             Math.abs(cx - v.lastSyncX) >= 2 || 
             Math.abs(cy - v.lastSyncY) >= 2 || 
             Math.abs(cz - v.lastSyncZ) >= 2) {
-            anyVehicleMovedSignificant = true;
+            anyMoved = true;
             break;
         }
     }
 
-    if (!anyVehicleMovedSignificant && activeVoxelBodies.size > 0) {
+    if (!anyMoved) {
+        for (let r of activeRagdolls) {
+            const torso = r.parts.torso;
+            if (torso) {
+                const cx = Math.floor(torso.position.x);
+                const cy = Math.floor(torso.position.y);
+                const cz = Math.floor(torso.position.z);
+                if (r.lastSyncX === undefined || 
+                    Math.abs(cx - r.lastSyncX) >= 2 || 
+                    Math.abs(cy - r.lastSyncY) >= 2 || 
+                    Math.abs(cz - r.lastSyncZ) >= 2) {
+                    anyMoved = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!anyMoved && activeVoxelBodies.size > 0) {
         return;
     }
 
@@ -54,6 +71,14 @@ function syncVoxelCollidersAroundVehicles() {
         v.lastSyncX = Math.floor(v.x);
         v.lastSyncY = Math.floor(v.y);
         v.lastSyncZ = Math.floor(v.z);
+    }
+    for (let r of activeRagdolls) {
+        const torso = r.parts.torso;
+        if (torso) {
+            r.lastSyncX = Math.floor(torso.position.x);
+            r.lastSyncY = Math.floor(torso.position.y);
+            r.lastSyncZ = Math.floor(torso.position.z);
+        }
     }
 
     const neededVoxels = new Set();
@@ -70,6 +95,29 @@ function syncVoxelCollidersAroundVehicles() {
             for (let y = cy - radiusY; y <= cy + radiusY; y++) {
                 for (let z = cz - radiusZ; z <= cz + radiusZ; z++) {
                     if (z >= 0 && z < 96) { // 96 is MAX_Z
+                        if (getSolid(x, y, z)) {
+                            neededVoxels.add(`${x},${y},${z}`);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Scan around active ragdolls
+    const rRadiusX = 2;
+    const rRadiusY = 2;
+    const rRadiusZ = 2;
+    for (let r of activeRagdolls) {
+        if (r.lastSyncX === undefined) continue;
+        const cx = r.lastSyncX;
+        const cy = r.lastSyncY;
+        const cz = r.lastSyncZ;
+
+        for (let x = cx - rRadiusX; x <= cx + rRadiusX; x++) {
+            for (let y = cy - rRadiusY; y <= cy + rRadiusY; y++) {
+                for (let z = cz - rRadiusZ; z <= cz + rRadiusZ; z++) {
+                    if (z >= 0 && z < 96) {
                         if (getSolid(x, y, z)) {
                             neededVoxels.add(`${x},${y},${z}`);
                         }

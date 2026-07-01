@@ -79,7 +79,7 @@ function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy, specificLimb = null) {
         }
 
         // Check hit segment based on height (relZ)
-        if (e.type === 'zombie3d') {
+        if (e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') {
             if (relZ > e.size * 0.75) {
                 // Head
                 if (e.hasHead) {
@@ -215,7 +215,7 @@ function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy, specificLimb = null) {
     if (hitLimb) {
         e.limbsHP[hitLimb] -= totalDmg;
         if (e.limbsHP[hitLimb] <= 0) {
-            let is3D = e.type === 'zombie3d';
+            let is3D = e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll';
             if (hitLimb === 'head') {
                 e.hasHead = false;
                 spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head', is3D, e.size);
@@ -271,17 +271,19 @@ function damageZombieLimb(e, dmg, hitZ, px, py, dx, dy, specificLimb = null) {
     }
 
     if (e.hp <= 0) {
-        let is3D = e.type === 'zombie3d';
+        let is3D = e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll';
         spawnBlood(e.x, e.y, e.z + e.size * 0.5, getBloodColor(e.type) || {r: 92, g: 64, b: 51}, 30);
-        if (e.hasHead) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head', is3D, e.size);
-        if (e.hasLeftUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'leftUpperArm', is3D, e.size);
-        if (e.hasLeftLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'leftLowerArm', is3D, e.size);
-        if (e.hasRightUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'rightUpperArm', is3D, e.size);
-        if (e.hasRightLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'rightLowerArm', is3D, e.size);
-        if (e.hasLeftUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'leftUpperLeg', is3D, e.size);
-        if (e.hasLeftLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'leftLowerLeg', is3D, e.size);
-        if (e.hasRightUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'rightUpperLeg', is3D, e.size);
-        if (e.hasRightLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'rightLowerLeg', is3D, e.size);
+        if (e.type !== 'zombie3d_ragdoll') {
+            if (e.hasHead) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.88, 'head', is3D, e.size);
+            if (e.hasLeftUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'leftUpperArm', is3D, e.size);
+            if (e.hasLeftLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'leftLowerArm', is3D, e.size);
+            if (e.hasRightUpperArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.72, 'rightUpperArm', is3D, e.size);
+            if (e.hasRightLowerArm) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.5, 'rightLowerArm', is3D, e.size);
+            if (e.hasLeftUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'leftUpperLeg', is3D, e.size);
+            if (e.hasLeftLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'leftLowerLeg', is3D, e.size);
+            if (e.hasRightUpperLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.3, 'rightUpperLeg', is3D, e.size);
+            if (e.hasRightLowerLeg) spawnFlyingLimb(e.x, e.y, e.z + e.size * 0.1, 'rightLowerLeg', is3D, e.size);
+        }
         return true;
     }
     return false;

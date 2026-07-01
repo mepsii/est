@@ -25,7 +25,7 @@ function addDamageText(x, y, z, amt) { if(showDebugInfo) damageTexts.push({ x: x
 
 function getBloodColor(type) { 
     if (type === 'alien' || type === 'experimental') return {r: 51, g: 255, b: 51}; 
-    if (type === 'zombie' || type === 'zombie3d') return {r: 92, g: 64, b: 51};
+    if (type === 'zombie' || type === 'zombie3d' || type === 'zombie3d_ragdoll') return {r: 92, g: 64, b: 51};
     if (type === 'animal') return {r: 255, g: 51, b: 51};
     return null; 
 }

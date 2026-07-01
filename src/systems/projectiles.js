@@ -39,7 +39,7 @@ function updateProjectiles() {
 
                     for (let ei = enemies.length - 1; ei >= 0; ei--) {
                         let e = enemies[ei];
-                        if (e.type === 'zombie3d') {
+                        if (e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') {
                             let dist = distPointToSegment(e.x, e.y, e.z + e.size * 0.5, startX, startY, startZ, endX, endY, endZ);
                             if (dist < e.size * 1.5) {
                                 let limbBoxes = get3DZombieLimbBoxes(e);
@@ -137,10 +137,13 @@ function updateProjectiles() {
                 if (hitTarget) {
                     if (hitTarget.type === 'enemy') {
                         let e = hitTarget.obj;
-                        if (e.type === 'zombie' || e.type === 'zombie3d') {
+                        if (e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') {
                             let died = damageZombieLimb(e, w.dmg, hitTarget.hitZ, hitTarget.hitX, hitTarget.hitY, Math.cos(player.angle), Math.sin(player.angle), hitTarget.hitLimb);
                             if (died) {
                                 enemies.splice(enemies.indexOf(e), 1);
+                                if (e.type === 'zombie3d_ragdoll') {
+                                    spawnCannonRagdoll(e, Math.cos(player.angle), Math.sin(player.angle), hitTarget.hitZ);
+                                }
                             }
                         } else {
                             e.hp -= w.dmg; e.flash = 5; addDamageText(e.x, e.y, e.z + e.size, w.dmg);
@@ -447,7 +450,7 @@ function updateProjectiles() {
 
             for (let ei = enemies.length - 1; ei >= 0; ei--) {
                 let e = enemies[ei];
-                if (e.type === 'zombie3d') {
+                if (e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') {
                     let dist = distPointToSegment(e.x, e.y, e.z + e.size * 0.5, prevX, prevY, prevZ, p.x, p.y, p.z);
                     if (dist < e.size * 1.5) {
                         let limbBoxes = get3DZombieLimbBoxes(e);
@@ -514,10 +517,13 @@ function updateProjectiles() {
 
                 if (hitEnemyIndex !== -1) {
                     let e = enemies[hitEnemyIndex];
-                    if (e.type === 'zombie' || e.type === 'zombie3d') {
+                    if (e.type === 'zombie' || e.type === 'zombie3d' || e.type === 'zombie3d_ragdoll') {
                         let died = damageZombieLimb(e, p.dmg, hitZ, hitX, hitY, p.vx, p.vy, hitLimb);
                         if (died) {
                             enemies.splice(hitEnemyIndex, 1);
+                            if (e.type === 'zombie3d_ragdoll') {
+                                spawnCannonRagdoll(e, p.vx, p.vy, hitZ);
+                            }
                         }
                     } else {
                         let relZ = hitZ - e.z;

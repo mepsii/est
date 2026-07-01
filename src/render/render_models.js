@@ -773,3 +773,108 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
         }
     }
 }
+
+function drawRagdollPartFaces(body, name, scale, ambient) {
+    let w = body.partWidth;
+    let d = body.partDepth;
+    let h = body.partHeight;
+    let color = body.partColor;
+    
+    let hw = (w * scale) / 2;
+    let hd = (d * scale) / 2;
+    let hh = (h * scale) / 2;
+    let localVerts = [
+        { x: -hw, y: -hd, z: -hh },
+        { x:  hw, y: -hd, z: -hh },
+        { x:  hw, y:  hd, z: -hh },
+        { x: -hw, y:  hd, z: -hh },
+        { x: -hw, y: -hd, z:  hh },
+        { x:  hw, y: -hd, z:  hh },
+        { x:  hw, y:  hd, z:  hh },
+        { x: -hw, y:  hd, z:  hh }
+    ];
+
+    const BOX_FACES = [
+        [2, 3, 7, 6], // Front (+Y)
+        [0, 1, 5, 4], // Back (-Y)
+        [3, 0, 4, 7], // Left (-X)
+        [1, 2, 6, 5], // Right (+X)
+        [4, 5, 6, 7], // Top (+Z)
+        [3, 2, 1, 0]  // Bottom (-Z)
+    ];
+
+    let worldVerts = [];
+    let q = new THREE.Quaternion(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+    for (let lv of localVerts) {
+        let pt = new THREE.Vector3(lv.x, lv.y, lv.z);
+        pt.applyQuaternion(q);
+        worldVerts.push({
+            x: body.position.x + pt.x,
+            y: body.position.y + pt.y,
+            z: body.position.z + pt.z
+        });
+    }
+
+    let skinSource = (minecraftZombieSkinImg.complete && minecraftZombieSkinImg.naturalWidth > 0) ? minecraftZombieSkinImg : fallbackSkinCanvas;
+    let skinH = skinSource.naturalHeight || skinSource.height || 64;
+
+    for (let faceIndex = 0; faceIndex < BOX_FACES.length; faceIndex++) {
+        let fIdx = BOX_FACES[faceIndex];
+        let pt0 = worldVerts[fIdx[0]];
+        let pt1 = worldVerts[fIdx[1]];
+        let pt2 = worldVerts[fIdx[2]];
+        let pt3 = worldVerts[fIdx[3]];
+
+        // Calculate face normal
+        let ux = pt1.x - pt0.x, uy = pt1.y - pt0.y, uz = pt1.z - pt0.z;
+        let wx = pt2.x - pt0.x, wy = pt2.y - pt0.y, wz = pt2.z - pt0.z;
+        let nx = uy*wz - uz*wy;
+        let ny = uz*wx - ux*wz;
+        let nz = ux*wy - uy*wx;
+
+        // Backface culling
+        let camZ = currentCamZ;
+        if (nx * (pt0.x - player.x) + ny * (pt0.y - player.y) + nz * (pt0.z - camZ) > 0) continue;
+
+        // Face center
+        let cx = (pt0.x + pt1.x + pt2.x + pt3.x) / 4;
+        let cy = (pt0.y + pt1.y + pt2.y + pt3.y) / 4;
+        let cz = (pt0.z + pt1.z + pt2.z + pt3.z) / 4;
+
+        // Depth check
+        let dx = cx - player.x, dy = cy - player.y, dz = cz - camZ;
+        let cosA = Math.cos(currentCamAngle), sinA = Math.sin(currentCamAngle);
+        let rx = dx * cosA + dy * sinA;
+        let rz = dz;
+        let pitchAngle = currentCamPitch;
+        let cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
+        let cz_depth = rz * sinP + rx * cosP;
+
+        if (cz_depth > 0.1 && cz_depth < VIEW_DIST) {
+            let o = getRenderItem();
+            o.type = 'objWorldFace';
+            o.pts = [pt0, pt1, pt2, pt3];
+            o.color = color;
+            o.depthSq = cz_depth * cz_depth;
+            o.wX = cx;
+            o.wY = cy;
+            o.h = cz;
+            o.norm = { x: nx, y: ny, z: nz };
+            o.targeted = false;
+            o.flash = false;
+
+            let uvRegion = getMinecraftUVs(name, faceIndex, skinH);
+            if (uvRegion) {
+                let uMin = uvRegion[0], vMin = uvRegion[1], uMax = uvRegion[2], vMax = uvRegion[3];
+                o.texture = skinSource;
+                o.uvs = getFaceCornerUVs(faceIndex, uMin, vMin, uMax, vMax);
+            } else {
+                // Joint / cut stump
+                if (name !== 'head' && name !== 'torso') {
+                    o.color = { r: 150, g: 0, b: 0 };
+                }
+            }
+        }
+    }
+}
+

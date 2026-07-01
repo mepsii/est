@@ -1331,6 +1331,7 @@ window.spawnEnemy = (type) => {
         if (type === 'alien') enemies.push({ type: 'alien', x: ex, y: ey, z: ez, hp: 4, cooldown: 60, size: 1.2, emoji: '👽', flash: 0 });
         else if (type === 'zombie') enemies.push({ type: 'zombie', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
         else if (type === 'zombie3d') enemies.push({ type: 'zombie3d', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.8, flash: 0 });
+        else if (type === 'zombie3d_ragdoll') enemies.push({ type: 'zombie3d_ragdoll', x: ex, y: ey, z: ez, hp: 15, cooldown: 60, size: 1.8, flash: 0 });
         else enemies.push({ type: 'experimental', x: ex, y: ey, z: ez, hp: 10, cooldown: 60, size: 1.4, flash: 0 });
     }
 };
@@ -1792,6 +1793,8 @@ window.spawnMobOverhaul = (type, count) => {
             enemies.push({ type: 'zombie', x: mx, y: my, z: mz, hp: 15, cooldown: 60, size: 1.4, flash: 0 });
         } else if (type === 'zombie3d') {
             enemies.push({ type: 'zombie3d', x: mx, y: my, z: mz, hp: 15, cooldown: 60, size: 1.8, flash: 0 });
+        } else if (type === 'zombie3d_ragdoll') {
+            enemies.push({ type: 'zombie3d_ragdoll', x: mx, y: my, z: mz, hp: 15, cooldown: 60, size: 1.8, flash: 0 });
         } else {
             let emoji = '🐄';
             let hp = 4;

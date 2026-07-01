@@ -106,6 +106,7 @@ const SpriteCache = {
 };
 
 const renderPool =[];
+const activeRagdolls = [];
 let renderCount = 0;
 function getRenderItem() {
     if (renderCount >= renderPool.length) renderPool.push({});
