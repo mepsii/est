@@ -1056,8 +1056,12 @@ window.addEventListener('keydown', e => {
             player.y = v.y - Math.sin(v.angle) * 3;
             player.z = getSafeFloorZ(player.x, player.y, v.z + 2) + 1.0;
             player.vz = 0;
+        } else if (draggingBody) {
+            draggingBody = null;
         } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) { 
-            if (interactTarget.isPebble) {
+            if (interactTarget.isRagdoll) {
+                draggingBody = interactTarget.body;
+            } else if (interactTarget.isPebble) {
                 let success = giveItem({ type: 'resource', emoji: '🪨', count: 1 });
                 if (success) {
                     destroyedEntities.add(interactTarget.entKey);

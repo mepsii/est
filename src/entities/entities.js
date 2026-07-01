@@ -522,6 +522,30 @@ function updateEntities() {
         for (let a of animals) if (a.dead) checkTarget(a, 3.0); 
         for (let b of buildings) checkTarget(b, 4.0); 
         for (let v of vehicles) checkTarget(v, 4.0); 
+ 
+        for (let r of activeRagdolls) {
+            for (let name in r.parts) {
+                let body = r.parts[name];
+                if (!body) continue;
+                let dist = Math.hypot(player.x - body.position.x, player.y - body.position.y);
+                if (dist < 3.0) {
+                    let angleTo = Math.atan2(body.position.y - player.y, body.position.x - player.x);
+                    let angleDiff = Math.abs(Math.atan2(Math.sin(player.angle - angleTo), Math.cos(player.angle - angleTo)));
+                    if (angleDiff < 0.4 && dist < closestDist) {
+                        closestDist = dist;
+                        interactTarget = {
+                            isRagdoll: true,
+                            body: body,
+                            ragdoll: r,
+                            x: body.position.x,
+                            y: body.position.y,
+                            z: body.position.z,
+                            label: 'Drag Ragdoll'
+                        };
+                    }
+                }
+            }
+        } 
 
         // Check for static entities (pebbles and trees) in nearby chunks
         let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
@@ -578,8 +602,14 @@ function updateEntities() {
         } else {
             interactTooltip.style.display = 'none';
         }
+    } else if (draggingBody && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
+        interactTooltip.innerText = "[E] Release Ragdoll";
+        interactTooltip.style.display = 'block';
     } else if (interactTarget && !isInventoryOpen && !isDebugOpen && !isStairMenuOpen && !isPaused) {
-        if (vehicles.includes(interactTarget)) {
+        if (interactTarget.isRagdoll) {
+            interactTooltip.innerText = "[E] Grab Ragdoll";
+        }
+        else if (vehicles.includes(interactTarget)) {
             let isFlipped = Math.abs(interactTarget.roll) > Math.PI / 3 || Math.abs(interactTarget.pitch) > Math.PI / 3;
             interactTooltip.innerText = isFlipped ? "[E] Flip & Drive Truck" : "[E] Drive Truck";
         }

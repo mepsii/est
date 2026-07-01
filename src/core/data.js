@@ -178,7 +178,7 @@ const CHUNK_SIZE = 32;
 // --- Game State Variables ---
 let gameTime = 12.0;
 let timeSpeed = 1.0;
-let isInventoryOpen = false, isDebugOpen = false, isStairMenuOpen = false, interactTarget = null, activeContainer = null;
+let isInventoryOpen = false, isDebugOpen = false, isStairMenuOpen = false, interactTarget = null, activeContainer = null, draggingBody = null;
 let placementItem = null, placementIndex = -1;
 
 let inventory = new Array(24).fill(null); 

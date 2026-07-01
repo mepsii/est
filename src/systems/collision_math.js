@@ -228,3 +228,36 @@ function get3DZombieLimbBoxes(e) {
     return limbBoxes;
 }
 
+function getRagdollPartWorldVerts(body) {
+    let w = body.partWidth;
+    let d = body.partDepth;
+    let h = body.partHeight;
+    let scale = body.scale;
+    
+    let hw = (w * scale) / 2;
+    let hd = (d * scale) / 2;
+    let hh = (h * scale) / 2;
+    let localVerts = [
+        { x: -hw, y: -hd, z: -hh },
+        { x:  hw, y: -hd, z: -hh },
+        { x:  hw, y:  hd, z: -hh },
+        { x: -hw, y:  hd, z: -hh },
+        { x: -hw, y: -hd, z:  hh },
+        { x:  hw, y: -hd, z:  hh },
+        { x:  hw, y:  hd, z:  hh },
+        { x: -hw, y:  hd, z:  hh }
+    ];
+    let worldVerts = [];
+    let q = new THREE.Quaternion(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+    for (let lv of localVerts) {
+        let pt = new THREE.Vector3(lv.x, lv.y, lv.z);
+        pt.applyQuaternion(q);
+        worldVerts.push({
+            x: body.position.x + pt.x,
+            y: body.position.y + pt.y,
+            z: body.position.z + pt.z
+        });
+    }
+    return worldVerts;
+}
+

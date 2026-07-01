@@ -52,6 +52,60 @@ function update() {
         }
     }
 
+    // Dragging logic: pull draggingBody toward the player
+    if (draggingBody) {
+        let body = draggingBody;
+        body.wakeUp();
+        // Target position: 2.0 units in front of player
+        let tx = player.x + Math.cos(player.angle) * 2.0;
+        let ty = player.y + Math.sin(player.angle) * 2.0;
+        let tz = player.z - 0.2;
+        
+        let dx = tx - body.position.x;
+        let dy = ty - body.position.y;
+        let dz = tz - body.position.z;
+        
+        body.velocity.set(dx * 10, dy * 10, dz * 10);
+        body.angularVelocity.set(body.angularVelocity.x * 0.9, body.angularVelocity.y * 0.9, body.angularVelocity.z * 0.9);
+        
+        // Auto-release if too far
+        let dist = Math.hypot(body.position.x - player.x, body.position.y - player.y);
+        if (dist > 5.0) {
+            draggingBody = null;
+        }
+    }
+
+    // Vehicle pushing: manually collide moving vehicles with ragdoll parts
+    for (let v of vehicles) {
+        for (let r of activeRagdolls) {
+            for (let name in r.parts) {
+                let body = r.parts[name];
+                if (!body) continue;
+                let dx = body.position.x - v.x;
+                let dy = body.position.y - v.y;
+                let dz = body.position.z - v.z;
+                let dist = Math.hypot(dx, dy);
+                if (dist < 2.2 && Math.abs(dz) < 1.2) {
+                    let speed = v.speed || 0;
+                    if (speed > 0.05) {
+                        let pushForce = speed * 12.0;
+                        let angle = Math.atan2(dy, dx);
+                        let vx = v.chassisBody ? v.chassisBody.velocity.x : 0;
+                        let vy = v.chassisBody ? v.chassisBody.velocity.y : 0;
+                        let vLen = Math.hypot(vx, vy);
+                        let pushX = vLen > 0.1 ? vx / vLen : Math.cos(angle);
+                        let pushY = vLen > 0.1 ? vy / vLen : Math.sin(angle);
+                        
+                        body.wakeUp();
+                        body.velocity.x += pushX * pushForce;
+                        body.velocity.y += pushY * pushForce;
+                        body.velocity.z += (0.5 + Math.random() * 0.5) * pushForce * 0.5;
+                    }
+                }
+            }
+        }
+    }
+
     postUpdateVehicles();
     updatePlayer();
     updateEntities();

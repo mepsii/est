@@ -860,7 +860,7 @@ function drawRagdollPartFaces(body, name, scale, ambient) {
             o.wY = cy;
             o.h = cz;
             o.norm = { x: nx, y: ny, z: nz };
-            o.targeted = false;
+            o.targeted = (interactTarget && interactTarget.isRagdoll && interactTarget.body === body) || (draggingBody === body);
             o.flash = false;
 
             let uvRegion = getMinecraftUVs(name, faceIndex, skinH);

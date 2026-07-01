@@ -97,6 +97,22 @@ function updateProjectiles() {
                         }
                     }
 
+                    let hitRagdollBody = null;
+                    for (let r of activeRagdolls) {
+                        for (let name in r.parts) {
+                            let body = r.parts[name];
+                            if (!body) continue;
+                            let verts = getRagdollPartWorldVerts(body);
+                            let t = intersectSegmentBox({x: startX, y: startY, z: startZ}, {x: endX, y: endY, z: endZ}, verts);
+                            if (t !== false && t < minT) {
+                                minT = t;
+                                hitEnemyIndex = -1;
+                                hitAnimalIndex = -1;
+                                hitRagdollBody = body;
+                            }
+                        }
+                    }
+
                     if (minT < Infinity) {
                         let hitX = startX + minT * (endX - startX);
                         let hitY = startY + minT * (endY - startY);
@@ -108,6 +124,11 @@ function updateProjectiles() {
                         } else if (hitAnimalIndex !== -1) {
                             let a = animals[hitAnimalIndex];
                             hitTarget = { obj: a, type: 'animal', hitZ, hitX, hitY };
+                        } else if (hitRagdollBody) {
+                            let hitX = startX + minT * (endX - startX);
+                            let hitY = startY + minT * (endY - startY);
+                            let hitZ = startZ + minT * (endZ - startZ);
+                            hitTarget = { obj: hitRagdollBody, type: 'ragdoll', hitZ, hitX, hitY };
                         }
                     }
 
@@ -150,6 +171,15 @@ function updateProjectiles() {
                             let bCol = getBloodColor(e.type); if (bCol) spawnBlood(e.x, e.y, e.z + e.size * 0.6, bCol, 12);
                             if (e.hp <= 0) { enemies.splice(enemies.indexOf(e), 1); score += (e.type!=='alien'?150:100); scoreEl.innerText = score; }
                         }
+                    } else if (hitTarget.type === 'ragdoll') {
+                        let body = hitTarget.obj;
+                        let dirX = Math.cos(player.angle);
+                        let dirY = Math.sin(player.angle);
+                        let force = w.dmg * 0.25;
+                        body.wakeUp();
+                        body.applyImpulse(new CANNON.Vec3(dirX * force, dirY * force, force * 0.2), body.position);
+                        let bCol = {r: 92, g: 64, b: 51};
+                        spawnBlood(hitTarget.hitX, hitTarget.hitY, hitTarget.hitZ, bCol, 6);
                     } else if (hitTarget.type === 'animal') {
                         let a = hitTarget.obj;
                         a.hp -= w.dmg; addDamageText(a.x, a.y, a.z + a.size, w.dmg);
@@ -507,6 +537,22 @@ function updateProjectiles() {
                     }
                 }
             }
+ 
+            let hitRagdollBody = null;
+            for (let r of activeRagdolls) {
+                for (let name in r.parts) {
+                    let body = r.parts[name];
+                    if (!body) continue;
+                    let verts = getRagdollPartWorldVerts(body);
+                    let t = intersectSegmentBox({x: prevX, y: prevY, z: prevZ}, {x: p.x, y: p.y, z: p.z}, verts);
+                    if (t !== false && t < minT) {
+                        minT = t;
+                        hitEnemyIndex = -1;
+                        hitAnimalIndex = -1;
+                        hitRagdollBody = body;
+                    }
+                }
+            }
 
             if (minT < Infinity) {
                 let hitX = prevX + minT * (p.x - prevX);
@@ -540,6 +586,16 @@ function updateProjectiles() {
                             scoreEl.innerText = score;
                         }
                     }
+                } else if (hitRagdollBody) {
+                    let force = p.dmg * 0.25;
+                    let len = Math.hypot(p.vx, p.vy, p.vz);
+                    let dx = len > 0 ? p.vx / len : 0;
+                    let dy = len > 0 ? p.vy / len : 0;
+                    let dz = len > 0 ? p.vz / len : 0;
+                    hitRagdollBody.wakeUp();
+                    hitRagdollBody.applyImpulse(new CANNON.Vec3(dx * force, dy * force, dz * force), hitRagdollBody.position);
+                    let bCol = {r: 92, g: 64, b: 51};
+                    spawnBlood(hitX, hitY, hitZ, bCol, 6);
                 } else if (hitAnimalIndex !== -1) {
                     let a = animals[hitAnimalIndex];
                     a.hp -= p.dmg;
