@@ -284,7 +284,7 @@ for(let i = 0; i < 10; i++) {
     containerInvGrid.appendChild(slot); 
 }
 
-document.getElementById('inv-hints').innerText = "Drag & Drop to Move | Right-Click to Use";
+document.getElementById('inv-hints').innerText = "Click to Pick Up / Drop | Right-Click to Use";
 
 function updateHotbarUI() {
     for(let i = 0; i < 8; i++) {
@@ -729,9 +729,59 @@ function getPlacementTarget() {
     return { x: hitX, y: hitY, z: hitZ };
 }
 
-// Drag Start and Right-Click Logic
+// Click-to-Pick-Up / Click-to-Drop and Right-Click Logic
 invScreen.addEventListener('mousedown', (e) => {
     let slotEl = e.target.closest('.inv-slot');
+    
+    // If left-click and we are currently carrying an item, drop it
+    if (e.button === 0 && dragItemData) {
+        let sourceInv = dragSourceType === 'player' ? inventory : activeContainer.items;
+        
+        if (slotEl) {
+            let destType = slotEl.dataset.type;
+            let destIndex = parseInt(slotEl.dataset.index);
+            let destInv = destType === 'player' ? inventory : activeContainer.items;
+
+            // If dropped on the exact same slot it was taken from
+            if (destType === dragSourceType && destIndex === dragSourceIndex) {
+                sourceInv[dragSourceIndex] = dragItemData;
+            } else {
+                let destItem = destInv[destIndex];
+
+                // If hovering the identical item and it's stackable
+                if (destItem && destItem.emoji === dragItemData.emoji && destItem.id === dragItemData.id && destItem.type !== 'weapon' && destItem.type !== 'tool') {
+                    destItem.count += dragItemData.count;
+                } else {
+                    // Swap items
+                    destInv[destIndex] = dragItemData;
+                    sourceInv[dragSourceIndex] = destItem; // destItem is null if empty, or an item if swapping
+                }
+            }
+        } else {
+            // Clicked outside a slot
+            let isInsidePanel = e.target.closest('.panel');
+            if (isInsidePanel) {
+                // Return item to source slot if clicking inside UI panels
+                sourceInv[dragSourceIndex] = dragItemData;
+            } else {
+                // Drop item on the ground when clicked outside all panels
+                spawnDroppedItem(dragItemData, false);
+            }
+        }
+
+        // Cleanup
+        if (dragEl) {
+            dragEl.remove();
+            dragEl = null;
+        }
+        dragItemData = null;
+        dragSourceType = null;
+        dragSourceIndex = -1;
+        updateInventories();
+        return;
+    }
+
+    // Otherwise, we are either right-clicking or picking up an item (when not holding one)
     if (!slotEl) return;
     
     let index = parseInt(slotEl.dataset.index);
@@ -775,7 +825,7 @@ invScreen.addEventListener('mousedown', (e) => {
             }
         }
     } else if (e.button === 0) {
-        // Drag Start
+        // Pick Up Start
         let item = targetInv[index];
         if (item) {
             dragItemData = item;
@@ -812,51 +862,6 @@ window.addEventListener('mousemove', e => {
         dragEl.style.top = e.clientY + 'px';
     }
     updateTooltip(e);
-});
-
-// Drag Drop Logic
-window.addEventListener('mouseup', e => {
-    if (e.button === 0 && dragItemData) {
-        let dropSlot = e.target.closest('.inv-slot');
-        let sourceInv = dragSourceType === 'player' ? inventory : activeContainer.items;
-        
-        if (dropSlot) {
-            let destType = dropSlot.dataset.type;
-            let destIndex = parseInt(dropSlot.dataset.index);
-            let destInv = destType === 'player' ? inventory : activeContainer.items;
-
-            // If dropped on the exact same slot it was taken from
-            if (destType === dragSourceType && destIndex === dragSourceIndex) {
-                sourceInv[dragSourceIndex] = dragItemData;
-            } else {
-                let destItem = destInv[destIndex];
-
-                // If hovering the identical item and it's stackable
-                if (destItem && destItem.emoji === dragItemData.emoji && destItem.id === dragItemData.id && destItem.type !== 'weapon' && destItem.type !== 'tool') {
-                    destItem.count += dragItemData.count;
-                    dragItemData = null; // Successfully merged, drag item consumed
-                } else {
-                    // Swap items
-                    destInv[destIndex] = dragItemData;
-                    sourceInv[dragSourceIndex] = destItem; // destItem is null if empty, or an item if swapping
-                }
-            }
-        } else {
-            // Drop item on the ground when dragged outside panel
-            spawnDroppedItem(dragItemData, false);
-            dragItemData = null;
-        }
-
-        // Cleanup
-        if (dragEl) {
-            dragEl.remove();
-            dragEl = null;
-        }
-        dragItemData = null;
-        dragSourceType = null;
-        dragSourceIndex = -1;
-        updateInventories();
-    }
 });
 
 window.addEventListener('contextmenu', e => e.preventDefault());
