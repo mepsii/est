@@ -175,9 +175,9 @@ function updateProjectiles() {
                         let body = hitTarget.obj;
                         let dirX = Math.cos(player.angle);
                         let dirY = Math.sin(player.angle);
-                        let force = w.dmg * 0.25;
+                        let force = w.dmg * 2.2;
                         body.wakeUp();
-                        body.applyImpulse(new CANNON.Vec3(dirX * force, dirY * force, force * 0.2), body.position);
+                        body.applyImpulse(new CANNON.Vec3(dirX * force, dirY * force, force * 0.4), body.position);
                         let bCol = {r: 92, g: 64, b: 51};
                         spawnBlood(hitTarget.hitX, hitTarget.hitY, hitTarget.hitZ, bCol, 6);
                     } else if (hitTarget.type === 'animal') {
@@ -587,13 +587,13 @@ function updateProjectiles() {
                         }
                     }
                 } else if (hitRagdollBody) {
-                    let force = p.dmg * 0.25;
+                    let force = p.dmg * 2.2;
                     let len = Math.hypot(p.vx, p.vy, p.vz);
                     let dx = len > 0 ? p.vx / len : 0;
                     let dy = len > 0 ? p.vy / len : 0;
                     let dz = len > 0 ? p.vz / len : 0;
                     hitRagdollBody.wakeUp();
-                    hitRagdollBody.applyImpulse(new CANNON.Vec3(dx * force, dy * force, dz * force), hitRagdollBody.position);
+                    hitRagdollBody.applyImpulse(new CANNON.Vec3(dx * force, dy * force, (dz * force) + force * 0.4), hitRagdollBody.position);
                     let bCol = {r: 92, g: 64, b: 51};
                     spawnBlood(hitX, hitY, hitZ, bCol, 6);
                 } else if (hitAnimalIndex !== -1) {

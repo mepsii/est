@@ -52,20 +52,51 @@ function update() {
         }
     }
 
-    // Dragging logic: pull draggingBody toward the player
+    // Dragging logic: pull draggingBody toward the player in full 3D
     if (draggingBody) {
         let body = draggingBody;
-        body.wakeUp();
-        // Target position: 2.0 units in front of player
-        let tx = player.x + Math.cos(player.angle) * 2.0;
-        let ty = player.y + Math.sin(player.angle) * 2.0;
-        let tz = player.z - 0.2;
+        
+        // Find the ragdoll object to wake up all its parts
+        let parentRagdoll = activeRagdolls.find(r => Object.values(r.parts).includes(body));
+        if (parentRagdoll) {
+            for (let name in parentRagdoll.parts) {
+                if (parentRagdoll.parts[name]) {
+                    parentRagdoll.parts[name].wakeUp();
+                }
+            }
+        } else {
+            body.wakeUp();
+        }
+
+        // Target position: 2.5 units in front of player's eye level, following look angles
+        let eyeZ = player.z + (player.inVehicle ? 1.0 : 1.6);
+        let lookX = Math.cos(player.angle) * Math.cos(player.pitch);
+        let lookY = Math.sin(player.angle) * Math.cos(player.pitch);
+        let lookZ = Math.sin(player.pitch);
+        
+        let tx = player.x + lookX * 2.5;
+        let ty = player.y + lookY * 2.5;
+        let tz = eyeZ + lookZ * 2.5;
         
         let dx = tx - body.position.x;
         let dy = ty - body.position.y;
         let dz = tz - body.position.z;
         
-        body.velocity.set(dx * 10, dy * 10, dz * 10);
+        // Snappier pull
+        let vx = dx * 18;
+        let vy = dy * 18;
+        let vz = dz * 18;
+        
+        // Clamp maximum velocity to avoid extreme speeds
+        let maxV = 16.0;
+        let vLen = Math.hypot(vx, vy, vz);
+        if (vLen > maxV) {
+            vx = (vx / vLen) * maxV;
+            vy = (vy / vLen) * maxV;
+            vz = (vz / vLen) * maxV;
+        }
+        
+        body.velocity.set(vx, vy, vz);
         body.angularVelocity.set(body.angularVelocity.x * 0.9, body.angularVelocity.y * 0.9, body.angularVelocity.z * 0.9);
         
         // Auto-release if too far
@@ -77,6 +108,11 @@ function update() {
 
     // Vehicle pushing: manually collide moving vehicles with ragdoll parts
     for (let v of vehicles) {
+        if (!v.chassisBody) continue;
+        const vVel = v.chassisBody.velocity;
+        const vSpeed = vVel.norm();
+        if (vSpeed < 0.05) continue;
+        
         for (let r of activeRagdolls) {
             for (let name in r.parts) {
                 let body = r.parts[name];
@@ -86,21 +122,14 @@ function update() {
                 let dz = body.position.z - v.z;
                 let dist = Math.hypot(dx, dy);
                 if (dist < 2.2 && Math.abs(dz) < 1.2) {
-                    let speed = v.speed || 0;
-                    if (speed > 0.05) {
-                        let pushForce = speed * 12.0;
-                        let angle = Math.atan2(dy, dx);
-                        let vx = v.chassisBody ? v.chassisBody.velocity.x : 0;
-                        let vy = v.chassisBody ? v.chassisBody.velocity.y : 0;
-                        let vLen = Math.hypot(vx, vy);
-                        let pushX = vLen > 0.1 ? vx / vLen : Math.cos(angle);
-                        let pushY = vLen > 0.1 ? vy / vLen : Math.sin(angle);
-                        
-                        body.wakeUp();
-                        body.velocity.x += pushX * pushForce;
-                        body.velocity.y += pushY * pushForce;
-                        body.velocity.z += (0.5 + Math.random() * 0.5) * pushForce * 0.5;
-                    }
+                    body.wakeUp();
+                    let pushAngle = Math.atan2(dy, dx);
+                    let radialPushX = Math.cos(pushAngle) * 0.4;
+                    let radialPushY = Math.sin(pushAngle) * 0.4;
+                    
+                    body.velocity.x = vVel.x * 1.1 + radialPushX;
+                    body.velocity.y = vVel.y * 1.1 + radialPushY;
+                    body.velocity.z = Math.max(body.velocity.z, vVel.z + 1.2);
                 }
             }
         }

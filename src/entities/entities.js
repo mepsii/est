@@ -523,16 +523,31 @@ function updateEntities() {
         for (let b of buildings) checkTarget(b, 4.0); 
         for (let v of vehicles) checkTarget(v, 4.0); 
  
+        let eyeZ = player.z + (player.inVehicle ? 1.0 : 1.6);
+        let lookX = Math.cos(player.angle) * Math.cos(player.pitch);
+        let lookY = Math.sin(player.angle) * Math.cos(player.pitch);
+        let lookZ = Math.sin(player.pitch);
+        
+        let reach = 3.5;
+        let p1x = player.x;
+        let p1y = player.y;
+        let p1z = eyeZ;
+        let p2x = player.x + lookX * reach;
+        let p2y = player.y + lookY * reach;
+        let p2z = eyeZ + lookZ * reach;
+        
         for (let r of activeRagdolls) {
             for (let name in r.parts) {
                 let body = r.parts[name];
                 if (!body) continue;
-                let dist = Math.hypot(player.x - body.position.x, player.y - body.position.y);
-                if (dist < 3.0) {
-                    let angleTo = Math.atan2(body.position.y - player.y, body.position.x - player.x);
-                    let angleDiff = Math.abs(Math.atan2(Math.sin(player.angle - angleTo), Math.cos(player.angle - angleTo)));
-                    if (angleDiff < 0.4 && dist < closestDist) {
-                        closestDist = dist;
+                let dist = distPointToSegment(
+                    body.position.x, body.position.y, body.position.z,
+                    p1x, p1y, p1z, p2x, p2y, p2z
+                );
+                if (dist < 0.6) {
+                    let distToPlayer = Math.hypot(body.position.x - player.x, body.position.y - player.y);
+                    if (distToPlayer < reach && distToPlayer < closestDist) {
+                        closestDist = distToPlayer;
                         interactTarget = {
                             isRagdoll: true,
                             body: body,
@@ -545,7 +560,7 @@ function updateEntities() {
                     }
                 }
             }
-        } 
+        }
 
         // Check for static entities (pebbles and trees) in nearby chunks
         let pCx = Math.floor(player.x / CHUNK_SIZE), pCy = Math.floor(player.y / CHUNK_SIZE);
