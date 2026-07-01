@@ -567,7 +567,7 @@ function preUpdateVehicles() {
                      isBrakingWithThrottle = true;
                  }
 
-                 const maxBrake = 1600; // Reduced brake force to prevent stoppies
+                 const maxBrake = 450; // Drastically reduced from 1600 to prevent nosestands during active braking
                  
                  // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
                   let engineForce = 16000; // Middle-ground drive engine torque (increased from 9500) to maintain momentum at speed without being too fast
@@ -592,8 +592,8 @@ function preUpdateVehicles() {
                 // Apply engine force or braking
                 let appliedEngineForce = 0;
                 let brakeForce = 0;
-                let frontBrakeRatio = 0.65;
-                let rearBrakeRatio = 0.35;
+                let frontBrakeRatio = 0.20; // 20% front brake bias to completely eliminate nose-diving/nosestanding under active braking
+                let rearBrakeRatio = 0.80;  // 80% rear brake bias to pull the chassis flat and stabilize active braking
                 
                 if (keys['Space']) {
                     brakeForce = maxBrake;
@@ -604,7 +604,7 @@ function preUpdateVehicles() {
                     // Scales with speed, and adjusts based on vertical velocity and gear:
                     // - Low Gear (L): holds back strongly downhill to prevent runaways, rolls freely uphill.
                     // - Drive Gear (D): decelerates really hard uphill, but coasts/rolls very freely downhill under gravity.
-                    let baseEngineBrake = speedKmH * 0.6; // Further reduced for ultra-smooth coasting
+                    let baseEngineBrake = speedKmH * 0.8; // Coasting force set to 0.8 as requested
                     let zVel = v.chassisBody.velocity.z;
                     let slopeScale = 1.0;
                     
