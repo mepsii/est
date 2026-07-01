@@ -475,7 +475,7 @@ function initCannonVehicle(v) {
                 wheel.deltaRotation = sideMult * (wheel.engineForce > 0 ? -1 : 1) * wheel.customSlidingRotationalSpeed * timeStep;
             }
 
-            if(Math.abs(wheel.brake) > Math.abs(wheel.engineForce)){
+            if(v.isActivelyBraking && Math.abs(wheel.brake) > Math.abs(wheel.engineForce)){
                 wheel.deltaRotation = 0;
             }
 
@@ -589,6 +589,9 @@ function preUpdateVehicles() {
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
                 v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
                 
+                // Set active braking flag
+                v.isActivelyBraking = !!(keys['Space'] || isBrakingWithThrottle);
+
                 // Apply engine force or braking
                 let appliedEngineForce = 0;
                 let brakeForce = 0;
@@ -654,6 +657,7 @@ function preUpdateVehicles() {
     // Set control and braking baseline for non-driven vehicles so they stay parked
     for (let v of vehicles) {
         if (v !== player.inVehicle && v.raycastVehicle && v.chassisBody) {
+            v.isActivelyBraking = true; // Parked vehicles have locked wheels
             // Parked vehicles are allowed to sleep when stationary to save CPU cycles
             v.chassisBody.allowSleep = true;
 
