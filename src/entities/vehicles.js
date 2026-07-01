@@ -602,7 +602,7 @@ function preUpdateVehicles() {
                     // Scales with speed, and adjusts based on vertical velocity and gear:
                     // - Low Gear (L): holds back strongly downhill to prevent runaways, rolls freely uphill.
                     // - Drive Gear (D): decelerates really hard uphill, but coasts/rolls very freely downhill under gravity.
-                    let baseEngineBrake = speedKmH * 5.3; // Reduced by a third to allow the vehicle to coast further
+                    let baseEngineBrake = speedKmH * 1.5; // Smoother coasting to prevent abrupt deceleration flips
                     let zVel = v.chassisBody.velocity.z;
                     let slopeScale = 1.0;
                     
@@ -625,11 +625,11 @@ function preUpdateVehicles() {
                 v.raycastVehicle.applyEngineForce(appliedEngineForce, 2);
                 v.raycastVehicle.applyEngineForce(appliedEngineForce, 3);
                 
-                // Rear-biased braking to completely prevent nose-dives / stoppies (braking front wheels only 30% to prevent nose-dives)
-                v.raycastVehicle.setBrake(brakeForce * 0.3, 0); // Front Left
-                v.raycastVehicle.setBrake(brakeForce * 0.3, 1); // Front Right
-                v.raycastVehicle.setBrake(brakeForce, 2);       // Rear Left
-                v.raycastVehicle.setBrake(brakeForce, 3);       // Rear Right
+                // Front-biased braking to stabilize pitch and prevent nose-up flips (classic 65/35 front/rear split)
+                v.raycastVehicle.setBrake(brakeForce * 0.65, 0); // Front Left
+                v.raycastVehicle.setBrake(brakeForce * 0.65, 1); // Front Right
+                v.raycastVehicle.setBrake(brakeForce * 0.35, 2); // Rear Left
+                v.raycastVehicle.setBrake(brakeForce * 0.35, 3); // Rear Right
 
                 // If the player is in the vehicle, but idling (no throttle/steering input and very low speed),
                 // apply extra damping to eliminate physics solver micro-jitter and visual shaking.
