@@ -304,7 +304,16 @@ function initCannonVehicle(v) {
 
         // simulate suspension raycasts
         for (var i = 0; i < numWheels; i++) {
-            this.castRay(wheelInfos[i]);
+            var w = wheelInfos[i];
+            this.castRay(w);
+            
+            // Sanitize hit normals to prevent tire friction from grabbing vertical voxel faces
+            // (which causes strange crabwalking and steering lockups on steep inclines)
+            if (w.isInContact && w.raycastResult && w.raycastResult.hitNormalWorld) {
+                if (w.raycastResult.hitNormalWorld.z < 0.60) {
+                    w.raycastResult.hitNormalWorld.set(0, 0, 1);
+                }
+            }
         }
 
         // Calculate ground magnetism (downforce) first, so we can apply suspension force compensation
@@ -548,46 +557,55 @@ function preUpdateVehicles() {
                 // Real-time speed calculations (using absolute speed in km/h)
                 const speedKmH = Math.abs(v.currentVehicleSpeedKmHour || 0);
                 
-                // Speed-sensitive steering: scale steering response down at higher speeds (capped at 20% reduction for better steering at speed)
-                // Also scale down steering when reversing, as reverse steering is naturally twitchy
-                let steerScale = 1.0 - Math.min(0.20, speedKmH / 85);
-                if (v.currentVehicleSpeedKmHour < 0) {
-                    steerScale *= 0.45; // significantly lower steering angle in reverse to prevent spinouts
-                }
-                const maxSteer = 0.70 * steerScale; // Increased low-speed steering limit to 0.70 rad (approx 40 deg)
-                
-                 // Default to Drive ('D') gear if undefined
-                 v.gear = v.gear || 'D';
-                 
-                 // Determine if the player is trying to brake using opposite throttle inputs
-                 let isBrakingWithThrottle = false;
-                 if (v.currentVehicleSpeedKmHour > 2.0 && gas > 0) {
-                     isBrakingWithThrottle = true;
-                 } else if (v.currentVehicleSpeedKmHour < -2.0 && gas < 0) {
-                     isBrakingWithThrottle = true;
+                 // Speed-sensitive steering: scale steering response down at higher speeds
+                 // Also scale down steering when reversing, as reverse steering is naturally twitchy
+                 let steerScale = 1.0 - Math.min(0.65, speedKmH / 60);
+                 if (v.currentVehicleSpeedKmHour < 0) {
+                     steerScale *= 0.45; // significantly lower steering angle in reverse to prevent spinouts
                  }
-
-                 const maxBrake = 450; // Drastically reduced from 1600 to prevent nosestands during active braking
+                 const maxSteer = 0.90 * steerScale; // Base low-speed steering limit increased to 0.90 rad (~51 deg)
                  
-                 // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
-                  let engineForce = 16000; // Middle-ground drive engine torque (increased from 9500) to maintain momentum at speed without being too fast
-                  if (gas > 0) {
-                      engineForce = 5000; // Softer reverse torque to prevent harsh acceleration/stoppies when reversing
-                  } else if (gas < 0) {
-                      if (v.gear === 'L') {
-                          engineForce = 20000; // Beefy crawling torque (increased from 12000) to crawl over vertical voxel block faces and corners
-                          
-                          // Limit top speed in Low gear to 26 mph (approx 42 km/h)
-                          let speedMph = speedKmH * 0.621371;
-                          if (speedMph > 26) {
-                              engineForce = 0; // cut throttle above top speed
-                          }
-                      }
+                 // Smooth steering input (gradual turn mechanic)
+                 v.steering = v.steering || 0;
+                 let targetSteer = steerInput * maxSteer;
+                 if (steerInput !== 0) {
+                     v.steering += (targetSteer - v.steering) * 0.14; // Gradual steer-in
+                 } else {
+                     v.steering += (0 - v.steering) * 0.22; // Quick return to center
+                 }
+                 
+                  // Default to Drive ('D') gear if undefined
+                  v.gear = v.gear || 'D';
+                  
+                  // Determine if the player is trying to brake using opposite throttle inputs
+                  let isBrakingWithThrottle = false;
+                  if (v.currentVehicleSpeedKmHour > 2.0 && gas > 0) {
+                      isBrakingWithThrottle = true;
+                  } else if (v.currentVehicleSpeedKmHour < -2.0 && gas < 0) {
+                      isBrakingWithThrottle = true;
                   }
-                
-                // Front-wheel steering (steer wheels 0 and 1)
-                v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 0);
-                v.raycastVehicle.setSteeringValue(steerInput * maxSteer, 1);
+
+                  const maxBrake = 450; // Drastically reduced from 1600 to prevent nosestands during active braking
+                  
+                  // Scale engine force: less force in reverse, lower torque and speed cap in Low gear
+                   let engineForce = 16000; // Middle-ground drive engine torque (increased from 9500) to maintain momentum at speed without being too fast
+                   if (gas > 0) {
+                       engineForce = 5000; // Softer reverse torque to prevent harsh acceleration/stoppies when reversing
+                   } else if (gas < 0) {
+                       if (v.gear === 'L') {
+                           engineForce = 20000; // Beefy crawling torque (increased from 12000) to crawl over vertical voxel block faces and corners
+                           
+                           // Limit top speed in Low gear to 26 mph (approx 42 km/h)
+                           let speedMph = speedKmH * 0.621371;
+                           if (speedMph > 26) {
+                               engineForce = 0; // cut throttle above top speed
+                           }
+                       }
+                   }
+                 
+                 // Front-wheel steering (steer wheels 0 and 1)
+                 v.raycastVehicle.setSteeringValue(v.steering, 0);
+                 v.raycastVehicle.setSteeringValue(v.steering, 1);
                 
                 // Set active braking flag
                 v.isActivelyBraking = !!(keys['Space'] || isBrakingWithThrottle);
