@@ -29,13 +29,13 @@ function add3DZombieFaces(e, ambient) {
     let headPitch = 0.1 + Math.sin(animTime * 0.5) * 0.05;
     let headYaw = Math.cos(animTime * 0.3) * 0.1;
 
-    // Set up the parts configuration
+    let torsoColor = e.isSuperZombie ? { r: 180, g: 30, b: 30 } : { r: 60, g: 156, b: 156 };
     let parts = [
         // Torso: 8x12x4. Center at (0, 0, 18).
         {
             name: 'torso',
             minX: -4, maxX: 4, minY: -2, maxY: 2, minZ: 12, maxZ: 24,
-            color: { r: 60, g: 156, b: 156 },
+            color: torsoColor,
             active: true,
             transform: v => ({ x: v.x, y: v.y, z: v.z })
         },

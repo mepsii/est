@@ -347,6 +347,7 @@ function update() {
 
                     enemies.push({
                         type: r.type || 'zombie3d',
+                        isSuperZombie: !!r.isSuperZombie,
                         x: getUpX,
                         y: getUpY,
                         z: getUpZ,
@@ -463,7 +464,8 @@ function spawnCannonRagdoll(e, dx, dy, hitZ, initialVel = null, isAlive = false,
         return body;
     }
     
-    const torso = addPart('torso', 0, 0, 18, 8, 4, 12, 2.0, { r: 60, g: 156, b: 156 }, true);
+    const torsoColor = e.isSuperZombie ? { r: 180, g: 30, b: 30 } : { r: 60, g: 156, b: 156 };
+    const torso = addPart('torso', 0, 0, 18, 8, 4, 12, 2.0, torsoColor, true);
     const head = addPart('head', 0, 0, 28, 8, 8, 8, 0.6, { r: 90, g: 140, b: 90 }, e.hasHead !== false);
     const leftUpperArm = addPart('leftUpperArm', -6, 0, 21, 4, 4, 6, 0.4, { r: 90, g: 140, b: 90 }, e.hasLeftUpperArm !== false);
     const leftLowerArm = addPart('leftLowerArm', -6, 0, 15, 4, 4, 6, 0.3, { r: 90, g: 140, b: 90 }, e.hasLeftLowerArm !== false);
@@ -500,8 +502,9 @@ function spawnCannonRagdoll(e, dx, dy, hitZ, initialVel = null, isAlive = false,
         parts: parts,
         scale: scale,
         isAlive: !!isAlive,
-        hp: hp !== null ? hp : (e.hp !== undefined ? e.hp : 15),
-        maxHp: e.maxHp || 15,
+        isSuperZombie: !!e.isSuperZombie,
+        hp: hp !== null ? hp : (e.hp !== undefined ? e.hp : (e.isSuperZombie ? 1500 : 15)),
+        maxHp: e.maxHp || (e.isSuperZombie ? 1500 : 15),
         type: e.type || 'zombie3d',
         hasHead: e.hasHead !== false,
         hasLeftUpperArm: e.hasLeftUpperArm !== false,
