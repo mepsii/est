@@ -35,20 +35,93 @@ function update() {
         cannonWorld.step(subStepSize);
     }
 
+    // Static vector reuse to prevent garbage collection allocations during physics loops
+    if (typeof _tempImpulseVec === 'undefined') {
+        window._tempImpulseVec = new CANNON.Vec3(0, 0, 0);
+    }
+
     // Cleanup ragdolls that fall below Z < -20 to prevent memory leaks and physics bugs
     for (let i = activeRagdolls.length - 1; i >= 0; i--) {
         let r = activeRagdolls[i];
-        let torso = r.parts.torso;
+        let torso = r.parts ? r.parts.torso : null;
         if (torso && torso.position.z < -20) {
             for (let name in r.parts) {
-                cannonWorld.removeBody(r.parts[name]);
+                if (r.parts[name]) cannonWorld.removeBody(r.parts[name]);
             }
-            for (let c of [...cannonWorld.constraints]) {
-                if (Object.values(r.parts).includes(c.bodyA) || Object.values(r.parts).includes(c.bodyB)) {
-                    cannonWorld.removeConstraint(c);
+            if (r.parts) {
+                let partValues = Object.values(r.parts);
+                for (let j = cannonWorld.constraints.length - 1; j >= 0; j--) {
+                    let c = cannonWorld.constraints[j];
+                    if (partValues.includes(c.bodyA) || partValues.includes(c.bodyB)) {
+                        cannonWorld.removeConstraint(c);
+                    }
                 }
             }
             activeRagdolls.splice(i, 1);
+        }
+    }
+
+    // Vehicle "Roadkill" hit mechanic: check moving vehicles against living zombies
+    if (vehicles.length > 0 && enemies.length > 0) {
+        for (let vIdx = 0; vIdx < vehicles.length; vIdx++) {
+            let v = vehicles[vIdx];
+            if (!v.chassisBody) continue;
+            const vVel = v.chassisBody.velocity;
+            const vSpeedSq = vVel.x * vVel.x + vVel.y * vVel.y + vVel.z * vVel.z;
+            if (vSpeedSq < 1.44) continue; // Minimum speed threshold (~1.2 m/s, ~4.3 km/h)
+            const vSpeed = Math.sqrt(vSpeedSq);
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let e = enemies[i];
+                if (e.type !== 'zombie3d' && e.type !== 'zombie' && e.type !== 'zombie3d_ragdoll') continue;
+
+                let dx = e.x - v.x;
+                let dy = e.y - v.y;
+                let distSq = dx * dx + dy * dy;
+
+                // Fast squared distance check (2.3m radius = 5.29 sq distance)
+                if (distSq < 5.29) {
+                    let dz = e.z - v.z;
+                    if (Math.abs(dz) < 1.4) {
+                        let horizontalDist = Math.sqrt(distSq);
+                        let hitAngle = Math.atan2(dy, dx);
+                        let normDx = horizontalDist > 0.01 ? dx / horizontalDist : Math.cos(hitAngle);
+                        let normDy = horizontalDist > 0.01 ? dy / horizontalDist : Math.sin(hitAngle);
+
+                        // Transfer vehicle momentum + upward impact pop
+                        let initVx = vVel.x * 1.1 + normDx * (vSpeed * 0.3 + 1.0);
+                        let initVy = vVel.y * 1.1 + normDy * (vSpeed * 0.3 + 1.0);
+                        let initVz = Math.max(vVel.z * 1.0 + 2.2, vSpeed * 0.25 + 1.6);
+
+                        // Rebalanced impact damage: zombies take moderate damage so they survive to ragdoll & flail
+                        let impactDmg = Math.min(8, Math.max(2, Math.floor(vSpeed * 0.8)));
+                        e.hp -= impactDmg;
+
+                        let bCol = getBloodColor(e.type) || { r: 92, g: 64, b: 51 };
+                        spawnBlood(e.x, e.y, e.z + (e.size || 1.8) * 0.5, bCol, 6);
+
+                        let isAlive = e.hp > 0;
+                        if (!isAlive) {
+                            score += 150;
+                            if (typeof scoreEl !== 'undefined' && scoreEl) scoreEl.innerText = score;
+                        }
+
+                        // Convert zombie into ragdoll with caught momentum
+                        spawnCannonRagdoll(
+                            e,
+                            normDx,
+                            normDy,
+                            e.z + 0.9,
+                            { vx: initVx, vy: initVy, vz: initVz },
+                            isAlive,
+                            e.hp
+                        );
+
+                        // Remove living entity from enemies array
+                        enemies.splice(i, 1);
+                    }
+                }
+            }
         }
     }
 
@@ -56,8 +129,7 @@ function update() {
     if (draggingBody) {
         let body = draggingBody;
         
-        // Find the ragdoll object to wake up all its parts
-        let parentRagdoll = activeRagdolls.find(r => Object.values(r.parts).includes(body));
+        let parentRagdoll = activeRagdolls.find(r => r.parts && Object.values(r.parts).includes(body));
         if (parentRagdoll) {
             for (let name in parentRagdoll.parts) {
                 if (parentRagdoll.parts[name]) {
@@ -68,7 +140,6 @@ function update() {
             body.wakeUp();
         }
 
-        // Target position: 2.5 units in front of player's eye level, following look angles
         let eyeZ = player.z + (player.inVehicle ? 1.0 : 1.6);
         let lookX = Math.cos(player.angle) * Math.cos(player.pitch);
         let lookY = Math.sin(player.angle) * Math.cos(player.pitch);
@@ -82,12 +153,10 @@ function update() {
         let dy = ty - body.position.y;
         let dz = tz - body.position.z;
         
-        // Snappier pull
         let vx = dx * 18;
         let vy = dy * 18;
         let vz = dz * 18;
         
-        // Clamp maximum velocity to avoid extreme speeds
         let maxV = 16.0;
         let vLen = Math.hypot(vx, vy, vz);
         if (vLen > maxV) {
@@ -99,37 +168,204 @@ function update() {
         body.velocity.set(vx, vy, vz);
         body.angularVelocity.set(body.angularVelocity.x * 0.9, body.angularVelocity.y * 0.9, body.angularVelocity.z * 0.9);
         
-        // Auto-release if too far
         let dist = Math.hypot(body.position.x - player.x, body.position.y - player.y);
         if (dist > 5.0) {
             draggingBody = null;
         }
     }
 
-    // Vehicle pushing: manually collide moving vehicles with ragdoll parts
-    for (let v of vehicles) {
-        if (!v.chassisBody) continue;
-        const vVel = v.chassisBody.velocity;
-        const vSpeed = vVel.norm();
-        if (vSpeed < 0.05) continue;
-        
-        for (let r of activeRagdolls) {
-            for (let name in r.parts) {
-                let body = r.parts[name];
-                if (!body) continue;
-                let dx = body.position.x - v.x;
-                let dy = body.position.y - v.y;
-                let dz = body.position.z - v.z;
-                let dist = Math.hypot(dx, dy);
-                if (dist < 2.2 && Math.abs(dz) < 1.2) {
-                    body.wakeUp();
-                    let pushAngle = Math.atan2(dy, dx);
-                    let radialPushX = Math.cos(pushAngle) * 0.4;
-                    let radialPushY = Math.sin(pushAngle) * 0.4;
-                    
-                    body.velocity.x = vVel.x * 1.1 + radialPushX;
-                    body.velocity.y = vVel.y * 1.1 + radialPushY;
-                    body.velocity.z = Math.max(body.velocity.z, vVel.z + 1.2);
+    // Vehicle pushing & continuous dragging/scraping damage on active ragdolls
+    if (vehicles.length > 0 && activeRagdolls.length > 0) {
+        for (let vIdx = 0; vIdx < vehicles.length; vIdx++) {
+            let v = vehicles[vIdx];
+            if (!v.chassisBody) continue;
+            const vVel = v.chassisBody.velocity;
+            const vSpeedSq = vVel.x * vVel.x + vVel.y * vVel.y + vVel.z * vVel.z;
+            if (vSpeedSq < 0.0025) continue;
+            const vSpeed = Math.sqrt(vSpeedSq);
+            
+            for (let rIdx = 0; rIdx < activeRagdolls.length; rIdx++) {
+                let r = activeRagdolls[rIdx];
+                let torso = r.parts ? r.parts.torso : null;
+                if (!torso) continue;
+
+                let dx = torso.position.x - v.x;
+                let dy = torso.position.y - v.y;
+                let distSq = dx * dx + dy * dy;
+
+                if (distSq < 5.29) {
+                    let dz = torso.position.z - v.z;
+                    if (Math.abs(dz) < 1.3) {
+                        r.beingPushedTimer = 30; // Reset recovery timer while actively pushed by vehicle
+
+                        for (let name in r.parts) {
+                            if (r.parts[name]) r.parts[name].wakeUp();
+                        }
+                        
+                        let pushAngle = Math.atan2(dy, dx);
+                        let radialPushX = Math.cos(pushAngle) * 0.4;
+                        let radialPushY = Math.sin(pushAngle) * 0.4;
+                        
+                        for (let name in r.parts) {
+                            let body = r.parts[name];
+                            if (!body) continue;
+                            body.velocity.x = vVel.x * 1.1 + radialPushX;
+                            body.velocity.y = vVel.y * 1.1 + radialPushY;
+                            body.velocity.z = Math.max(body.velocity.z, vVel.z + 1.2);
+                        }
+
+                        // Continuous dragging damage while pushed by vehicle
+                        if (r.isAlive && r.hp > 0) {
+                            r.dragDamageTimer = (r.dragDamageTimer || 0) + 1;
+                            if (r.dragDamageTimer >= 25) { // Rebalanced: 1 damage every 25 ticks (~0.4 sec)
+                                r.dragDamageTimer = 0;
+                                r.hp -= 1;
+                                r.flash = 3;
+
+                                let bCol = getBloodColor(r.type) || { r: 92, g: 64, b: 51 };
+                                spawnBlood(torso.position.x, torso.position.y, torso.position.z + 0.3, bCol, 2);
+
+                                if (r.hp <= 0) {
+                                    r.hp = 0;
+                                    r.isAlive = false;
+                                    score += 150;
+                                    if (typeof scoreEl !== 'undefined' && scoreEl) scoreEl.innerText = score;
+                                    spawnBlood(torso.position.x, torso.position.y, torso.position.z + 0.5, bCol, 15);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Process living ragdoll flailing mechanics & grab-himself-back-up recovery
+    for (let i = activeRagdolls.length - 1; i >= 0; i--) {
+        let r = activeRagdolls[i];
+        let torso = r.parts ? r.parts.torso : null;
+        if (!torso) continue;
+
+        if (r.flash && r.flash > 0) r.flash--;
+
+        if (r.isAlive && r.hp > 0) {
+            let vx = torso.velocity.x, vy = torso.velocity.y, vz = torso.velocity.z;
+            let speedSq = vx * vx + vy * vy + vz * vz;
+
+            // Track recovery timer when not being pushed by vehicle
+            if (r.beingPushedTimer && r.beingPushedTimer > 0) {
+                r.beingPushedTimer--;
+                r.recoveryTimer = 90; // Hold off recovery while under vehicle
+            } else if (!r.isGettingUp) {
+                if (r.recoveryTimer === undefined) r.recoveryTimer = 90; // ~1.5s total duration
+                r.recoveryTimer--;
+                if (r.recoveryTimer <= 0) {
+                    r.isGettingUp = true;
+                    r.getUpTimer = 0;
+                }
+            }
+
+            // Dynamic limb flailing while alive and not yet in final get-up phase
+            if (!r.isGettingUp && (r.recoveryTimer === undefined || r.recoveryTimer > 15)) {
+                let t = (tickCounter + (r.flailOffset || 0)) * 0.25;
+                let flailStr = 0.4; // Organic limb twitching strength
+                
+                if (r.parts.leftLowerArm) {
+                    _tempImpulseVec.set(Math.sin(t * 1.7) * flailStr, Math.cos(t * 1.3) * flailStr, (Math.sin(t * 2.1) + 0.5) * flailStr);
+                    r.parts.leftLowerArm.applyImpulse(_tempImpulseVec, r.parts.leftLowerArm.position);
+                }
+                if (r.parts.rightLowerArm) {
+                    _tempImpulseVec.set(Math.cos(t * 1.5) * flailStr, Math.sin(t * 1.8) * flailStr, (Math.cos(t * 2.3) + 0.5) * flailStr);
+                    r.parts.rightLowerArm.applyImpulse(_tempImpulseVec, r.parts.rightLowerArm.position);
+                }
+                if (r.parts.leftLowerLeg) {
+                    _tempImpulseVec.set(Math.cos(t * 2.0) * flailStr * 0.5, Math.sin(t * 1.4) * flailStr * 0.5, Math.sin(t * 2.5) * flailStr * 0.5);
+                    r.parts.leftLowerLeg.applyImpulse(_tempImpulseVec, r.parts.leftLowerLeg.position);
+                }
+                if (r.parts.rightLowerLeg) {
+                    _tempImpulseVec.set(Math.sin(t * 1.8) * flailStr * 0.5, Math.cos(t * 1.6) * flailStr * 0.5, Math.cos(t * 2.2) * flailStr * 0.5);
+                    r.parts.rightLowerLeg.applyImpulse(_tempImpulseVec, r.parts.rightLowerLeg.position);
+                }
+            }
+
+            // High-speed asphalt scraping damage
+            if (speedSq > 20.25) { // speed > 4.5 m/s
+                r.dragDamageTimer = (r.dragDamageTimer || 0) + 1;
+                if (r.dragDamageTimer >= 30) {
+                    r.dragDamageTimer = 0;
+                    r.hp -= 1;
+                    r.flash = 2;
+                    let bCol = getBloodColor(r.type) || { r: 92, g: 64, b: 51 };
+                    spawnBlood(torso.position.x, torso.position.y, torso.position.z + 0.2, bCol, 2);
+                    if (r.hp <= 0) {
+                        r.hp = 0;
+                        r.isAlive = false;
+                        score += 150;
+                        if (typeof scoreEl !== 'undefined' && scoreEl) scoreEl.innerText = score;
+                    }
+                }
+            }
+
+            // Stand-up transition logic
+            if (r.isGettingUp) {
+                r.getUpTimer++;
+                
+                // Stand up physics impulse: torso pulls up, limbs contract towards center
+                torso.velocity.z = Math.min(2.5, torso.velocity.z + 0.6);
+                torso.angularVelocity.scale(0.7, torso.angularVelocity);
+
+                for (let name in r.parts) {
+                    let b = r.parts[name];
+                    if (b && b !== torso) {
+                        let pullX = (torso.position.x - b.position.x) * 2.5;
+                        let pullY = (torso.position.y - b.position.y) * 2.5;
+                        let pullZ = (torso.position.z - b.position.z) * 2.5;
+                        b.velocity.set(pullX, pullY, pullZ);
+                    }
+                }
+
+                // After getUp animation duration, transition back into standing enemy entity
+                if (r.getUpTimer >= 25) {
+                    let getUpX = torso.position.x;
+                    let getUpY = torso.position.y;
+                    let getUpZ = torso.position.z;
+
+                    for (let name in r.parts) {
+                        if (r.parts[name]) cannonWorld.removeBody(r.parts[name]);
+                    }
+                    if (r.parts) {
+                        let partValues = Object.values(r.parts);
+                        for (let j = cannonWorld.constraints.length - 1; j >= 0; j--) {
+                            let c = cannonWorld.constraints[j];
+                            if (partValues.includes(c.bodyA) || partValues.includes(c.bodyB)) {
+                                cannonWorld.removeConstraint(c);
+                            }
+                        }
+                    }
+
+                    activeRagdolls.splice(i, 1);
+
+                    enemies.push({
+                        type: r.type || 'zombie3d',
+                        x: getUpX,
+                        y: getUpY,
+                        z: getUpZ,
+                        hp: r.hp,
+                        maxHp: r.maxHp || 15,
+                        cooldown: 30,
+                        size: (r.scale || (1.8 / 32.0)) * 32.0,
+                        flash: 0,
+                        hasHead: r.hasHead,
+                        hasLeftUpperArm: r.hasLeftUpperArm,
+                        hasLeftLowerArm: r.hasLeftLowerArm,
+                        hasRightUpperArm: r.hasRightUpperArm,
+                        hasRightLowerArm: r.hasRightLowerArm,
+                        hasLeftUpperLeg: r.hasLeftUpperLeg,
+                        hasLeftLowerLeg: r.hasLeftLowerLeg,
+                        hasRightUpperLeg: r.hasRightUpperLeg,
+                        hasRightLowerLeg: r.hasRightLowerLeg,
+                        limbsHP: r.limbsHP
+                    });
                 }
             }
         }
@@ -155,33 +391,35 @@ function update() {
     if (player.pistolSmokeTimer > 0) player.pistolSmokeTimer--;
 }
 
-function spawnCannonRagdoll(e, dx, dy, hitZ) {
-    const scale = e.size / 32.0;
-    const rotAngle = e.angle - Math.PI / 2;
+function spawnCannonRagdoll(e, dx, dy, hitZ, initialVel = null, isAlive = false, hp = null) {
+    const scale = (e.size || 1.8) / 32.0;
+    const rotAngle = (e.angle || 0) - Math.PI / 2;
     const cosH = Math.cos(rotAngle);
     const sinH = Math.sin(rotAngle);
     
-    // Calculate direction of shot/hit for impulse
-    let fx = dx || 0;
-    let fy = dy || 0;
-    let len = Math.hypot(fx, fy);
-    if (len > 0) {
-        fx /= len;
-        fy /= len;
+    let initVx = 0, initVy = 0, initVz = 3.0;
+    if (initialVel) {
+        initVx = initialVel.vx;
+        initVy = initialVel.vy;
+        initVz = initialVel.vz;
+    } else {
+        let fx = dx || 0;
+        let fy = dy || 0;
+        let len = Math.hypot(fx, fy);
+        if (len > 0) {
+            fx /= len;
+            fy /= len;
+        }
+        const hitForce = 7.0; 
+        initVx = fx * hitForce;
+        initVy = fy * hitForce;
     }
-    // Base force of the hit
-    const hitForce = 7.0; 
-    const initVx = fx * hitForce;
-    const initVy = fy * hitForce;
-    const initVz = 3.0; // small pop upwards
     
     const parts = {};
     
-    // Function to create a part body
     function addPart(name, lx, ly, lz, w, d, h, mass, color, active) {
         if (!active) return null;
         
-        // Calculate initial world position
         let sx = lx * scale;
         let sy = ly * scale;
         let sz = lz * scale;
@@ -199,11 +437,19 @@ function spawnCannonRagdoll(e, dx, dy, hitZ) {
         const shape = new CANNON.Box(new CANNON.Vec3((w * scale) / 2, (d * scale) / 2, (h * scale) / 2));
         body.addShape(shape);
         
-        // Rotate body to match zombie orientation
         body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), rotAngle);
         
-        // Apply initial velocity/impulse
-        body.velocity.set(initVx, initVy, initVz);
+        let spinStr = initialVel ? 6.0 : 2.0;
+        body.velocity.set(
+            initVx + (Math.random() - 0.5) * 0.5,
+            initVy + (Math.random() - 0.5) * 0.5,
+            initVz + (Math.random() - 0.5) * 0.5
+        );
+        body.angularVelocity.set(
+            (Math.random() - 0.5) * spinStr,
+            (Math.random() - 0.5) * spinStr,
+            (Math.random() - 0.5) * spinStr
+        );
         
         body.partName = name;
         body.partColor = color;
@@ -217,38 +463,17 @@ function spawnCannonRagdoll(e, dx, dy, hitZ) {
         return body;
     }
     
-    // Create bodies
-    // Torso: center at (0, 0, 18), size 8x4x12
     const torso = addPart('torso', 0, 0, 18, 8, 4, 12, 2.0, { r: 60, g: 156, b: 156 }, true);
-    
-    // Head: center at (0, 0, 28), size 8x8x8
     const head = addPart('head', 0, 0, 28, 8, 8, 8, 0.6, { r: 90, g: 140, b: 90 }, e.hasHead !== false);
-    
-    // Left Upper Arm: center at (-6, 0, 21), size 4x4x6
     const leftUpperArm = addPart('leftUpperArm', -6, 0, 21, 4, 4, 6, 0.4, { r: 90, g: 140, b: 90 }, e.hasLeftUpperArm !== false);
-    
-    // Left Lower Arm: center at (-6, 0, 15), size 4x4x6
     const leftLowerArm = addPart('leftLowerArm', -6, 0, 15, 4, 4, 6, 0.3, { r: 90, g: 140, b: 90 }, e.hasLeftLowerArm !== false);
-    
-    // Right Upper Arm: center at (6, 0, 21), size 4x4x6
     const rightUpperArm = addPart('rightUpperArm', 6, 0, 21, 4, 4, 6, 0.4, { r: 90, g: 140, b: 90 }, e.hasRightUpperArm !== false);
-    
-    // Right Lower Arm: center at (6, 0, 15), size 4x4x6
     const rightLowerArm = addPart('rightLowerArm', 6, 0, 15, 4, 4, 6, 0.3, { r: 90, g: 140, b: 90 }, e.hasRightLowerArm !== false);
-    
-    // Left Upper Leg: center at (-2, 0, 9), size 4x4x6
     const leftUpperLeg = addPart('leftUpperLeg', -2, 0, 9, 4, 4, 6, 0.4, { r: 64, g: 64, b: 144 }, e.hasLeftUpperLeg !== false);
-    
-    // Left Lower Leg: center at (-2, 0, 3), size 4x4x6
     const leftLowerLeg = addPart('leftLowerLeg', -2, 0, 3, 4, 4, 6, 0.3, { r: 64, g: 64, b: 144 }, e.hasLeftLowerLeg !== false);
-    
-    // Right Upper Leg: center at (2, 0, 9), size 4x4x6
     const rightUpperLeg = addPart('rightUpperLeg', 2, 0, 9, 4, 4, 6, 0.4, { r: 64, g: 64, b: 144 }, e.hasRightUpperLeg !== false);
-    
-    // Right Lower Leg: center at (2, 0, 3), size 4x4x6
     const rightLowerLeg = addPart('rightLowerLeg', 2, 0, 3, 4, 4, 6, 0.3, { r: 64, g: 64, b: 144 }, e.hasRightLowerLeg !== false);
     
-    // Helper to add constraint with collideConnected = false
     function addJoint(bodyA, pivotA, bodyB, pivotB) {
         if (!bodyA || !bodyB) return;
         const c = new CANNON.PointToPointConstraint(
@@ -261,28 +486,41 @@ function spawnCannonRagdoll(e, dx, dy, hitZ) {
         cannonWorld.addConstraint(c);
     }
     
-    // Connect Head to Torso
     addJoint(torso, { x: 0, y: 0, z: 6 }, head, { x: 0, y: 0, z: -4 });
-    
-    // Connect Arms to Torso
     addJoint(torso, { x: -6, y: 0, z: 6 }, leftUpperArm, { x: 0, y: 0, z: 3 });
     addJoint(torso, { x: 6, y: 0, z: 6 }, rightUpperArm, { x: 0, y: 0, z: 3 });
-    
-    // Connect Elbows
     addJoint(leftUpperArm, { x: 0, y: 0, z: -3 }, leftLowerArm, { x: 0, y: 0, z: 3 });
     addJoint(rightUpperArm, { x: 0, y: 0, z: -3 }, rightLowerArm, { x: 0, y: 0, z: 3 });
-    
-    // Connect Legs to Torso
     addJoint(torso, { x: -2, y: 0, z: -6 }, leftUpperLeg, { x: 0, y: 0, z: 3 });
     addJoint(torso, { x: 2, y: 0, z: -6 }, rightUpperLeg, { x: 0, y: 0, z: 3 });
-    
-    // Connect Knees
     addJoint(leftUpperLeg, { x: 0, y: 0, z: -3 }, leftLowerLeg, { x: 0, y: 0, z: 3 });
     addJoint(rightUpperLeg, { x: 0, y: 0, z: -3 }, rightLowerLeg, { x: 0, y: 0, z: 3 });
     
-    // Store in active ragdolls array
-    activeRagdolls.push({
+    const ragdollObj = {
         parts: parts,
-        scale: scale
-    });
+        scale: scale,
+        isAlive: !!isAlive,
+        hp: hp !== null ? hp : (e.hp !== undefined ? e.hp : 15),
+        maxHp: e.maxHp || 15,
+        type: e.type || 'zombie3d',
+        hasHead: e.hasHead !== false,
+        hasLeftUpperArm: e.hasLeftUpperArm !== false,
+        hasLeftLowerArm: e.hasLeftLowerArm !== false,
+        hasRightUpperArm: e.hasRightUpperArm !== false,
+        hasRightLowerArm: e.hasRightLowerArm !== false,
+        hasLeftUpperLeg: e.hasLeftUpperLeg !== false,
+        hasLeftLowerLeg: e.hasLeftLowerLeg !== false,
+        hasRightUpperLeg: e.hasRightUpperLeg !== false,
+        hasRightLowerLeg: e.hasRightLowerLeg !== false,
+        limbsHP: e.limbsHP,
+        settleTimer: 0,
+        dragDamageTimer: 0,
+        isGettingUp: false,
+        getUpTimer: 0,
+        flailOffset: Math.random() * 100
+    };
+
+    activeRagdolls.push(ragdollObj);
+    return ragdollObj;
 }
+

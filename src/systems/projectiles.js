@@ -178,6 +178,19 @@ function updateProjectiles() {
                         let force = w.dmg * 2.2;
                         body.wakeUp();
                         body.applyImpulse(new CANNON.Vec3(dirX * force, dirY * force, force * 0.4), body.position);
+                        
+                        let parentRagdoll = activeRagdolls.find(r => r.parts && Object.values(r.parts).includes(body));
+                        if (parentRagdoll && parentRagdoll.isAlive) {
+                            parentRagdoll.hp -= w.dmg;
+                            parentRagdoll.flash = 4;
+                            if (parentRagdoll.hp <= 0) {
+                                parentRagdoll.hp = 0;
+                                parentRagdoll.isAlive = false;
+                                score += 150;
+                                if (typeof scoreEl !== 'undefined' && scoreEl) scoreEl.innerText = score;
+                            }
+                        }
+
                         let bCol = {r: 92, g: 64, b: 51};
                         spawnBlood(hitTarget.hitX, hitTarget.hitY, hitTarget.hitZ, bCol, 6);
                     } else if (hitTarget.type === 'animal') {
@@ -594,6 +607,19 @@ function updateProjectiles() {
                     let dz = len > 0 ? p.vz / len : 0;
                     hitRagdollBody.wakeUp();
                     hitRagdollBody.applyImpulse(new CANNON.Vec3(dx * force, dy * force, (dz * force) + force * 0.4), hitRagdollBody.position);
+                    
+                    let parentRagdoll = activeRagdolls.find(r => r.parts && Object.values(r.parts).includes(hitRagdollBody));
+                    if (parentRagdoll && parentRagdoll.isAlive) {
+                        parentRagdoll.hp -= p.dmg;
+                        parentRagdoll.flash = 4;
+                        if (parentRagdoll.hp <= 0) {
+                            parentRagdoll.hp = 0;
+                            parentRagdoll.isAlive = false;
+                            score += 150;
+                            if (typeof scoreEl !== 'undefined' && scoreEl) scoreEl.innerText = score;
+                        }
+                    }
+
                     let bCol = {r: 92, g: 64, b: 51};
                     spawnBlood(hitX, hitY, hitZ, bCol, 6);
                 } else if (hitAnimalIndex !== -1) {

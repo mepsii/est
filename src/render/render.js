@@ -1167,14 +1167,15 @@ function render() {
 
     // Draw dynamic ragdolls
     for (let r of activeRagdolls) {
-        const torso = r.parts.torso;
+        const torso = r.parts ? r.parts.torso : null;
         if (torso) {
             let dist = Math.hypot(torso.position.x - player.x, torso.position.y - player.y);
             if (dist < VIEW_DIST) {
+                let isFlash = r.flash && r.flash > 0;
                 for (let name in r.parts) {
                     let body = r.parts[name];
                     if (body) {
-                        drawRagdollPartFaces(body, name, r.scale, ambientVal);
+                        drawRagdollPartFaces(body, name, r.scale, ambientVal, isFlash);
                     }
                 }
             }

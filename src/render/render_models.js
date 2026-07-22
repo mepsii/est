@@ -774,7 +774,7 @@ function add3DPlayerFaces(ambient, realPlayerX, realPlayerY) {
     }
 }
 
-function drawRagdollPartFaces(body, name, scale, ambient) {
+function drawRagdollPartFaces(body, name, scale, ambient, isFlash = false) {
     let w = body.partWidth;
     let d = body.partDepth;
     let h = body.partHeight;
@@ -861,7 +861,7 @@ function drawRagdollPartFaces(body, name, scale, ambient) {
             o.h = cz;
             o.norm = { x: nx, y: ny, z: nz };
             o.targeted = (interactTarget && interactTarget.isRagdoll && interactTarget.body === body) || (draggingBody === body);
-            o.flash = false;
+            o.flash = isFlash;
 
             let uvRegion = getMinecraftUVs(name, faceIndex, skinH);
             if (uvRegion) {
