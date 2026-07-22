@@ -306,29 +306,98 @@ function update() {
                 }
             }
 
-            // Stand-up transition logic
+            // Physical Pose Get-Up Animation: Zombie stops flailing, regains composure, pushes up off ground, and stands upright
             if (r.isGettingUp) {
                 r.getUpTimer++;
+                let gTime = r.getUpTimer;
+                let s = r.scale || (1.8 / 32.0);
                 
-                // Stand up physics impulse: torso pulls up, limbs contract towards center
-                torso.velocity.z = Math.min(2.5, torso.velocity.z + 0.6);
-                torso.angularVelocity.scale(0.7, torso.angularVelocity);
-
+                // Wake up all parts during get-up
                 for (let name in r.parts) {
-                    let b = r.parts[name];
-                    if (b && b !== torso) {
-                        let pullX = (torso.position.x - b.position.x) * 2.5;
-                        let pullY = (torso.position.y - b.position.y) * 2.5;
-                        let pullZ = (torso.position.z - b.position.z) * 2.5;
-                        b.velocity.set(pullX, pullY, pullZ);
-                    }
+                    if (r.parts[name]) r.parts[name].wakeUp();
                 }
 
-                // After getUp animation duration, transition back into standing enemy entity
-                if (r.getUpTimer >= 25) {
+                let facingAngle = Math.atan2(player.y - torso.position.y, player.x - torso.position.x);
+                let targetTorsoQuat = new THREE.Quaternion();
+                targetTorsoQuat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), facingAngle);
+
+                // Smoothly slerp torso quaternion to face upright towards player
+                let curTorsoQ = new THREE.Quaternion(torso.quaternion.x, torso.quaternion.y, torso.quaternion.z, torso.quaternion.w);
+                curTorsoQ.slerp(targetTorsoQuat, 0.12);
+                torso.quaternion.set(curTorsoQ.x, curTorsoQ.y, curTorsoQ.z, curTorsoQ.w);
+                torso.angularVelocity.set(0, 0, 0);
+
+                // Calculate target floor height & standing torso Z
+                let floorZ = Math.max(0, torso.position.z - 1.2);
+                if (typeof getSafeFloorZ !== 'undefined') {
+                    floorZ = getSafeFloorZ(torso.position.x, torso.position.y, torso.position.z);
+                }
+                let targetTorsoZ = floorZ + 18.0 * s;
+
+                // Gradually lift torso Z from floor level to standing height over 50 frames
+                torso.position.z += (targetTorsoZ - torso.position.z) * 0.12;
+                torso.velocity.set(0, 0, 0);
+
+                // Local part offsets relative to torso center in standing pose
+                const localOffsets = {
+                    head: { x: 0, y: 0, z: 10 },
+                    leftUpperArm: { x: -6, y: 0, z: 3 },
+                    leftLowerArm: { x: -6, y: 0, z: -3 },
+                    rightUpperArm: { x: 6, y: 0, z: 3 },
+                    rightLowerArm: { x: 6, y: 0, z: -3 },
+                    leftUpperLeg: { x: -2, y: 0, z: -9 },
+                    leftLowerLeg: { x: -2, y: 0, z: -15 },
+                    rightUpperLeg: { x: 2, y: 0, z: -9 },
+                    rightLowerLeg: { x: 2, y: 0, z: -15 }
+                };
+
+                // Pose interpolation rate increases as zombie regains composure
+                let poseRate = Math.min(0.35, 0.05 + (gTime / 50.0) * 0.3);
+
+                for (let name in localOffsets) {
+                    let b = r.parts[name];
+                    if (!b) continue;
+
+                    let off = localOffsets[name];
+                    let lx = off.x * s;
+                    let ly = off.y * s;
+                    let lz = off.z * s;
+
+                    // Ground push phase (Frames 1-20): Arms project downwards towards ground to simulate pushing off floor
+                    if (gTime <= 20 && (name === 'leftLowerArm' || name === 'rightLowerArm')) {
+                        lz -= 4.0 * s;
+                        ly += 2.0 * s;
+                    }
+                    // Knee extension phase (Frames 15-35): Legs extend downwards to floor
+                    if (gTime >= 15 && gTime <= 35 && (name === 'leftLowerLeg' || name === 'rightLowerLeg')) {
+                        lz -= 2.0 * s;
+                    }
+
+                    // Rotate local offset by current torso orientation
+                    let offsetVec = new THREE.Vector3(lx, ly, lz);
+                    offsetVec.applyQuaternion(curTorsoQ);
+
+                    let targetX = torso.position.x + offsetVec.x;
+                    let targetY = torso.position.y + offsetVec.y;
+                    let targetZ = torso.position.z + offsetVec.z;
+
+                    // Smoothly slerp part position & quaternion into standing pose
+                    b.position.x += (targetX - b.position.x) * poseRate;
+                    b.position.y += (targetY - b.position.y) * poseRate;
+                    b.position.z += (targetZ - b.position.z) * poseRate;
+                    b.velocity.set(0, 0, 0);
+
+                    let curPartQ = new THREE.Quaternion(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+                    curPartQ.slerp(curTorsoQ, poseRate);
+                    b.quaternion.set(curPartQ.x, curPartQ.y, curPartQ.z, curPartQ.w);
+                    b.angularVelocity.set(0, 0, 0);
+                }
+
+                // Seamless hand-off to standing walking zombie after 55 frames (~0.92s of live physical get-up pose)
+                if (r.getUpTimer >= 55) {
                     let getUpX = torso.position.x;
                     let getUpY = torso.position.y;
-                    let getUpZ = torso.position.z;
+                    let feetZ = torso.position.z - 18.0 * s;
 
                     for (let name in r.parts) {
                         if (r.parts[name]) cannonWorld.removeBody(r.parts[name]);
@@ -350,11 +419,12 @@ function update() {
                         isSuperZombie: !!r.isSuperZombie,
                         x: getUpX,
                         y: getUpY,
-                        z: getUpZ,
+                        z: feetZ,
+                        angle: facingAngle,
                         hp: r.hp,
                         maxHp: r.maxHp || 15,
                         cooldown: 30,
-                        size: (r.scale || (1.8 / 32.0)) * 32.0,
+                        size: s * 32.0,
                         flash: 0,
                         hasHead: r.hasHead,
                         hasLeftUpperArm: r.hasLeftUpperArm,
